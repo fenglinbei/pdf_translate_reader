@@ -6,13 +6,13 @@ import type {
 import { Minus, Plus } from "lucide-react";
 import { pdfjsLib } from "./pdfjs";
 import type { PinWriteInput } from "../pins/pinRepository";
-import type { PdfLibraryEntry, SentenceSelection, TranslationPin } from "../types/domain";
+import type { AppSettings, PdfLibraryEntry, SentenceSelection, TranslationPin } from "../types/domain";
 import type { ReadingPositionUpdate } from "../cache/pdfLibraryRepository";
 import {
   createPageTextIndex,
   getTextSpanPointerHit,
   getTextSpanPointerHitFromPoint,
-  pointerHitRangeToSentenceSelection,
+  pointerHitRangeToWordSelection,
   pointerHitToSentenceSelection,
   type TextSpanPointerHit,
   type PageTextIndex,
@@ -29,6 +29,7 @@ type PdfViewerProps = {
   onReadingPositionChange: (position: ReadingPositionUpdate) => void;
   onSentenceSelectionChange: (selection: SentenceSelection | undefined) => void;
   pins: TranslationPin[];
+  settings: AppSettings;
 };
 
 export type PinLocateRequest = {
@@ -87,6 +88,7 @@ export function PdfViewer({
   onReadingPositionChange,
   onSentenceSelectionChange,
   pins,
+  settings,
 }: PdfViewerProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageIndexesRef = useRef(new Map<number, PageTextIndex>());
@@ -96,11 +98,13 @@ export function PdfViewer({
   const pendingPositionRef = useRef<ReadingPositionUpdate>();
   const restoredFingerprintRef = useRef<string>();
   const spanDragRef = useRef<SpanDragState>();
+  const draftSelectionRef = useRef<SentenceSelection>();
   const zoomAnchorRef = useRef<ZoomAnchor>();
   const [pdfDocument, setPdfDocument] = useState<PdfDocumentProxy>();
   const [pages, setPages] = useState<PageDescriptor[]>([]);
   const [availableWidth, setAvailableWidth] = useState(760);
   const [isPanning, setIsPanning] = useState(false);
+  const [draftSelection, setDraftSelection] = useState<SentenceSelection>();
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [locatedPinId, setLocatedPinId] = useState<string>();
   const [errorMessage, setErrorMessage] = useState<string>();
@@ -134,7 +138,9 @@ export function PdfViewer({
     setPages([]);
     setPdfDocument(undefined);
     setUserZoom(1);
+    setDraftSelection(undefined);
     pageIndexesRef.current = new Map();
+    draftSelectionRef.current = undefined;
     restoredFingerprintRef.current = undefined;
     onSentenceSelectionChange(undefined);
 
@@ -352,6 +358,29 @@ export function PdfViewer({
     }
   }, []);
 
+  const addPageMetricsToSelection = useCallback(
+    (selection: SentenceSelection): SentenceSelection => {
+      const pageDescriptor = pages.find((page) => page.pageNumber - 1 === selection.pageIndex);
+
+      return {
+        ...selection,
+        pageHeight: pageDescriptor ? pageDescriptor.height * scale : undefined,
+        pageWidth: pageDescriptor ? pageDescriptor.width * scale : undefined,
+      };
+    },
+    [pages, scale],
+  );
+
+  const updateDraftSelection = useCallback(
+    (selection: SentenceSelection | undefined) => {
+      const nextSelection = selection ? addPageMetricsToSelection(selection) : undefined;
+
+      draftSelectionRef.current = nextSelection;
+      setDraftSelection(nextSelection);
+    },
+    [addPageMetricsToSelection],
+  );
+
   const handleTextPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button === 1) {
       const scrollElement = scrollRef.current;
@@ -384,6 +413,9 @@ export function PdfViewer({
       return;
     }
 
+    draftSelectionRef.current = undefined;
+    setDraftSelection(undefined);
+    onSentenceSelectionChange(undefined);
     spanDragRef.current = {
       latestHit: pointerHit,
       pointerId: event.pointerId,
@@ -394,33 +426,56 @@ export function PdfViewer({
     window.getSelection()?.removeAllRanges();
     event.currentTarget.setPointerCapture(event.pointerId);
     event.preventDefault();
-  }, []);
+  }, [onSentenceSelectionChange]);
 
-  const handleTextPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const panDragState = panDragRef.current;
-    const scrollElement = scrollRef.current;
+  const handleTextPointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const panDragState = panDragRef.current;
+      const scrollElement = scrollRef.current;
 
-    if (panDragState && scrollElement && panDragState.pointerId === event.pointerId) {
-      scrollElement.scrollLeft = panDragState.startScrollLeft - (event.clientX - panDragState.startX);
-      scrollElement.scrollTop = panDragState.startScrollTop - (event.clientY - panDragState.startY);
+      if (panDragState && scrollElement && panDragState.pointerId === event.pointerId) {
+        scrollElement.scrollLeft = panDragState.startScrollLeft - (event.clientX - panDragState.startX);
+        scrollElement.scrollTop = panDragState.startScrollTop - (event.clientY - panDragState.startY);
+        event.preventDefault();
+        return;
+      }
+
+      const dragState = spanDragRef.current;
+
+      if (!dragState || dragState.pointerId !== event.pointerId) {
+        return;
+      }
+
+      const pointerHit = getTextSpanPointerHitFromPoint(event.clientX, event.clientY);
+
+      if (pointerHit && pointerHit.pageIndex === dragState.startHit.pageIndex) {
+        dragState.latestHit = pointerHit;
+      }
+
+      const movedDistance = Math.hypot(event.clientX - dragState.startX, event.clientY - dragState.startY);
+      const isRangeDrag =
+        movedDistance >= POINTER_DRAG_THRESHOLD_PX &&
+        dragState.latestHit.pageIndex === dragState.startHit.pageIndex &&
+        dragState.latestHit.rawOffset !== dragState.startHit.rawOffset;
+
+      updateDraftSelection(
+        isRangeDrag
+          ? pointerHitRangeToWordSelection({
+              contextWindowSize: settings.contextWindowN,
+              endHit: dragState.latestHit,
+              maxSentenceCount: MAX_TARGET_SENTENCE_COUNT,
+              maxWordCount: settings.maxDraggedWords,
+              pageIndexes: pageIndexesRef.current,
+              pdfFingerprint: entry.fingerprint,
+              startHit: dragState.startHit,
+            })
+          : undefined,
+      );
+
       event.preventDefault();
-      return;
-    }
-
-    const dragState = spanDragRef.current;
-
-    if (!dragState || dragState.pointerId !== event.pointerId) {
-      return;
-    }
-
-    const pointerHit = getTextSpanPointerHitFromPoint(event.clientX, event.clientY);
-
-    if (pointerHit) {
-      dragState.latestHit = pointerHit;
-    }
-
-    event.preventDefault();
-  }, []);
+    },
+    [entry.fingerprint, settings.contextWindowN, settings.maxDraggedWords, updateDraftSelection],
+  );
 
   const handleTextPointerUp = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -438,21 +493,29 @@ export function PdfViewer({
         return;
       }
 
-      const endHit = getTextSpanPointerHitFromPoint(event.clientX, event.clientY) ?? dragState.latestHit;
+      const pointerHit = getTextSpanPointerHitFromPoint(event.clientX, event.clientY);
+      const endHit =
+        pointerHit && pointerHit.pageIndex === dragState.startHit.pageIndex
+          ? pointerHit
+          : dragState.latestHit;
       const movedDistance = Math.hypot(event.clientX - dragState.startX, event.clientY - dragState.startY);
       const isRangeDrag =
         movedDistance >= POINTER_DRAG_THRESHOLD_PX &&
         endHit.pageIndex === dragState.startHit.pageIndex &&
         endHit.rawOffset !== dragState.startHit.rawOffset;
       const sentenceSelection = isRangeDrag
-        ? pointerHitRangeToSentenceSelection({
+        ? draftSelectionRef.current ??
+          (pointerHitRangeToWordSelection({
+            contextWindowSize: settings.contextWindowN,
             endHit,
             maxSentenceCount: MAX_TARGET_SENTENCE_COUNT,
+            maxWordCount: settings.maxDraggedWords,
             pageIndexes: pageIndexesRef.current,
             pdfFingerprint: entry.fingerprint,
             startHit: dragState.startHit,
-          })
+          }) ?? undefined)
         : pointerHitToSentenceSelection({
+            contextWindowSize: settings.contextWindowN,
             forwardSentenceCount: TARGET_FORWARD_SENTENCE_COUNT,
             maxSentenceCount: MAX_TARGET_SENTENCE_COUNT,
             pageIndexes: pageIndexesRef.current,
@@ -461,23 +524,23 @@ export function PdfViewer({
           });
 
       spanDragRef.current = undefined;
+      draftSelectionRef.current = undefined;
+      setDraftSelection(undefined);
       window.getSelection()?.removeAllRanges();
       event.currentTarget.releasePointerCapture(event.pointerId);
       event.preventDefault();
 
       if (sentenceSelection) {
-        const pageDescriptor = pages.find(
-          (page) => page.pageNumber - 1 === sentenceSelection.pageIndex,
-        );
-
-        onSentenceSelectionChange({
-          ...sentenceSelection,
-          pageHeight: pageDescriptor ? pageDescriptor.height * scale : undefined,
-          pageWidth: pageDescriptor ? pageDescriptor.width * scale : undefined,
-        });
+        onSentenceSelectionChange(addPageMetricsToSelection(sentenceSelection));
       }
     },
-    [entry.fingerprint, onSentenceSelectionChange, pages, scale],
+    [
+      addPageMetricsToSelection,
+      entry.fingerprint,
+      onSentenceSelectionChange,
+      settings.contextWindowN,
+      settings.maxDraggedWords,
+    ],
   );
 
   const handleTextPointerCancel = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
@@ -488,6 +551,8 @@ export function PdfViewer({
 
     if (spanDragRef.current?.pointerId === event.pointerId) {
       spanDragRef.current = undefined;
+      draftSelectionRef.current = undefined;
+      setDraftSelection(undefined);
     }
   }, []);
 
@@ -575,7 +640,9 @@ export function PdfViewer({
         </div>
       </div>
       <div
-        className={`pdf-scroll-region ${isPanning ? "pdf-scroll-region--panning" : ""}`}
+        className={`pdf-scroll-region ${isPanning ? "pdf-scroll-region--panning" : ""} ${
+          draftSelection ? "pdf-scroll-region--selecting" : ""
+        }`}
         onAuxClick={handleAuxClick}
         onPointerCancel={handleTextPointerCancel}
         onPointerDown={handleTextPointerDown}
@@ -593,6 +660,7 @@ export function PdfViewer({
                   <PdfPageView
                     activeSelection={activeSelection}
                     descriptor={page}
+                    draftSelection={draftSelection}
                     key={`${entry.fingerprint}-${page.pageNumber}`}
                     onActiveSelectionClose={onActiveSelectionClose}
                     onPinnedTranslationRefresh={onPinnedTranslationRefresh}
@@ -603,6 +671,7 @@ export function PdfViewer({
                     pins={pins}
                     locatedPinId={locatedPinId}
                     scale={scale}
+                    settings={settings}
                   />
                 ))
               : <div className="reader-message">Loading PDF...</div>}
@@ -616,6 +685,7 @@ export function PdfViewer({
 function PdfPageView({
   activeSelection,
   descriptor,
+  draftSelection,
   locatedPinId,
   onActiveSelectionClose,
   onPinnedTranslationRefresh,
@@ -625,9 +695,11 @@ function PdfPageView({
   pdfDocument,
   pins,
   scale,
+  settings,
 }: {
   activeSelection?: SentenceSelection;
   descriptor: PageDescriptor;
+  draftSelection?: SentenceSelection;
   locatedPinId?: string;
   onActiveSelectionClose: () => void;
   onPinnedTranslationRefresh: (input: PinWriteInput) => void;
@@ -637,6 +709,7 @@ function PdfPageView({
   pdfDocument: PdfDocumentProxy;
   pins: TranslationPin[];
   scale: number;
+  settings: AppSettings;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pageRef = useRef<HTMLDivElement>(null);
@@ -757,7 +830,9 @@ function PdfPageView({
         pageIndex={descriptor.pageNumber - 1}
         pageWidth={descriptor.width * scale}
         pins={pins}
+        draftSelection={draftSelection}
         selection={activeSelection}
+        settings={settings}
       />
       {renderState === "error" ? <div className="pdf-page-error">Page failed to render.</div> : null}
     </div>

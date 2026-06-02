@@ -1,6 +1,8 @@
 import { getAppDb } from "../cache";
 import type {
   SentenceSelection,
+  SourceLanguage,
+  TargetLanguage,
   TranslationModel,
   TranslationPin,
 } from "../types/domain";
@@ -14,8 +16,8 @@ export type PinWriteInput = {
   pageWidth?: number;
   promptVersion: string;
   selection: SentenceSelection;
-  sourceLang: "en";
-  targetLang: "zh";
+  sourceLang: SourceLanguage;
+  targetLang: TargetLanguage;
   translation: string;
 };
 
@@ -51,6 +53,7 @@ export async function putPin(input: PinWriteInput) {
     cacheKey: input.cacheKey,
     contextWindowN: input.contextWindowN,
     createdAt: existing?.createdAt ?? now,
+    highlighted: existing?.highlighted,
     id,
     localContextAfter: input.selection.localContextAfter,
     localContextBefore: input.selection.localContextBefore,
@@ -108,6 +111,33 @@ export async function updatePinTranslation(pinId: string, input: PinTranslationU
         model: input.model,
         translation: input.translation,
         updatedAt: updatedPin.updatedAt,
+      }),
+    ),
+  );
+
+  return updatedPin;
+}
+
+export async function updatePinHighlight(pinId: string, highlighted: boolean) {
+  const db = await getAppDb();
+  const existing = await db.get("pins", pinId);
+
+  if (!existing) {
+    return undefined;
+  }
+
+  const duplicatePins = (await db.getAllFromIndex("pins", "by-pdf", existing.pdfFingerprint))
+    .filter((pin) => isSamePinTarget(pin, existing));
+  const updatedPin: TranslationPin = {
+    ...existing,
+    highlighted,
+  };
+
+  await Promise.all(
+    duplicatePins.map((pin) =>
+      db.put("pins", {
+        ...pin,
+        highlighted,
       }),
     ),
   );

@@ -1,4 +1,4 @@
-import { LocateFixed, RefreshCw, X } from "lucide-react";
+import { Highlighter, LocateFixed, RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { TokenUsage, TranslationPin, TranslationRequest } from "../types/domain";
 import { createTranslationCacheKey } from "../translation/cacheKey";
@@ -11,6 +11,7 @@ import { putTranslationCacheEntry } from "../translation/translationRepository";
 import { updatePinTranslation } from "./pinRepository";
 
 type PinnedTranslationsPanelProps = {
+  onHighlightPin: (pin: TranslationPin, highlighted: boolean) => void;
   onLocatePin: (pin: TranslationPin) => void;
   onPinUpdated: (pin: TranslationPin) => void;
   onUnpin: (pin: TranslationPin) => void;
@@ -24,6 +25,7 @@ type PinRuntimeState = {
 };
 
 export function PinnedTranslationsPanel({
+  onHighlightPin,
   onLocatePin,
   onPinUpdated,
   onUnpin,
@@ -172,6 +174,7 @@ export function PinnedTranslationsPanel({
         const runtimeState = runtimeByPinId[pin.id];
         const isRetranslating =
           runtimeState?.status === "loading" || runtimeState?.status === "streaming";
+        const isHighlighted = Boolean(pin.highlighted);
 
         return (
           <article className="pinned-translation-card" key={pin.id}>
@@ -180,8 +183,19 @@ export function PinnedTranslationsPanel({
               <span className="pinned-translation-card-page">Page {pin.pageIndex + 1}</span>
               <div className="pinned-translation-card-actions">
                 <button
+                  aria-label={isHighlighted ? "Stop highlighting original" : "Keep original highlighted"}
+                  className={`icon-button icon-button--small pinned-translation-card-action ${
+                    isHighlighted ? "icon-button--success" : ""
+                  }`}
+                  onClick={() => onHighlightPin(pin, !isHighlighted)}
+                  title={isHighlighted ? "Stop highlighting original" : "Keep original highlighted"}
+                  type="button"
+                >
+                  <Highlighter aria-hidden="true" size={16} strokeWidth={2} />
+                </button>
+                <button
                   aria-label="Locate original"
-                  className="icon-button icon-button--small"
+                  className="icon-button icon-button--small pinned-translation-card-action"
                   onClick={() => onLocatePin(pin)}
                   title="Locate original"
                   type="button"
@@ -190,7 +204,7 @@ export function PinnedTranslationsPanel({
                 </button>
                 <button
                   aria-label="Retranslate pinned text"
-                  className="icon-button icon-button--small"
+                  className="icon-button icon-button--small pinned-translation-card-action"
                   disabled={isRetranslating}
                   onClick={() => handleRetranslate(pin)}
                   title="Retranslate"
@@ -200,7 +214,7 @@ export function PinnedTranslationsPanel({
                 </button>
                 <button
                   aria-label="Unpin translation"
-                  className="icon-button icon-button--small"
+                  className="icon-button icon-button--small pinned-translation-card-action"
                   onClick={() => onUnpin(pin)}
                   title="Unpin"
                   type="button"

@@ -1,4 +1,6 @@
 export type TranslationModel = "deepseek-v4-flash" | "deepseek-v4-pro";
+export type SourceLanguage = "en";
+export type TargetLanguage = "zh";
 
 export type DOMRectLike = {
   x: number;
@@ -70,8 +72,8 @@ export type PaperContext = {
 
 export type TranslationRequest = {
   pdfFingerprint: string;
-  sourceLang: "en";
-  targetLang: "zh";
+  sourceLang: SourceLanguage;
+  targetLang: TargetLanguage;
   model: TranslationModel;
   targetSentence: string;
   localContextBefore: string[];
@@ -95,8 +97,8 @@ export type TranslationCacheEntry = {
   cacheKey: string;
   pdfFingerprint: string;
   normalizedSentence: string;
-  sourceLang: "en";
-  targetLang: "zh";
+  sourceLang: SourceLanguage;
+  targetLang: TargetLanguage;
   model: TranslationModel;
   contextWindowN: number;
   longContextEnabled: boolean;
@@ -121,12 +123,13 @@ export type TranslationPin = {
   localContextAfter: string[];
   rectsOnPage: DOMRectLike[];
   translation: string;
-  sourceLang: "en";
+  sourceLang: SourceLanguage;
   model: TranslationModel;
-  targetLang: "zh";
+  targetLang: TargetLanguage;
   contextWindowN: number;
   longContextEnabled: boolean;
   cacheKey?: string;
+  highlighted?: boolean;
   promptVersion: string;
   createdAt: number;
   updatedAt: number;
@@ -136,8 +139,8 @@ export type ApiCallLog = {
   id: string;
   pdfFingerprint: string;
   model: TranslationModel;
-  sourceLang: "en";
-  targetLang: "zh";
+  sourceLang: SourceLanguage;
+  targetLang: TargetLanguage;
   requestStartedAt: number;
   requestFinishedAt?: number;
   status: "success" | "error" | "aborted";
@@ -150,4 +153,13 @@ export type ApiCallLog = {
   totalTokens?: number;
   promptCacheHitTokens?: number;
   promptCacheMissTokens?: number;
+};
+
+export type AppSettings = {
+  contextWindowN: 0 | 1 | 2 | 3 | 5;
+  defaultModel: TranslationModel;
+  longContextEnabled: boolean;
+  maxDraggedWords: number;
+  sourceLang: SourceLanguage;
+  targetLang: TargetLanguage;
 };

@@ -2,19 +2,16 @@ import { Pin, RefreshCw, X } from "lucide-react";
 import type { CSSProperties, KeyboardEvent, MouseEvent, PointerEvent, TouchEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
+  AppSettings,
   SentenceSelection,
+  SourceLanguage,
+  TargetLanguage,
   TokenUsage,
   TranslationModel,
   TranslationRequest,
 } from "../types/domain";
 import { createTranslationCacheKey } from "./cacheKey";
-import {
-  DEFAULT_CONTEXT_WINDOW_N,
-  DEFAULT_LONG_CONTEXT_ENABLED,
-  DEFAULT_SOURCE_LANG,
-  DEFAULT_TARGET_LANG,
-  TRANSLATION_PROMPT_VERSION,
-} from "./defaults";
+import { TRANSLATION_PROMPT_VERSION } from "./defaults";
 import { streamTranslation } from "./translationClient";
 import { getTranslationCacheEntry, putTranslationCacheEntry } from "./translationRepository";
 
@@ -25,8 +22,8 @@ export type TranslationPinPayload = {
   model: TranslationModel;
   promptVersion: string;
   selection: SentenceSelection;
-  sourceLang: "en";
-  targetLang: "zh";
+  sourceLang: SourceLanguage;
+  targetLang: TargetLanguage;
   translation: string;
 };
 
@@ -38,6 +35,7 @@ type TranslationPopoverProps = {
   pinSelection?: SentenceSelection;
   placement: "above" | "below" | "left" | "right";
   selection: SentenceSelection;
+  settings: AppSettings;
   style: CSSProperties;
 };
 
@@ -80,15 +78,16 @@ export function TranslationPopover({
   pinSelection,
   placement,
   selection,
+  settings,
   style,
 }: TranslationPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController>();
+  const activeRequestRef = useRef<TranslationRequest>();
   const onPinRef = useRef(onPin);
   const onTranslationCompleteRef = useRef(onTranslationComplete);
   const payloadSelectionRef = useRef(pinSelection ?? selection);
   const pinAfterTranslationRef = useRef(false);
-  const [model, setModel] = useState<TranslationModel>("deepseek-v4-flash");
   const [status, setStatus] = useState<TranslationStatus>("idle");
   const [translation, setTranslation] = useState("");
   const [errorMessage, setErrorMessage] = useState<string>();
@@ -104,19 +103,51 @@ export function TranslationPopover({
     () => `${selection.pdfFingerprint}:${selection.pageIndex}:${selection.normalizedSentence}`,
     [selection.normalizedSentence, selection.pageIndex, selection.pdfFingerprint],
   );
+  const createRequest = useCallback((): TranslationRequest => {
+    const contextWindowN = settings.contextWindowN;
+
+    return {
+      contextWindowN,
+      localContextAfter: selection.localContextAfter.slice(0, contextWindowN),
+      localContextBefore:
+        contextWindowN === 0 ? [] : selection.localContextBefore.slice(-contextWindowN),
+      longContextEnabled: settings.longContextEnabled,
+      model: settings.defaultModel,
+      pdfFingerprint: selection.pdfFingerprint,
+      promptVersion: TRANSLATION_PROMPT_VERSION,
+      sourceLang: settings.sourceLang,
+      stream: true,
+      targetLang: settings.targetLang,
+      targetSentence: selection.targetSentence,
+    };
+  }, [
+    selection.localContextAfter,
+    selection.localContextBefore,
+    selection.pdfFingerprint,
+    selection.targetSentence,
+    settings.contextWindowN,
+    settings.defaultModel,
+    settings.longContextEnabled,
+    settings.sourceLang,
+    settings.targetLang,
+  ]);
   const createPinPayload = useCallback(
-    (nextTranslation: string, cacheKey: string | undefined, nextModel: TranslationModel) => ({
+    (
+      nextTranslation: string,
+      cacheKey: string | undefined,
+      request: TranslationRequest = activeRequestRef.current ?? createRequest(),
+    ) => ({
       cacheKey,
-      contextWindowN: DEFAULT_CONTEXT_WINDOW_N,
-      longContextEnabled: DEFAULT_LONG_CONTEXT_ENABLED,
-      model: nextModel,
+      contextWindowN: request.contextWindowN,
+      longContextEnabled: request.longContextEnabled,
+      model: request.model,
       promptVersion: TRANSLATION_PROMPT_VERSION,
       selection: payloadSelectionRef.current,
-      sourceLang: DEFAULT_SOURCE_LANG,
-      targetLang: DEFAULT_TARGET_LANG,
+      sourceLang: request.sourceLang,
+      targetLang: request.targetLang,
       translation: nextTranslation,
     }),
-    [],
+    [createRequest],
   );
   const effectivePinStatus: PinStatus = isPinned
     ? "saved"
@@ -145,24 +176,12 @@ export function TranslationPopover({
   }, []);
 
   const startTranslation = useCallback(
-    (nextModel: TranslationModel, options: { bypassCache?: boolean } = {}) => {
+    (options: { bypassCache?: boolean } = {}) => {
       abortControllerRef.current?.abort();
 
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
-      const request: TranslationRequest = {
-        contextWindowN: DEFAULT_CONTEXT_WINDOW_N,
-        localContextAfter: selection.localContextAfter,
-        localContextBefore: selection.localContextBefore,
-        longContextEnabled: DEFAULT_LONG_CONTEXT_ENABLED,
-        model: nextModel,
-        pdfFingerprint: selection.pdfFingerprint,
-        promptVersion: TRANSLATION_PROMPT_VERSION,
-        sourceLang: DEFAULT_SOURCE_LANG,
-        stream: true,
-        targetLang: DEFAULT_TARGET_LANG,
-        targetSentence: selection.targetSentence,
-      };
+      const request = createRequest();
       const paperContextHash = request.paperContext?.contextHash;
       const cacheKey = createTranslationCacheKey({
         contextWindowN: request.contextWindowN,
@@ -184,6 +203,7 @@ export function TranslationPopover({
       setActiveCacheKey(cacheKey);
       setPinStatus("idle");
       pinAfterTranslationRef.current = false;
+      activeRequestRef.current = request;
 
       void (async () => {
         if (!options.bypassCache) {
@@ -200,7 +220,7 @@ export function TranslationPopover({
             setStatus("success");
             if (pinAfterTranslationRef.current) {
               pinAfterTranslationRef.current = false;
-              await savePinPayload(createPinPayload(cachedEntry.translation, cacheKey, request.model));
+              await savePinPayload(createPinPayload(cachedEntry.translation, cacheKey, request));
             }
             return;
           }
@@ -247,10 +267,10 @@ export function TranslationPopover({
             translation: streamedTranslation,
             usage: streamedUsage,
           }).catch(() => undefined);
-          onTranslationCompleteRef.current?.(createPinPayload(streamedTranslation, cacheKey, request.model));
+          onTranslationCompleteRef.current?.(createPinPayload(streamedTranslation, cacheKey, request));
           if (pinAfterTranslationRef.current) {
             pinAfterTranslationRef.current = false;
-            await savePinPayload(createPinPayload(streamedTranslation, cacheKey, request.model));
+            await savePinPayload(createPinPayload(streamedTranslation, cacheKey, request));
           }
         }
       })().catch((error) => {
@@ -266,10 +286,11 @@ export function TranslationPopover({
         setErrorMessage(error instanceof Error ? error.message : "Translation failed.");
       });
     },
-    [createPinPayload, savePinPayload, selection],
+    [createPinPayload, createRequest, savePinPayload, selection.normalizedSentence],
   );
 
   useEffect(() => {
+    activeRequestRef.current = undefined;
     setDragOffset({ x: 0, y: 0 });
     setPopoverSize(undefined);
     setPinStatus("idle");
@@ -287,12 +308,12 @@ export function TranslationPopover({
   }, [isPinned, selectionKey]);
 
   useEffect(() => {
-    startTranslation(model);
+    startTranslation();
 
     return () => {
       abortControllerRef.current?.abort();
     };
-  }, [model, selectionKey, startTranslation]);
+  }, [selectionKey, startTranslation]);
 
   const stopEvent = useCallback((event: MouseEvent | PointerEvent | TouchEvent) => {
     event.stopPropagation();
@@ -304,13 +325,13 @@ export function TranslationPopover({
     }
 
     if (status === "success" && translation.trim().length > 0) {
-      void savePinPayload(createPinPayload(translation, activeCacheKey, model));
+      void savePinPayload(createPinPayload(translation, activeCacheKey));
       return;
     }
 
     pinAfterTranslationRef.current = true;
     setPinStatus("saving");
-  }, [activeCacheKey, createPinPayload, isPinned, model, onPin, pinStatus, savePinPayload, status, translation]);
+  }, [activeCacheKey, createPinPayload, isPinned, onPin, pinStatus, savePinPayload, status, translation]);
 
   const handlePinPointerDown = useCallback(
     (event: PointerEvent<HTMLButtonElement>) => {
@@ -468,25 +489,7 @@ export function TranslationPopover({
         onPointerUp={handleDragEnd}
         title="Drag to move"
       />
-      <div
-        className="translation-popover-toolbar"
-      >
-        <div className="model-segment model-segment--compact" role="group" aria-label="Translation model">
-          <button
-            className={model === "deepseek-v4-flash" ? "model-segment-button--active" : ""}
-            onClick={() => setModel("deepseek-v4-flash")}
-            type="button"
-          >
-            Flash
-          </button>
-          <button
-            className={model === "deepseek-v4-pro" ? "model-segment-button--active" : ""}
-            onClick={() => setModel("deepseek-v4-pro")}
-            type="button"
-          >
-            Pro
-          </button>
-        </div>
+      <div className="translation-popover-toolbar translation-popover-toolbar--actions-only">
         <div className="translation-popover-actions">
           {effectivePinStatus !== "idle" ? (
             <span className={`translation-popover-pin-chip translation-popover-pin-chip--${effectivePinStatus}`}>
@@ -499,7 +502,7 @@ export function TranslationPopover({
           ) : null}
           <button
             className="icon-button icon-button--small"
-            onClick={() => startTranslation(model, { bypassCache: true })}
+            onClick={() => startTranslation({ bypassCache: true })}
             title="Retranslate"
             type="button"
           >

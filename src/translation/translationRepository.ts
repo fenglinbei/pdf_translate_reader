@@ -1,12 +1,18 @@
-import type { TokenUsage, TranslationCacheEntry, TranslationModel } from "../types/domain";
+import type {
+  SourceLanguage,
+  TargetLanguage,
+  TokenUsage,
+  TranslationCacheEntry,
+  TranslationModel,
+} from "../types/domain";
 import { getAppDb } from "../cache";
 
 export type TranslationCacheWriteInput = {
   cacheKey: string;
   pdfFingerprint: string;
   normalizedSentence: string;
-  sourceLang: "en";
-  targetLang: "zh";
+  sourceLang: SourceLanguage;
+  targetLang: TargetLanguage;
   model: TranslationModel;
   contextWindowN: number;
   longContextEnabled: boolean;
@@ -46,4 +52,17 @@ export async function putTranslationCacheEntry(input: TranslationCacheWriteInput
   await db.put("translationCache", entry);
 
   return entry;
+}
+
+export async function clearTranslationCache() {
+  const db = await getAppDb();
+
+  await db.clear("translationCache");
+}
+
+export async function deleteTranslationCacheEntriesByPdf(pdfFingerprint: string) {
+  const db = await getAppDb();
+  const keys = await db.getAllKeysFromIndex("translationCache", "by-pdf", pdfFingerprint);
+
+  await Promise.all(keys.map((key) => db.delete("translationCache", key)));
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { Check, Trash2, X } from "lucide-react";
 import {
+  deletePdfLocalData,
   listPdfLibraryEntries,
   markPdfOpened,
   saveImportedPdf,
@@ -17,12 +18,20 @@ import {
   deletePinsByPdf,
   listPinsByPdf,
   putPin,
+  updatePinHighlight,
   updatePinTranslation,
   type PinWriteInput,
 } from "../pins/pinRepository";
 import { PinnedTranslationsPanel } from "../pins/PinnedTranslationsPanel";
 import { SettingsButton } from "../settings/SettingsButton";
-import type { PdfLibraryEntry, SentenceSelection, TranslationPin } from "../types/domain";
+import { SettingsPanel } from "../settings/SettingsPanel";
+import {
+  DEFAULT_APP_SETTINGS,
+  getAppSettings,
+  putAppSettings,
+} from "../settings/settingsRepository";
+import type { AppSettings, PdfLibraryEntry, SentenceSelection, TranslationPin } from "../types/domain";
+import { clearTranslationCache } from "../translation/translationRepository";
 import { useApiHealth } from "./useApiHealth";
 
 type PaneResizeState = {
@@ -36,7 +45,7 @@ const LIBRARY_PANE_MAX_WIDTH = 380;
 const LIBRARY_PANE_MIN_WIDTH = 180;
 const PINS_PANE_DEFAULT_WIDTH = 280;
 const PINS_PANE_MAX_WIDTH = 460;
-const PINS_PANE_MIN_WIDTH = 220;
+const PINS_PANE_MIN_WIDTH = 300;
 
 export function ReaderShell() {
   const health = useApiHealth();
@@ -44,12 +53,14 @@ export function ReaderShell() {
   const [libraryEntries, setLibraryEntries] = useState<PdfLibraryEntry[]>([]);
   const [currentEntry, setCurrentEntry] = useState<PdfLibraryEntry>();
   const [isImporting, setIsImporting] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [libraryPaneWidth, setLibraryPaneWidth] = useState(LIBRARY_PANE_DEFAULT_WIDTH);
   const [isConfirmingClearPins, setIsConfirmingClearPins] = useState(false);
   const [locateRequest, setLocateRequest] = useState<PinLocateRequest>();
   const [pinsPaneWidth, setPinsPaneWidth] = useState(PINS_PANE_DEFAULT_WIDTH);
   const [pins, setPins] = useState<TranslationPin[]>([]);
   const [sentenceSelection, setSentenceSelection] = useState<SentenceSelection>();
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
   const [statusMessage, setStatusMessage] = useState<string>();
   const locateRequestIdRef = useRef(0);
   const paneResizeStateRef = useRef<PaneResizeState>();
@@ -65,6 +76,14 @@ export function ReaderShell() {
       setStatusMessage("Could not read the local PDF library.");
     });
   }, [refreshLibrary]);
+
+  useEffect(() => {
+    void getAppSettings()
+      .then(setSettings)
+      .catch(() => {
+        setStatusMessage("Could not read saved settings.");
+      });
+  }, []);
 
   useEffect(() => {
     pinsRef.current = pins;
@@ -219,6 +238,18 @@ export function ReaderShell() {
     setPins((currentPins) => upsertPin(currentPins, pin));
   }, []);
 
+  const handlePinHighlight = useCallback((pin: TranslationPin, highlighted: boolean) => {
+    void updatePinHighlight(pin.id, highlighted)
+      .then((updatedPin) => {
+        if (updatedPin) {
+          setPins((currentPins) => upsertPin(currentPins, updatedPin));
+        }
+      })
+      .catch(() => {
+        setStatusMessage("Could not update pin highlight.");
+      });
+  }, []);
+
   const handleUnpin = useCallback((pin: TranslationPin) => {
     void deletePin(pin.id)
       .then(() => {
@@ -229,20 +260,55 @@ export function ReaderShell() {
       });
   }, []);
 
-  const handleClearPins = useCallback(() => {
+  const handleSettingsChange = useCallback(async (nextSettings: Partial<AppSettings>) => {
+    const updatedSettings = await putAppSettings(nextSettings);
+
+    setSettings(updatedSettings);
+  }, []);
+
+  const handleClearCurrentPdfPins = useCallback(async () => {
     if (!activeFingerprint) {
       return;
     }
 
-    void deletePinsByPdf(activeFingerprint)
-      .then(() => {
+    await deletePinsByPdf(activeFingerprint);
+    setPins([]);
+    setIsConfirmingClearPins(false);
+  }, [activeFingerprint]);
+
+  const handleClearPins = useCallback(() => {
+    void handleClearCurrentPdfPins().catch(() => {
+      setStatusMessage("Could not clear pins for this PDF.");
+    });
+  }, [handleClearCurrentPdfPins]);
+
+  const handleClearTranslationCache = useCallback(async () => {
+    await clearTranslationCache();
+  }, []);
+
+  const handleDeletePdfData = useCallback(
+    async (fingerprint: string) => {
+      await deletePdfLocalData(fingerprint);
+
+      if (activeFingerprint === fingerprint) {
+        setCurrentEntry(undefined);
+        setSentenceSelection(undefined);
         setPins([]);
         setIsConfirmingClearPins(false);
-      })
-      .catch(() => {
-        setStatusMessage("Could not clear pins for this PDF.");
-      });
-  }, [activeFingerprint]);
+      }
+
+      await refreshLibrary();
+    },
+    [activeFingerprint, refreshLibrary],
+  );
+
+  const handleClearCurrentPdfData = useCallback(async () => {
+    if (!activeFingerprint) {
+      return;
+    }
+
+    await handleDeletePdfData(activeFingerprint);
+  }, [activeFingerprint, handleDeletePdfData]);
 
   const handleLocatePin = useCallback((pin: TranslationPin) => {
     locateRequestIdRef.current += 1;
@@ -316,9 +382,25 @@ export function ReaderShell() {
           <span className={`api-health api-health--${apiStatus}`} title={`API ${apiStatus}`}>
             API
           </span>
-          <SettingsButton />
+          <SettingsButton isOpen={isSettingsOpen} onClick={() => setIsSettingsOpen(true)} />
         </div>
       </header>
+
+      {isSettingsOpen ? (
+        <SettingsPanel
+          apiKeyConfigured={health.status === "ok" ? health.data.deepseek.apiKeyConfigured : undefined}
+          apiStatus={apiStatus}
+          currentEntry={currentEntry}
+          libraryEntries={libraryEntries}
+          onClearCurrentPdfData={handleClearCurrentPdfData}
+          onClearCurrentPdfPins={handleClearCurrentPdfPins}
+          onClearTranslationCache={handleClearTranslationCache}
+          onClose={() => setIsSettingsOpen(false)}
+          onDeletePdfData={handleDeletePdfData}
+          onSettingsChange={handleSettingsChange}
+          settings={settings}
+        />
+      ) : null}
 
       <main className="reader-workspace" style={workspaceStyle}>
         <aside className="library-pane" aria-label="PDF library">
@@ -359,6 +441,7 @@ export function ReaderShell() {
               onReadingPositionChange={handleReadingPositionChange}
               onSentenceSelectionChange={setSentenceSelection}
               pins={pins}
+              settings={settings}
             />
           ) : (
             <div className="empty-reader">
@@ -438,6 +521,7 @@ export function ReaderShell() {
             </div>
           ) : null}
           <PinnedTranslationsPanel
+            onHighlightPin={handlePinHighlight}
             onLocatePin={handleLocatePin}
             onPinUpdated={handlePinUpdated}
             onUnpin={handleUnpin}

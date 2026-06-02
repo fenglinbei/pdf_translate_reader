@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { PinWriteInput } from "../pins/pinRepository";
-import type { DOMRectLike, SentenceSelection, TranslationPin } from "../types/domain";
+import type { AppSettings, DOMRectLike, SentenceSelection, TranslationPin } from "../types/domain";
 import { TranslationPopover } from "../translation/TranslationPopover";
 import { getPopoverPlacement, getSelectionBounds, type PageGutters } from "./overlayPlacement";
 
 type PageOverlayLayerProps = {
+  draftSelection?: SentenceSelection;
   locatedPinId?: string;
   onCloseSelection: () => void;
   onPinnedTranslationRefresh: (input: PinWriteInput) => void;
@@ -14,9 +15,11 @@ type PageOverlayLayerProps = {
   pageWidth: number;
   pins: TranslationPin[];
   selection?: SentenceSelection;
+  settings: AppSettings;
 };
 
 export function PageOverlayLayer({
+  draftSelection,
   locatedPinId,
   onCloseSelection,
   onPinnedTranslationRefresh,
@@ -26,6 +29,7 @@ export function PageOverlayLayer({
   pageWidth,
   pins,
   selection,
+  settings,
 }: PageOverlayLayerProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const [pageGutters, setPageGutters] = useState<PageGutters>({ left: 0, right: 0 });
@@ -33,8 +37,14 @@ export function PageOverlayLayer({
     ? `${selection.pdfFingerprint}:${selection.pageIndex}:${selection.normalizedSentence}`
     : "";
   const hasSelection = Boolean(selection && selection.pageIndex === pageIndex && selection.rectsOnPage.length > 0);
+  const hasDraftSelection = Boolean(
+    draftSelection && draftSelection.pageIndex === pageIndex && draftSelection.rectsOnPage.length > 0,
+  );
   const locatedPin = pins.find(
     (pin) => pin.id === locatedPinId && pin.pageIndex === pageIndex && pin.rectsOnPage.length > 0,
+  );
+  const highlightedPins = pins.filter(
+    (pin) => pin.highlighted && pin.pageIndex === pageIndex && pin.rectsOnPage.length > 0,
   );
   const selectionPinned = Boolean(
     selection && pins.some((pin) => isSamePinTarget(pin, selection)),
@@ -42,6 +52,10 @@ export function PageOverlayLayer({
   const selectionRects =
     selection && hasSelection
       ? scaleStoredRects(selection, pageWidth, pageHeight)
+      : [];
+  const draftRects =
+    draftSelection && hasDraftSelection
+      ? scaleStoredRects(draftSelection, pageWidth, pageHeight)
       : [];
 
   useEffect(() => {
@@ -81,7 +95,7 @@ export function PageOverlayLayer({
     };
   }, [pageHeight, pageWidth, selectionKey]);
 
-  if (!hasSelection && !locatedPin) {
+  if (!hasSelection && !hasDraftSelection && highlightedPins.length === 0 && !locatedPin) {
     return <div className="pdf-page-overlay" ref={overlayRef} />;
   }
 
@@ -96,6 +110,21 @@ export function PageOverlayLayer({
 
   return (
     <div className="pdf-page-overlay" ref={overlayRef}>
+      {highlightedPins.flatMap((pin) =>
+        scaleStoredRects(pin, pageWidth, pageHeight).map((rect, index) => (
+          <div
+            aria-hidden="true"
+            className="selection-highlight selection-highlight--pinned"
+            key={`${pin.id}-highlighted-${index}`}
+            style={{
+              height: rect.height,
+              left: rect.left,
+              top: rect.top,
+              width: rect.width,
+            }}
+          />
+        )),
+      )}
       {locatedPin
         ? scaleStoredRects(locatedPin, pageWidth, pageHeight).map((rect, index) => (
             <div
@@ -111,7 +140,27 @@ export function PageOverlayLayer({
             />
           ))
         : null}
-      {selection && popoverPlacement ? (
+      {hasDraftSelection ? (
+        <>
+          {draftRects.map((rect, index) => (
+            <div
+              aria-hidden="true"
+              className="selection-highlight selection-highlight--draft"
+              key={`${Math.round(rect.left)}-${Math.round(rect.top)}-draft-${index}`}
+              style={{
+                height: rect.height,
+                left: rect.left,
+                top: rect.top,
+                width: rect.width,
+              }}
+            />
+          ))}
+          <div className="selection-draft-badge" style={getDraftBadgeStyle(draftRects, pageWidth)}>
+            Selecting {countWords(draftSelection?.targetSentence ?? "")} words
+          </div>
+        </>
+      ) : null}
+      {selection && popoverPlacement && !hasDraftSelection ? (
         <>
           {selectionRects.map((rect, index) => (
             <div
@@ -151,6 +200,7 @@ export function PageOverlayLayer({
             }}
             placement={popoverPlacement.placement}
             selection={selection}
+            settings={settings}
             style={popoverPlacement.style}
           />
         </>
@@ -190,6 +240,27 @@ function scaleStoredRects(
   });
 }
 
+function getDraftBadgeStyle(rects: DOMRectLike[], pageWidth: number) {
+  if (rects.length === 0) {
+    return undefined;
+  }
+
+  const bounds = getSelectionBounds(rects);
+  const estimatedBadgeWidth = 142;
+  const top = bounds.top > 34 ? bounds.top - 32 : bounds.bottom + 8;
+
+  return {
+    left: clamp(bounds.left, 8, Math.max(8, pageWidth - estimatedBadgeWidth)),
+    top,
+  };
+}
+
+function countWords(text: string) {
+  const matches = text.match(/[\p{L}\p{N}]+(?:[-‐‑‒'][\p{L}\p{N}]+)*/gu);
+
+  return Math.max(1, matches?.length ?? 0);
+}
+
 function createPinTargetKey(input: {
   normalizedSentence: string;
   pageIndex: number;
@@ -215,4 +286,8 @@ function isSamePinTarget(
   },
 ) {
   return createPinTargetKey(left) === createPinTargetKey(right);
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }

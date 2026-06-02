@@ -1,10 +1,10 @@
-import type { TranslationModel } from "../types/domain";
+import type { SourceLanguage, TargetLanguage, TranslationModel } from "../types/domain";
 
 export type TranslationCacheKeyInput = {
   pdfFingerprint: string;
   normalizedSentence: string;
-  sourceLang: "en";
-  targetLang: "zh";
+  sourceLang: SourceLanguage;
+  targetLang: TargetLanguage;
   model: TranslationModel;
   contextWindowN: number;
   longContextEnabled: boolean;

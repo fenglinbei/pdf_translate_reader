@@ -101,3 +101,19 @@ export async function updatePdfReadingPosition(
 
   return updatedEntry;
 }
+
+export async function deletePdfLocalData(fingerprint: string) {
+  const db = await getAppDb();
+  const [cacheKeys, pinKeys, apiLogKeys] = await Promise.all([
+    db.getAllKeysFromIndex("translationCache", "by-pdf", fingerprint),
+    db.getAllKeysFromIndex("pins", "by-pdf", fingerprint),
+    db.getAllKeysFromIndex("apiLogs", "by-pdf", fingerprint),
+  ]);
+
+  await Promise.all([
+    db.delete("pdfLibrary", fingerprint),
+    ...cacheKeys.map((key) => db.delete("translationCache", key)),
+    ...pinKeys.map((key) => db.delete("pins", key)),
+    ...apiLogKeys.map((key) => db.delete("apiLogs", key)),
+  ]);
+}
