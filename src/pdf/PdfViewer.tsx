@@ -7,7 +7,7 @@ import type {
 import { Check, Minus, Plus, RotateCcw, X } from "lucide-react";
 import { pdfjsLib } from "./pdfjs";
 import type { TextContent } from "pdfjs-dist/types/src/display/api";
-import type { PinWriteInput } from "../pins/pinRepository";
+import type { PinAnnotationInput, PinWriteInput } from "../pins/pinRepository";
 import type {
   AppSettings,
   PaperContext,
@@ -51,6 +51,10 @@ type PdfViewerProps = {
   locateRequest?: PinLocateRequest;
   onActivateTranslationCard: (selection: SentenceSelection) => void;
   onCloseTranslationCard: (selection: SentenceSelection) => void;
+  onCreateAnnotation: (
+    selection: SentenceSelection,
+    annotation: PinAnnotationInput,
+  ) => Promise<void>;
   onPinTranslationCard: (input: TranslationCardPinInput) => void;
   onPinnedTranslationRefresh: (input: PinWriteInput) => void;
   onPinTranslation: (
@@ -147,6 +151,7 @@ export function PdfViewer({
   locateRequest,
   onActivateTranslationCard,
   onCloseTranslationCard,
+  onCreateAnnotation,
   onPageTextReadyForPaperContext,
   onPinTranslationCard,
   onPinnedTranslationRefresh,
@@ -587,13 +592,13 @@ export function PdfViewer({
 
     setQueuedCrossSelections([]);
     if (readerMode === "select") {
-      void copySelectedText(selection);
-      onSentenceSelectionChange(undefined);
+      onSentenceSelectionChange(addPageMetricsToSelection(selection));
       return;
     }
 
     onSentenceSelectionChange(selection);
   }, [
+    addPageMetricsToSelection,
     copySelectedText,
     entry.fingerprint,
     onSentenceSelectionChange,
@@ -767,8 +772,6 @@ export function PdfViewer({
 
         if (selectionMode === "cross") {
           addCrossSelectionPart(selectionWithMetrics);
-        } else if (readerMode === "select") {
-          void copySelectedText(selectionWithMetrics);
         } else {
           onSentenceSelectionChange(selectionWithMetrics);
         }
@@ -848,6 +851,27 @@ export function PdfViewer({
     }
   }, [handleLocatePin, locateRequest]);
 
+  const handleCopySelection = useCallback(
+    (selection: SentenceSelection) => {
+      void copySelectedText(selection);
+      onSentenceSelectionChange(undefined);
+    },
+    [copySelectedText, onSentenceSelectionChange],
+  );
+
+  const handleClearSelection = useCallback(() => {
+    onSentenceSelectionChange(undefined);
+  }, [onSentenceSelectionChange]);
+
+  const handleCreateSelectAnnotation = useCallback(
+    async (selection: SentenceSelection, annotation: PinAnnotationInput) => {
+      await onCreateAnnotation(selection, annotation);
+      showSelectionNotice("Annotation saved.");
+      onSentenceSelectionChange(undefined);
+    },
+    [onCreateAnnotation, onSentenceSelectionChange, showSelectionNotice],
+  );
+
   return (
     <div className="pdf-viewer-shell">
       <div className="pdf-viewer-header">
@@ -864,11 +888,11 @@ export function PdfViewer({
                 {queuedCrossSelections.length} region{queuedCrossSelections.length === 1 ? "" : "s"}
               </span>
               <button
-                aria-label={readerMode === "select" ? "Copy selected regions" : "Translate selected regions"}
+                aria-label={readerMode === "select" ? "Use selected regions" : "Translate selected regions"}
                 className="icon-button icon-button--small icon-button--success"
                 disabled={queuedCrossSelections.length === 0}
                 onClick={handleConfirmCrossSelection}
-                title={readerMode === "select" ? "Copy selected regions" : "Translate selected regions"}
+                title={readerMode === "select" ? "Use selected regions" : "Translate selected regions"}
                 type="button"
               >
                 <Check aria-hidden="true" size={16} strokeWidth={2} />
@@ -945,6 +969,9 @@ export function PdfViewer({
                     key={`${entry.fingerprint}-${page.pageNumber}`}
                     onActivateTranslationCard={onActivateTranslationCard}
                     onCloseTranslationCard={onCloseTranslationCard}
+                    onClearSelection={handleClearSelection}
+                    onCopySelection={handleCopySelection}
+                    onCreateAnnotation={handleCreateSelectAnnotation}
                     onPinTranslationCard={onPinTranslationCard}
                     onPinnedTranslationRefresh={onPinnedTranslationRefresh}
                     onPinTranslation={onPinTranslation}
@@ -957,6 +984,7 @@ export function PdfViewer({
                     paperContext={paperContext}
                     pins={pins}
                     queuedCrossSelections={queuedCrossSelections}
+                    readerMode={readerMode}
                     renderScale={renderPageIndexes.has(page.pageNumber - 1) ? pdfRenderScale : 0}
                     shouldRender={renderPageIndexes.has(page.pageNumber - 1)}
                     textContentCacheRef={textContentCacheRef}
@@ -982,6 +1010,9 @@ const PdfPageView = memo(function PdfPageView({
   locatedPinId,
   onActivateTranslationCard,
   onCloseTranslationCard,
+  onClearSelection,
+  onCopySelection,
+  onCreateAnnotation,
   onPinTranslationCard,
   onPinnedTranslationRefresh,
   onPinTranslation,
@@ -994,6 +1025,7 @@ const PdfPageView = memo(function PdfPageView({
   paperContext,
   pins,
   queuedCrossSelections,
+  readerMode,
   renderScale,
   shouldRender,
   textContentCacheRef,
@@ -1008,6 +1040,12 @@ const PdfPageView = memo(function PdfPageView({
   locatedPinId?: string;
   onActivateTranslationCard: (selection: SentenceSelection) => void;
   onCloseTranslationCard: (selection: SentenceSelection) => void;
+  onClearSelection: () => void;
+  onCopySelection: (selection: SentenceSelection) => void;
+  onCreateAnnotation: (
+    selection: SentenceSelection,
+    annotation: PinAnnotationInput,
+  ) => Promise<void>;
   onPinTranslationCard: (input: TranslationCardPinInput) => void;
   onPinnedTranslationRefresh: (input: PinWriteInput) => void;
   onPinTranslation: (
@@ -1026,6 +1064,7 @@ const PdfPageView = memo(function PdfPageView({
   paperContext?: PaperContext;
   pins: TranslationPin[];
   queuedCrossSelections: SentenceSelection[];
+  readerMode: ReaderMode;
   renderScale: number;
   shouldRender: boolean;
   textContentCacheRef: { current: Map<number, CachedPageText> };
@@ -1199,6 +1238,9 @@ const PdfPageView = memo(function PdfPageView({
             locatedPinId={locatedPinId}
             onActivateTranslationCard={onActivateTranslationCard}
             onCloseTranslationCard={onCloseTranslationCard}
+            onClearSelection={onClearSelection}
+            onCopySelection={onCopySelection}
+            onCreateAnnotation={onCreateAnnotation}
             onPinTranslationCard={onPinTranslationCard}
             onPinnedTranslationRefresh={onPinnedTranslationRefresh}
             onPinTranslation={onPinTranslation}
@@ -1212,6 +1254,7 @@ const PdfPageView = memo(function PdfPageView({
             paperContext={paperContext}
             pins={pins}
             queuedSelections={queuedCrossSelections}
+            readerMode={readerMode}
             draftSelection={draftSelection}
             selection={activeSelection}
             settings={settings}

@@ -3,6 +3,7 @@ export type ReaderMode = "translate" | "select";
 export type SelectionMode = "continuous" | "cross";
 export type SourceLanguage = "en";
 export type TargetLanguage = "zh";
+export type AnnotationColor = "yellow" | "blue" | "green" | "red";
 
 export type DOMRectLike = {
   x: number;
@@ -158,6 +159,9 @@ export type TranslationPin = {
   longContextEnabled: boolean;
   cacheKey?: string;
   highlighted?: boolean;
+  note?: string;
+  color?: AnnotationColor;
+  translationVisible?: boolean;
   promptVersion: string;
   createdAt: number;
   updatedAt: number;

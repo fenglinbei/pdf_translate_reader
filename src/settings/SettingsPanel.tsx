@@ -303,13 +303,13 @@ export function SettingsPanel({
             <ConfirmButton
               disabled={!currentEntry}
               isPending={pendingAction === "clear-current-pins"}
-              label="Clear current PDF favorites"
+              label="Clear current PDF annotations"
               onCancel={() => setPendingAction(undefined)}
               onConfirm={() =>
                 void runConfirmedAction(
                   "clear-current-pins",
                   onClearCurrentPdfPins,
-                  "Current PDF favorites cleared.",
+                  "Current PDF annotations cleared.",
                 )
               }
             />

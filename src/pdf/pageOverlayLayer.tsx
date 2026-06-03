@@ -1,9 +1,18 @@
+import { Check, Copy, StickyNote, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { PinWriteInput } from "../pins/pinRepository";
 import type {
+  CSSProperties,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+  TouchEvent as ReactTouchEvent,
+} from "react";
+import type { PinAnnotationInput, PinWriteInput } from "../pins/pinRepository";
+import type {
+  AnnotationColor,
   AppSettings,
   DOMRectLike,
   PaperContext,
+  ReaderMode,
   SelectionRegion,
   SentenceSelection,
   TranslationPin,
@@ -17,6 +26,17 @@ import type {
 import { TranslationPopover } from "../translation/TranslationPopover";
 import { getPopoverPlacement, getSelectionBounds, type PageGutters } from "./overlayPlacement";
 
+const DEFAULT_ANNOTATION_COLOR: AnnotationColor = "yellow";
+const ANNOTATION_COLORS: Array<{
+  label: string;
+  value: AnnotationColor;
+}> = [
+  { label: "Yellow", value: "yellow" },
+  { label: "Blue", value: "blue" },
+  { label: "Green", value: "green" },
+  { label: "Red", value: "red" },
+];
+
 type PageOverlayLayerProps = {
   activeTranslationCardZIndex: number;
   copyNotice?: string;
@@ -25,6 +45,12 @@ type PageOverlayLayerProps = {
   locatedPinId?: string;
   onActivateTranslationCard: (selection: SentenceSelection) => void;
   onCloseTranslationCard: (selection: SentenceSelection) => void;
+  onClearSelection: () => void;
+  onCopySelection: (selection: SentenceSelection) => void;
+  onCreateAnnotation: (
+    selection: SentenceSelection,
+    annotation: PinAnnotationInput,
+  ) => Promise<void>;
   onPinTranslationCard: (input: TranslationCardPinInput) => void;
   onPinnedTranslationRefresh: (input: PinWriteInput) => void;
   onPinTranslation: (
@@ -42,6 +68,7 @@ type PageOverlayLayerProps = {
   pinnedTranslationCards: PinnedTranslationCard[];
   pins: TranslationPin[];
   queuedSelections?: SentenceSelection[];
+  readerMode: ReaderMode;
   selection?: SentenceSelection;
   settings: AppSettings;
 };
@@ -54,6 +81,9 @@ export function PageOverlayLayer({
   locatedPinId,
   onActivateTranslationCard,
   onCloseTranslationCard,
+  onClearSelection,
+  onCopySelection,
+  onCreateAnnotation,
   onPinTranslationCard,
   onPinnedTranslationRefresh,
   onPinTranslation,
@@ -65,6 +95,7 @@ export function PageOverlayLayer({
   pinnedTranslationCards,
   pins,
   queuedSelections = [],
+  readerMode,
   selection,
   settings,
 }: PageOverlayLayerProps) {
@@ -95,12 +126,15 @@ export function PageOverlayLayer({
   const locatedPin = pins.find(
     (pin) => pin.id === locatedPinId && hasSelectionOnPage(pin, pageIndex),
   );
-  const highlightedPins = pins.filter(
-    (pin) => pin.highlighted && hasSelectionOnPage(pin, pageIndex),
+  const annotationPins = pins.filter(
+    (pin) =>
+      hasSelectionOnPage(pin, pageIndex) &&
+      (pin.highlighted || Boolean(pin.note) || Boolean(pin.color)),
   );
-  const selectionPinned = Boolean(
-    selection && pins.some((pin) => isSamePinTarget(pin, selection)),
-  );
+  const selectionPin = selection
+    ? pins.find((pin) => isSamePinTarget(pin, selection))
+    : undefined;
+  const selectionPinned = Boolean(selectionPin);
   const activePinnedCard = selection
     ? pinnedTranslationCards.find((card) => isSamePinTarget(card.selection, selection))
     : undefined;
@@ -167,7 +201,7 @@ export function PageOverlayLayer({
     !hasDraftSelection &&
     queuedSelectionRects.length === 0 &&
     pinnedTranslationCardsOnPage.length === 0 &&
-    highlightedPins.length === 0 &&
+    annotationPins.length === 0 &&
     !locatedPin
   ) {
     return <div className="pdf-page-overlay" ref={overlayRef} />;
@@ -188,11 +222,11 @@ export function PageOverlayLayer({
 
   return (
     <div className="pdf-page-overlay" ref={overlayRef}>
-      {highlightedPins.flatMap((pin) =>
+      {annotationPins.flatMap((pin) =>
         getSelectionRectsOnPage(pin, pageIndex, pageWidth, pageHeight).map((rect, index) => (
           <div
             aria-hidden="true"
-            className="selection-highlight selection-highlight--pinned"
+            className={`selection-highlight selection-highlight--annotation selection-highlight--annotation-${getAnnotationColor(pin)}`}
             key={`${pin.id}-highlighted-${index}`}
             style={{
               height: rect.height,
@@ -288,52 +322,80 @@ export function PageOverlayLayer({
             />
           ))
         : null}
-      {selection && activePopoverSelection && popoverPlacement && !hasDraftSelection ? (
-        <TranslationPopover
-          isCardPinned={Boolean(activePinnedCard)}
-          isFavorited={selectionPinned}
-          onActivate={() => onActivateTranslationCard(selection)}
-          onCardPin={(view) =>
-            onPinTranslationCard({
-              placement: activePinnedCard?.placement ?? popoverPlacement.placement,
-              selection: activePopoverSelection,
-              style: activePinnedCard?.style ?? popoverPlacement.style,
-              view,
-            })
-          }
-          onClose={() => onCloseTranslationCard(selection)}
-          onFavorite={(payload, action) =>
-            onPinTranslation(
-              {
-                ...payload,
-                pageHeight,
-                pageWidth,
-              },
-              action,
-            )
-          }
-          onTranslationComplete={(payload) =>
-            onPinnedTranslationRefresh({
-              ...payload,
-              pageHeight,
-              pageWidth,
-            })
-          }
-          onViewChange={(viewChange) => onTranslationCardViewChange(selection, viewChange)}
-          pinSelection={{
-            ...activePopoverSelection,
-          }}
-          placement={activePinnedCard?.placement ?? popoverPlacement.placement}
-          paperContext={paperContext}
-          selection={activePopoverSelection}
-          settings={settings}
-          style={activePinnedCard?.style ?? popoverPlacement.style}
-          view={activePinnedCard?.view}
-          zIndex={activePinnedCard?.zIndex ?? activeTranslationCardZIndex}
-        />
-      ) : null}
+      {selection && activePopoverSelection && popoverPlacement && !hasDraftSelection
+        ? readerMode === "select" ? (
+            <SelectActionPopover
+              key={selectionKey}
+              onClose={onClearSelection}
+              onCopy={() => onCopySelection(activePopoverSelection)}
+              onCreateAnnotation={(annotation) =>
+                onCreateAnnotation(activePopoverSelection, annotation)
+              }
+              placement={popoverPlacement.placement}
+              selection={activePopoverSelection}
+              style={popoverPlacement.style}
+            />
+          ) : (
+            <TranslationPopover
+              annotationColor={selectionPin?.color}
+              annotationNote={selectionPin?.note}
+              isCardPinned={Boolean(activePinnedCard)}
+              isFavorited={selectionPinned}
+              onActivate={() => onActivateTranslationCard(selection)}
+              onAnnotationSave={(payload, annotation) =>
+                onPinTranslation(
+                  {
+                    ...payload,
+                    annotation,
+                    pageHeight,
+                    pageWidth,
+                  },
+                  "add",
+                )
+              }
+              onCardPin={(view) =>
+                onPinTranslationCard({
+                  placement: activePinnedCard?.placement ?? popoverPlacement.placement,
+                  selection: activePopoverSelection,
+                  style: activePinnedCard?.style ?? popoverPlacement.style,
+                  view,
+                })
+              }
+              onClose={() => onCloseTranslationCard(selection)}
+              onFavorite={(payload, action) =>
+                onPinTranslation(
+                  {
+                    ...payload,
+                    pageHeight,
+                    pageWidth,
+                  },
+                  action,
+                )
+              }
+              onTranslationComplete={(payload) =>
+                onPinnedTranslationRefresh({
+                  ...payload,
+                  pageHeight,
+                  pageWidth,
+                })
+              }
+              onViewChange={(viewChange) => onTranslationCardViewChange(selection, viewChange)}
+              pinSelection={{
+                ...activePopoverSelection,
+              }}
+              placement={activePinnedCard?.placement ?? popoverPlacement.placement}
+              paperContext={paperContext}
+              selection={activePopoverSelection}
+              settings={settings}
+              style={activePinnedCard?.style ?? popoverPlacement.style}
+              view={activePinnedCard?.view}
+              zIndex={activePinnedCard?.zIndex ?? activeTranslationCardZIndex}
+            />
+          )
+        : null}
       {pinnedTranslationCardsOnPage.map((card) => {
             const cardSelection = card.selection;
+            const cardPin = pins.find((pin) => isSamePinTarget(pin, cardSelection));
             const cardRects = getSelectionRectsOnPage(cardSelection, pageIndex, pageWidth, pageHeight);
             const hydratedCardSelection = hydrateSelectionForCurrentPage(
               cardSelection,
@@ -361,9 +423,22 @@ export function PageOverlayLayer({
                 ))}
                 {shouldShowCardPopover ? (
                   <TranslationPopover
+                    annotationColor={cardPin?.color}
+                    annotationNote={cardPin?.note}
                     isCardPinned={true}
-                    isFavorited={pins.some((pin) => isSamePinTarget(pin, cardSelection))}
+                    isFavorited={Boolean(cardPin)}
                     onActivate={() => onActivateTranslationCard(cardSelection)}
+                    onAnnotationSave={(payload, annotation) =>
+                      onPinTranslation(
+                        {
+                          ...payload,
+                          annotation,
+                          pageHeight,
+                          pageWidth,
+                        },
+                        "add",
+                      )
+                    }
                     onCardPin={(view) =>
                       onPinTranslationCard({
                         placement: card.placement,
@@ -406,6 +481,142 @@ export function PageOverlayLayer({
               </div>
             );
           })}
+    </div>
+  );
+}
+
+function SelectActionPopover({
+  onClose,
+  onCopy,
+  onCreateAnnotation,
+  placement,
+  selection,
+  style,
+}: {
+  onClose: () => void;
+  onCopy: () => void;
+  onCreateAnnotation: (annotation: PinAnnotationInput) => Promise<void>;
+  placement: string;
+  selection: SentenceSelection;
+  style: CSSProperties;
+}) {
+  const [color, setColor] = useState<AnnotationColor>(DEFAULT_ANNOTATION_COLOR);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const [status, setStatus] = useState<"idle" | "saving" | "error">("idle");
+
+  function stopEvent(
+    event:
+      | ReactMouseEvent<HTMLDivElement>
+      | ReactPointerEvent<HTMLDivElement>
+      | ReactTouchEvent<HTMLDivElement>,
+  ) {
+    event.stopPropagation();
+  }
+
+  async function handleSave() {
+    setStatus("saving");
+
+    try {
+      await onCreateAnnotation({
+        color,
+        note,
+      });
+    } catch {
+      setStatus("error");
+    }
+  }
+
+  return (
+    <div
+      className={`select-action-popover select-action-popover--${placement}`}
+      onMouseDown={stopEvent}
+      onMouseUp={stopEvent}
+      onPointerDown={stopEvent}
+      onPointerUp={stopEvent}
+      onTouchEnd={stopEvent}
+      style={style}
+    >
+      {!isEditorOpen ? (
+        <div className="select-action-command-row">
+          <span className="select-action-word-count">{countWords(selection.targetSentence)} words</span>
+          <button
+            className="select-action-command-button"
+            onClick={onCopy}
+            type="button"
+          >
+            <Copy aria-hidden="true" size={15} strokeWidth={2} />
+            <span>Copy</span>
+          </button>
+          <button
+            className="select-action-command-button"
+            onClick={() => setIsEditorOpen(true)}
+            type="button"
+          >
+            <StickyNote aria-hidden="true" size={15} strokeWidth={2} />
+            <span>Note</span>
+          </button>
+          <button
+            aria-label="Close selection actions"
+            className="icon-button icon-button--small pinned-translation-card-action"
+            onClick={onClose}
+            title="Close"
+            type="button"
+          >
+            <X aria-hidden="true" size={16} strokeWidth={2} />
+          </button>
+        </div>
+      ) : (
+        <div className="select-action-note-panel">
+          <div className="select-action-note-toolbar">
+            <div className="translation-popover-label">Note</div>
+            <div className="annotation-color-row" aria-label="Annotation color" role="group">
+              {ANNOTATION_COLORS.map((annotationColor) => (
+                <button
+                  aria-label={`${annotationColor.label} annotation color`}
+                  aria-pressed={color === annotationColor.value}
+                  className={`annotation-color-swatch annotation-color-swatch--${annotationColor.value} ${
+                    color === annotationColor.value ? "annotation-color-swatch--active" : ""
+                  }`}
+                  key={annotationColor.value}
+                  onClick={() => setColor(annotationColor.value)}
+                  title={annotationColor.label}
+                  type="button"
+                />
+              ))}
+            </div>
+            <button
+              aria-label="Save annotation"
+              className="icon-button icon-button--small pinned-translation-card-action"
+              disabled={status === "saving"}
+              onClick={() => void handleSave()}
+              title="Save annotation"
+              type="button"
+            >
+              <Check aria-hidden="true" size={16} strokeWidth={2} />
+            </button>
+            <button
+              aria-label="Close annotation panel"
+              className="icon-button icon-button--small pinned-translation-card-action"
+              onClick={onClose}
+              title="Close"
+              type="button"
+            >
+              <X aria-hidden="true" size={16} strokeWidth={2} />
+            </button>
+          </div>
+          <textarea
+            className="select-action-note-input"
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="Add a note"
+            rows={3}
+            value={note}
+          />
+          {status === "error" ? (
+            <div className="select-action-error">Could not save annotation.</div>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
@@ -531,6 +742,10 @@ function countWords(text: string) {
   const matches = text.match(/[\p{L}\p{N}]+(?:[-‐‑‒'][\p{L}\p{N}]+)*/gu);
 
   return Math.max(1, matches?.length ?? 0);
+}
+
+function getAnnotationColor(pin: TranslationPin) {
+  return pin.color ?? (pin.highlighted ? "green" : "yellow");
 }
 
 function createPinTargetKey(input: {

@@ -1,7 +1,8 @@
-import { Bookmark, Pin, RefreshCw, X } from "lucide-react";
+import { Bookmark, Check, Pin, RefreshCw, StickyNote, X } from "lucide-react";
 import type { CSSProperties, KeyboardEvent, MouseEvent, PointerEvent, TouchEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
+  AnnotationColor,
   AppSettings,
   PaperContext,
   SentenceSelection,
@@ -25,6 +26,7 @@ import { putApiCallLog } from "./apiLogRepository";
 import { getTranslationErrorMessage } from "./errors";
 
 export type TranslationPinPayload = {
+  annotation?: TranslationAnnotationInput;
   cacheKey?: string;
   contextWindowN: number;
   longContextEnabled: boolean;
@@ -36,10 +38,21 @@ export type TranslationPinPayload = {
   translation: string;
 };
 
+export type TranslationAnnotationInput = {
+  color: AnnotationColor;
+  note?: string;
+};
+
 type TranslationPopoverProps = {
+  annotationColor?: AnnotationColor;
+  annotationNote?: string;
   isCardPinned?: boolean;
   isFavorited?: boolean;
   onActivate?: () => void;
+  onAnnotationSave?: (
+    payload: TranslationPinPayload,
+    annotation: TranslationAnnotationInput,
+  ) => Promise<void> | void;
   onCardPin?: (view: FloatingTranslationCardView) => void;
   onClose: () => void;
   onFavorite?: (
@@ -61,6 +74,7 @@ type TranslationPopoverProps = {
 type TranslationStatus = "idle" | "loading" | "streaming" | "success" | "error";
 type TranslationSource = "api" | "cache";
 type FavoriteStatus = "idle" | "saving" | "saved" | "error";
+type AnnotationStatus = "idle" | "saving" | "saved" | "error";
 type DragOffset = {
   x: number;
   y: number;
@@ -88,11 +102,24 @@ const POPOVER_MIN_WIDTH = 260;
 const POPOVER_MAX_WIDTH = 560;
 const POPOVER_MIN_HEIGHT = 220;
 const POPOVER_MAX_HEIGHT = 560;
+const DEFAULT_ANNOTATION_COLOR: AnnotationColor = "yellow";
+const ANNOTATION_COLORS: Array<{
+  label: string;
+  value: AnnotationColor;
+}> = [
+  { label: "Yellow", value: "yellow" },
+  { label: "Blue", value: "blue" },
+  { label: "Green", value: "green" },
+  { label: "Red", value: "red" },
+];
 
 export function TranslationPopover({
+  annotationColor,
+  annotationNote,
   isCardPinned = false,
   isFavorited = false,
   onActivate,
+  onAnnotationSave,
   onCardPin,
   onClose,
   onFavorite,
@@ -114,6 +141,12 @@ export function TranslationPopover({
   const onTranslationCompleteRef = useRef(onTranslationComplete);
   const payloadSelectionRef = useRef(pinSelection ?? selection);
   const favoriteAfterTranslationRef = useRef(false);
+  const [annotationDraft, setAnnotationDraft] = useState<TranslationAnnotationInput>({
+    color: annotationColor ?? DEFAULT_ANNOTATION_COLOR,
+    note: annotationNote ?? "",
+  });
+  const [annotationStatus, setAnnotationStatus] = useState<AnnotationStatus>("idle");
+  const [isAnnotationEditorOpen, setIsAnnotationEditorOpen] = useState(false);
   const [status, setStatus] = useState<TranslationStatus>("idle");
   const [translation, setTranslation] = useState("");
   const [errorMessage, setErrorMessage] = useState<string>();
@@ -185,6 +218,17 @@ export function TranslationPopover({
         : favoriteStatus === "saved"
           ? "idle"
           : favoriteStatus;
+  const savedAnnotationNote = annotationNote ?? "";
+  const savedAnnotationColor = annotationColor ?? DEFAULT_ANNOTATION_COLOR;
+  const hasSavedAnnotation = Boolean(annotationNote?.trim()) || Boolean(annotationColor);
+  const hasAnnotationDraftChanges =
+    (annotationDraft.note ?? "").trim() !== savedAnnotationNote ||
+    annotationDraft.color !== savedAnnotationColor;
+  const canSaveAnnotation =
+    Boolean(onAnnotationSave) &&
+    status === "success" &&
+    translation.trim().length > 0 &&
+    annotationStatus !== "saving";
 
   useEffect(() => {
     onFavoriteRef.current = onFavorite;
@@ -371,11 +415,17 @@ export function TranslationPopover({
 
   useEffect(() => {
     activeRequestRef.current = undefined;
+    setAnnotationDraft({
+      color: annotationColor ?? DEFAULT_ANNOTATION_COLOR,
+      note: annotationNote ?? "",
+    });
+    setAnnotationStatus("idle");
     setDragOffset(view?.dragOffset ?? { x: 0, y: 0 });
+    setIsAnnotationEditorOpen(Boolean(annotationNote?.trim()));
     setPopoverSize(view?.size);
     setFavoriteStatus("idle");
     favoriteAfterTranslationRef.current = false;
-  }, [selectionKey]);
+  }, [annotationColor, annotationNote, selectionKey]);
 
   useEffect(() => {
     if (isFavorited) {
@@ -432,6 +482,38 @@ export function TranslationPopover({
     onFavorite,
     saveFavoritePayload,
     status,
+    translation,
+  ]);
+
+  const handleAnnotationSave = useCallback(async () => {
+    if (!onAnnotationSave || !canSaveAnnotation) {
+      return;
+    }
+
+    setAnnotationStatus("saving");
+    try {
+      const annotation = {
+        color: annotationDraft.color,
+        note: annotationDraft.note,
+      };
+
+      await onAnnotationSave(createPinPayload(translation, activeCacheKey), annotation);
+      setAnnotationDraft({
+        color: annotation.color,
+        note: annotation.note?.trim(),
+      });
+      setAnnotationStatus("saved");
+      setFavoriteStatus("saved");
+    } catch {
+      setAnnotationStatus("error");
+    }
+  }, [
+    activeCacheKey,
+    annotationDraft.color,
+    annotationDraft.note,
+    canSaveAnnotation,
+    createPinPayload,
+    onAnnotationSave,
     translation,
   ]);
 
@@ -616,7 +698,7 @@ export function TranslationPopover({
             <Pin aria-hidden="true" size={16} strokeWidth={2} />
           </button>
           <button
-            aria-label={isFavorited ? "Remove favorite" : "Favorite translation"}
+            aria-label={isFavorited ? "Remove saved annotation" : "Save annotation"}
             aria-pressed={isFavorited}
             className={`icon-button icon-button--small pinned-translation-card-action translation-popover-action ${
               effectiveFavoriteStatus === "saved"
@@ -631,10 +713,27 @@ export function TranslationPopover({
               (!isFavorited && status === "error")
             }
             onClick={handleFavorite}
-            title={isFavorited ? "Remove favorite" : "Favorite"}
+            title={isFavorited ? "Remove annotation" : "Save annotation"}
             type="button"
           >
             <Bookmark aria-hidden="true" size={16} strokeWidth={2} />
+          </button>
+          <button
+            aria-label={isAnnotationEditorOpen ? "Close note editor" : "Open note editor"}
+            aria-pressed={isAnnotationEditorOpen || hasSavedAnnotation}
+            className={`icon-button icon-button--small pinned-translation-card-action translation-popover-action ${
+              annotationStatus === "saved" || hasSavedAnnotation
+                ? "icon-button--success"
+                : annotationStatus === "error"
+                  ? "icon-button--danger"
+                  : ""
+            }`}
+            disabled={!onAnnotationSave}
+            onClick={() => setIsAnnotationEditorOpen((isOpen) => !isOpen)}
+            title={hasSavedAnnotation ? "Edit note" : "Add note"}
+            type="button"
+          >
+            <StickyNote aria-hidden="true" size={16} strokeWidth={2} />
           </button>
           <button
             className="icon-button icon-button--small pinned-translation-card-action translation-popover-action"
@@ -656,12 +755,62 @@ export function TranslationPopover({
       </div>
 
       <div className="translation-popover-content">
-        <div className="translation-popover-section">
-          <div className="translation-popover-label">Translation</div>
-          <div className={`translation-popover-output translation-popover-output--${status}`}>
-            {status === "error" ? errorMessage : translation || "Translating..."}
+          <div className="translation-popover-section">
+            <div className="translation-popover-label">Translation</div>
+            <div className={`translation-popover-output translation-popover-output--${status}`}>
+              {status === "error" ? errorMessage : translation || "Translating..."}
+            </div>
           </div>
-        </div>
+
+        {isAnnotationEditorOpen ? (
+          <div className="translation-popover-section">
+            <div className="translation-popover-annotation-toolbar">
+              <div className="translation-popover-label">Note</div>
+              <div className="annotation-color-row" aria-label="Annotation color" role="group">
+                {ANNOTATION_COLORS.map((color) => (
+                  <button
+                    aria-label={`${color.label} annotation color`}
+                    aria-pressed={annotationDraft.color === color.value}
+                    className={`annotation-color-swatch annotation-color-swatch--${color.value} ${
+                      annotationDraft.color === color.value ? "annotation-color-swatch--active" : ""
+                    }`}
+                    key={color.value}
+                    onClick={() =>
+                      setAnnotationDraft((draft) => ({
+                        ...draft,
+                        color: color.value,
+                      }))
+                    }
+                    title={color.label}
+                    type="button"
+                  />
+                ))}
+              </div>
+              <button
+                aria-label="Save note"
+                className="icon-button icon-button--small pinned-translation-card-action"
+                disabled={!canSaveAnnotation || !hasAnnotationDraftChanges}
+                onClick={() => void handleAnnotationSave()}
+                title="Save note"
+                type="button"
+              >
+                <Check aria-hidden="true" size={16} strokeWidth={2} />
+              </button>
+            </div>
+            <textarea
+              className="translation-popover-note-input"
+              onChange={(event) =>
+                setAnnotationDraft((draft) => ({
+                  ...draft,
+                  note: event.target.value,
+                }))
+              }
+              placeholder="Add a note"
+              rows={3}
+              value={annotationDraft.note ?? ""}
+            />
+          </div>
+        ) : null}
 
         <div className="translation-popover-section">
           <div className="translation-popover-label">Original</div>

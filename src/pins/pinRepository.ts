@@ -1,5 +1,6 @@
 import { getAppDb } from "../cache";
 import type {
+  AnnotationColor,
   SentenceSelection,
   SourceLanguage,
   TargetLanguage,
@@ -7,7 +8,13 @@ import type {
   TranslationPin,
 } from "../types/domain";
 
+export type PinAnnotationInput = {
+  color: AnnotationColor;
+  note?: string;
+};
+
 export type PinWriteInput = {
+  annotation?: PinAnnotationInput;
   cacheKey?: string;
   contextWindowN: number;
   longContextEnabled: boolean;
@@ -19,13 +26,17 @@ export type PinWriteInput = {
   sourceLang: SourceLanguage;
   targetLang: TargetLanguage;
   translation: string;
+  translationVisible?: boolean;
 };
 
 export type PinTranslationUpdateInput = {
   cacheKey?: string;
   model: TranslationModel;
   translation: string;
+  translationVisible?: boolean;
 };
+
+export type PinAnnotationUpdateInput = PinAnnotationInput;
 
 export async function listPinsByPdf(pdfFingerprint: string) {
   const db = await getAppDb();
@@ -49,9 +60,13 @@ export async function putPin(input: PinWriteInput) {
     }));
   const existing = existingPins.find((pin) => pin.id === id) ?? existingPins[0];
   const now = Date.now();
+  const nextNote =
+    input.annotation ? normalizeOptionalText(input.annotation.note) : existing?.note;
+  const hasTranslationInput = input.translation.trim().length > 0;
   const pin: TranslationPin = {
     anchorRegionIndex: input.selection.anchorRegionIndex,
-    cacheKey: input.cacheKey,
+    cacheKey: hasTranslationInput ? input.cacheKey : existing?.cacheKey ?? input.cacheKey,
+    color: input.annotation?.color ?? existing?.color,
     contextWindowN: input.contextWindowN,
     createdAt: existing?.createdAt ?? now,
     highlighted: existing?.highlighted,
@@ -59,7 +74,8 @@ export async function putPin(input: PinWriteInput) {
     localContextAfter: input.selection.localContextAfter,
     localContextBefore: input.selection.localContextBefore,
     longContextEnabled: input.longContextEnabled,
-    model: input.model,
+    model: hasTranslationInput ? input.model : existing?.model ?? input.model,
+    note: nextNote,
     normalizedSentence: input.selection.normalizedSentence,
     pageHeight: input.pageHeight,
     pageIndex: input.selection.pageIndex,
@@ -72,7 +88,10 @@ export async function putPin(input: PinWriteInput) {
     sourceLang: input.sourceLang,
     targetLang: input.targetLang,
     targetSentence: input.selection.targetSentence,
-    translation: input.translation,
+    translation: hasTranslationInput ? input.translation : existing?.translation ?? input.translation,
+    translationVisible:
+      input.translationVisible ??
+      (hasTranslationInput ? true : existing?.translationVisible ?? false),
     updatedAt: now,
   };
 
@@ -84,6 +103,39 @@ export async function putPin(input: PinWriteInput) {
   );
 
   return pin;
+}
+
+export async function updatePinAnnotation(pinId: string, input: PinAnnotationUpdateInput) {
+  const db = await getAppDb();
+  const existing = await db.get("pins", pinId);
+
+  if (!existing) {
+    return undefined;
+  }
+
+  const duplicatePins = (await db.getAllFromIndex("pins", "by-pdf", existing.pdfFingerprint))
+    .filter((pin) => isSamePinTarget(pin, existing));
+  const now = Date.now();
+  const note = normalizeOptionalText(input.note);
+  const updatedPin: TranslationPin = {
+    ...existing,
+    color: input.color,
+    note,
+    updatedAt: now,
+  };
+
+  await Promise.all(
+    duplicatePins.map((pin) =>
+      db.put("pins", {
+        ...pin,
+        color: input.color,
+        note,
+        updatedAt: now,
+      }),
+    ),
+  );
+
+  return updatedPin;
 }
 
 export async function updatePinTranslation(pinId: string, input: PinTranslationUpdateInput) {
@@ -99,6 +151,7 @@ export async function updatePinTranslation(pinId: string, input: PinTranslationU
     cacheKey: input.cacheKey,
     model: input.model,
     translation: input.translation,
+    translationVisible: input.translationVisible ?? true,
     updatedAt: Date.now(),
   };
 
@@ -112,7 +165,38 @@ export async function updatePinTranslation(pinId: string, input: PinTranslationU
         cacheKey: input.cacheKey,
         model: input.model,
         translation: input.translation,
+        translationVisible: input.translationVisible ?? true,
         updatedAt: updatedPin.updatedAt,
+      }),
+    ),
+  );
+
+  return updatedPin;
+}
+
+export async function updatePinTranslationVisibility(pinId: string, translationVisible: boolean) {
+  const db = await getAppDb();
+  const existing = await db.get("pins", pinId);
+
+  if (!existing) {
+    return undefined;
+  }
+
+  const duplicatePins = (await db.getAllFromIndex("pins", "by-pdf", existing.pdfFingerprint))
+    .filter((pin) => isSamePinTarget(pin, existing));
+  const now = Date.now();
+  const updatedPin: TranslationPin = {
+    ...existing,
+    translationVisible,
+    updatedAt: now,
+  };
+
+  await Promise.all(
+    duplicatePins.map((pin) =>
+      db.put("pins", {
+        ...pin,
+        translationVisible,
+        updatedAt: now,
       }),
     ),
   );
@@ -248,4 +332,10 @@ function hashString(value: string) {
   }
 
   return (hash >>> 0).toString(36);
+}
+
+function normalizeOptionalText(value: string | undefined) {
+  const text = value?.trim();
+
+  return text && text.length > 0 ? text : undefined;
 }

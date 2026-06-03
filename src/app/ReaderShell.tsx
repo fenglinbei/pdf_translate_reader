@@ -31,8 +31,10 @@ import {
   deletePinsByPdf,
   listPinsByPdf,
   putPin,
+  updatePinAnnotation,
   updatePinHighlight,
   updatePinTranslation,
+  type PinAnnotationInput,
   type PinWriteInput,
 } from "../pins/pinRepository";
 import { PinnedTranslationsPanel } from "../pins/PinnedTranslationsPanel";
@@ -71,6 +73,7 @@ import {
 } from "../translation/pinnedTranslationCardRepository";
 import { clearTranslationCache } from "../translation/translationRepository";
 import { getStorageErrorMessage } from "../translation/errors";
+import { TRANSLATION_PROMPT_VERSION } from "../translation/defaults";
 import { useApiHealth } from "./useApiHealth";
 
 type PaneResizeState = {
@@ -247,7 +250,7 @@ export function ReaderShell() {
       .catch(() => {
         if (!cancelled) {
           setPins([]);
-          setStatusMessage("Could not read saved favorites for this PDF.");
+          setStatusMessage("Could not read saved annotations for this PDF.");
         }
       });
 
@@ -519,7 +522,7 @@ export function ReaderShell() {
           currentPins.filter((currentPin) => !isSamePinTarget(currentPin, input.selection)),
         );
       } catch (error) {
-        setStatusMessage("Could not remove this favorite.");
+        setStatusMessage("Could not remove this annotation.");
         throw error;
       }
       return;
@@ -530,7 +533,7 @@ export function ReaderShell() {
 
       setPins((currentPins) => upsertPin(currentPins, pin));
     } catch (error) {
-      setStatusMessage("Could not save this favorite.");
+      setStatusMessage("Could not save this annotation.");
       throw error;
     }
   }, []);
@@ -553,8 +556,50 @@ export function ReaderShell() {
         }
       })
       .catch(() => {
-        setStatusMessage("Could not update this favorite.");
+        setStatusMessage("Could not update this annotation.");
       });
+  }, []);
+
+  const handleCreateAnnotation = useCallback(async (
+    selection: SentenceSelection,
+    annotation: PinAnnotationInput,
+  ) => {
+    try {
+      const pin = await putPin({
+        annotation,
+        contextWindowN: settings.contextWindowN,
+        longContextEnabled: settings.longContextEnabled,
+        model: settings.defaultModel,
+        pageHeight: selection.pageHeight,
+        pageWidth: selection.pageWidth,
+        promptVersion: TRANSLATION_PROMPT_VERSION,
+        selection,
+        sourceLang: settings.sourceLang,
+        targetLang: settings.targetLang,
+        translation: "",
+      });
+
+      setPins((currentPins) => upsertPin(currentPins, pin));
+    } catch (error) {
+      setStatusMessage("Could not save annotation.");
+      throw error;
+    }
+  }, [settings]);
+
+  const handlePinAnnotation = useCallback(async (
+    pin: TranslationPin,
+    annotation: PinAnnotationInput,
+  ) => {
+    try {
+      const updatedPin = await updatePinAnnotation(pin.id, annotation);
+
+      if (updatedPin) {
+        setPins((currentPins) => upsertPin(currentPins, updatedPin));
+      }
+    } catch (error) {
+      setStatusMessage("Could not update annotation.");
+      throw error;
+    }
   }, []);
 
   const handlePinUpdated = useCallback((pin: TranslationPin) => {
@@ -569,7 +614,7 @@ export function ReaderShell() {
         }
       })
       .catch(() => {
-        setStatusMessage("Could not update favorite highlight.");
+        setStatusMessage("Could not update annotation highlight.");
       });
   }, []);
 
@@ -579,7 +624,7 @@ export function ReaderShell() {
         setPins((currentPins) => currentPins.filter((currentPin) => !isSamePinTarget(currentPin, pin)));
       })
       .catch(() => {
-        setStatusMessage("Could not remove this favorite.");
+        setStatusMessage("Could not remove this annotation.");
       });
   }, []);
 
@@ -655,7 +700,7 @@ export function ReaderShell() {
 
   const handleClearPins = useCallback(() => {
     void handleClearCurrentPdfPins().catch(() => {
-      setStatusMessage("Could not clear favorites for this PDF.");
+      setStatusMessage("Could not clear annotations for this PDF.");
     });
   }, [handleClearCurrentPdfPins]);
 
@@ -784,11 +829,11 @@ export function ReaderShell() {
             )}
           </button>
           <button
-            aria-label={isPinsPaneOpen ? "Close favorites pane" : "Open favorites pane"}
+            aria-label={isPinsPaneOpen ? "Close annotations pane" : "Open annotations pane"}
             aria-pressed={isPinsPaneOpen}
             className="icon-button"
             onClick={() => setIsPinsPaneOpen((isOpen) => !isOpen)}
-            title={isPinsPaneOpen ? "Close favorites" : "Open favorites"}
+            title={isPinsPaneOpen ? "Close annotations" : "Open annotations"}
             type="button"
           >
             {isPinsPaneOpen ? (
@@ -927,6 +972,7 @@ export function ReaderShell() {
               entry={currentEntry}
               locateRequest={locateRequest}
               onActivateTranslationCard={handleActivateTranslationCard}
+              onCreateAnnotation={handleCreateAnnotation}
               onCloseTranslationCard={handleCloseTranslationCard}
               onPinTranslationCard={handlePinTranslationCard}
               onPinnedTranslationRefresh={handlePinnedTranslationRefresh}
@@ -964,7 +1010,7 @@ export function ReaderShell() {
           )}
         </section>
         <div
-          aria-label="Resize favorites pane"
+          aria-label="Resize annotations pane"
           aria-orientation="vertical"
           className={`pane-resizer pane-resizer--pins ${isPinsPaneOpen ? "" : "pane-resizer--closed"}`}
           aria-hidden={!isPinsPaneOpen}
@@ -973,21 +1019,21 @@ export function ReaderShell() {
           onPointerMove={handlePaneResizeMove}
           onPointerUp={handlePaneResizeEnd}
           role="separator"
-          title="Resize favorites pane"
+          title="Resize annotations pane"
         />
         <aside
           className={`translation-pane ${isPinsPaneOpen ? "" : "pane--closed"}`}
           aria-hidden={!isPinsPaneOpen}
-          aria-label="Favorite translations"
+          aria-label="Annotations"
         >
           <div className="pane-heading-row">
-            <div className="pane-heading">Favorites</div>
+            <div className="pane-heading">Annotations</div>
             <div className="pins-clear-actions">
               <button
-                aria-label="Close favorites pane"
+                aria-label="Close annotations pane"
                 className="icon-button icon-button--small"
                 onClick={() => setIsPinsPaneOpen(false)}
-                title="Close favorites"
+                title="Close annotations"
                 type="button"
               >
                 <PanelRightClose aria-hidden="true" size={16} strokeWidth={2} />
@@ -995,16 +1041,16 @@ export function ReaderShell() {
               {pins.length > 0 && isConfirmingClearPins ? (
                 <>
                   <button
-                    aria-label="Confirm clear all favorites"
+                    aria-label="Confirm clear all annotations"
                     className="icon-button icon-button--small icon-button--success"
                     onClick={handleClearPins}
-                    title="Confirm clear all favorites"
+                    title="Confirm clear all annotations"
                     type="button"
                   >
                     <Check aria-hidden="true" size={16} strokeWidth={2} />
                   </button>
                   <button
-                    aria-label="Cancel clear all favorites"
+                    aria-label="Cancel clear all annotations"
                     className="icon-button icon-button--small icon-button--danger"
                     onClick={() => setIsConfirmingClearPins(false)}
                     title="Cancel"
@@ -1016,10 +1062,10 @@ export function ReaderShell() {
               ) : null}
               {pins.length > 0 && !isConfirmingClearPins ? (
                 <button
-                  aria-label="Clear all favorites"
+                  aria-label="Clear all annotations"
                   className="icon-button icon-button--small"
                   onClick={() => setIsConfirmingClearPins(true)}
-                  title="Clear all favorites"
+                  title="Clear all annotations"
                   type="button"
                 >
                   <Trash2 aria-hidden="true" size={16} strokeWidth={2} />
@@ -1029,10 +1075,11 @@ export function ReaderShell() {
           </div>
           {pins.length > 0 ? (
             <div className="pins-pane-summary">
-              {pins.length} favorite translation{pins.length === 1 ? "" : "s"}
+              {pins.length} saved annotation{pins.length === 1 ? "" : "s"}
             </div>
           ) : null}
           <PinnedTranslationsPanel
+            onAnnotationChange={handlePinAnnotation}
             onHighlightPin={handlePinHighlight}
             onLocatePin={handleLocatePin}
             onPinUpdated={handlePinUpdated}

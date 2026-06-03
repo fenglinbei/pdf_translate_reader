@@ -860,9 +860,25 @@ button {
     0 0 0 2px rgba(124, 58, 237, 0.08);
 }
 
-.selection-highlight--pinned {
+.selection-highlight--pinned,
+.selection-highlight--annotation-green {
   background: rgba(31, 138, 91, 0.16);
   box-shadow: inset 0 0 0 1px rgba(31, 138, 91, 0.28);
+}
+
+.selection-highlight--annotation-yellow {
+  background: rgba(245, 190, 59, 0.24);
+  box-shadow: inset 0 0 0 1px rgba(199, 130, 18, 0.38);
+}
+
+.selection-highlight--annotation-blue {
+  background: rgba(37, 99, 235, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.3);
+}
+
+.selection-highlight--annotation-red {
+  background: rgba(220, 67, 56, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(194, 65, 58, 0.32);
 }
 
 .selection-highlight--copied {
@@ -904,6 +920,101 @@ button {
   font-weight: 780;
   line-height: 1.2;
   white-space: nowrap;
+}
+
+.select-action-popover {
+  position: absolute;
+  display: grid;
+  min-width: 224px;
+  max-width: min(320px, 72vw);
+  padding: 8px;
+  border: 1px solid rgba(184, 192, 204, 0.92);
+  border-radius: 8px;
+  color: var(--text);
+  background: rgba(255, 253, 250, 0.98);
+  box-shadow: 0 16px 36px rgba(23, 32, 45, 0.2);
+  pointer-events: auto;
+}
+
+.select-action-command-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.select-action-word-count {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 720;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-action-command-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 740;
+  cursor: pointer;
+}
+
+.select-action-command-button:hover,
+.select-action-command-button:focus-visible {
+  border-color: #b8cffd;
+  color: var(--accent-strong);
+  outline: 0;
+}
+
+.select-action-note-panel {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.select-action-note-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.select-action-note-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 84px;
+  padding: 8px;
+  resize: vertical;
+  border: 1px solid #d9dde5;
+  border-radius: 7px;
+  color: var(--text);
+  background: #ffffff;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.42;
+  overflow-wrap: anywhere;
+}
+
+.select-action-note-input:focus {
+  border-color: #b8cffd;
+  outline: 3px solid rgba(37, 99, 235, 0.16);
+}
+
+.select-action-error {
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.32;
 }
 
 .selection-highlight--located {
@@ -986,6 +1097,7 @@ button {
   white-space: nowrap;
 }
 
+.pinned-translation-card-source-block,
 .pinned-translation-card-source,
 .pinned-translation-card-output,
 .pinned-translation-card-error {
@@ -993,10 +1105,23 @@ button {
   overflow-wrap: anywhere;
 }
 
+.pinned-translation-card-source-block {
+  display: grid;
+  gap: 5px;
+}
+
 .pinned-translation-card-source {
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.38;
+}
+
+.pinned-translation-card-source-actions {
+  display: flex;
+  align-items: center;
+  justify-content: end;
+  gap: 0;
+  min-width: 0;
 }
 
 .pinned-translation-card-output {
@@ -1024,6 +1149,100 @@ button {
   background: #fff0ee;
   font-size: 12px;
   line-height: 1.38;
+}
+
+.pinned-annotation-editor {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.pinned-annotation-editor-toolbar,
+.translation-popover-annotation-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.annotation-color-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: max-content;
+}
+
+.annotation-color-swatch {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid rgba(103, 112, 122, 0.24);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.annotation-color-swatch--yellow {
+  background: #f5be3b;
+}
+
+.annotation-color-swatch--blue {
+  background: #4d7ee8;
+}
+
+.annotation-color-swatch--green {
+  background: #35a46c;
+}
+
+.annotation-color-swatch--red {
+  background: #dc4338;
+}
+
+.annotation-color-swatch--active {
+  border-color: rgba(24, 32, 42, 0.72);
+  box-shadow:
+    0 0 0 2px rgba(255, 253, 250, 0.96),
+    0 0 0 4px rgba(24, 32, 42, 0.18);
+}
+
+.annotation-color-swatch:hover,
+.annotation-color-swatch:focus-visible {
+  border-color: rgba(24, 32, 42, 0.64);
+  outline: 0;
+  transform: translateY(-1px);
+}
+
+.pinned-annotation-note-input,
+.translation-popover-note-input {
+  width: 100%;
+  min-width: 0;
+  resize: vertical;
+  border: 1px solid #d9dde5;
+  border-radius: 7px;
+  color: var(--text);
+  background: #ffffff;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.42;
+  overflow-wrap: anywhere;
+}
+
+.pinned-annotation-note-input {
+  min-height: 74px;
+  padding: 8px;
+}
+
+.translation-popover-note-input {
+  min-height: 82px;
+  padding: 10px;
+}
+
+.pinned-annotation-note-input:focus,
+.translation-popover-note-input:focus {
+  border-color: #b8cffd;
+  outline: 3px solid rgba(37, 99, 235, 0.16);
 }
 
 .translation-popover {
