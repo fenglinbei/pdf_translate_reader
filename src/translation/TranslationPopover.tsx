@@ -1,8 +1,9 @@
-import { Pin, RefreshCw, X } from "lucide-react";
+import { Bookmark, Pin, RefreshCw, X } from "lucide-react";
 import type { CSSProperties, KeyboardEvent, MouseEvent, PointerEvent, TouchEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AppSettings,
+  PaperContext,
   SentenceSelection,
   SourceLanguage,
   TargetLanguage,
@@ -14,6 +15,14 @@ import { createTranslationCacheKey } from "./cacheKey";
 import { TRANSLATION_PROMPT_VERSION } from "./defaults";
 import { streamTranslation } from "./translationClient";
 import { getTranslationCacheEntry, putTranslationCacheEntry } from "./translationRepository";
+import type {
+  FloatingTranslationCardView,
+  TranslationCardPlacement,
+  TranslationFavoriteAction,
+  TranslationCardViewChange,
+} from "./floatingCardTypes";
+import { putApiCallLog } from "./apiLogRepository";
+import { getTranslationErrorMessage } from "./errors";
 
 export type TranslationPinPayload = {
   cacheKey?: string;
@@ -28,20 +37,30 @@ export type TranslationPinPayload = {
 };
 
 type TranslationPopoverProps = {
-  isPinned?: boolean;
+  isCardPinned?: boolean;
+  isFavorited?: boolean;
+  onActivate?: () => void;
+  onCardPin?: (view: FloatingTranslationCardView) => void;
   onClose: () => void;
-  onPin?: (payload: TranslationPinPayload) => Promise<void> | void;
+  onFavorite?: (
+    payload: TranslationPinPayload,
+    action: TranslationFavoriteAction,
+  ) => Promise<void> | void;
   onTranslationComplete?: (payload: TranslationPinPayload) => void;
+  onViewChange?: (viewChange: TranslationCardViewChange) => void;
   pinSelection?: SentenceSelection;
-  placement: "above" | "below" | "left" | "right";
+  placement: TranslationCardPlacement;
+  paperContext?: PaperContext;
   selection: SentenceSelection;
   settings: AppSettings;
   style: CSSProperties;
+  view?: FloatingTranslationCardView;
+  zIndex?: number;
 };
 
 type TranslationStatus = "idle" | "loading" | "streaming" | "success" | "error";
 type TranslationSource = "api" | "cache";
-type PinStatus = "idle" | "saving" | "saved" | "error";
+type FavoriteStatus = "idle" | "saving" | "saved" | "error";
 type DragOffset = {
   x: number;
   y: number;
@@ -71,30 +90,37 @@ const POPOVER_MIN_HEIGHT = 220;
 const POPOVER_MAX_HEIGHT = 560;
 
 export function TranslationPopover({
-  isPinned = false,
+  isCardPinned = false,
+  isFavorited = false,
+  onActivate,
+  onCardPin,
   onClose,
-  onPin,
+  onFavorite,
   onTranslationComplete,
+  onViewChange,
   pinSelection,
   placement,
+  paperContext,
   selection,
   settings,
   style,
+  view,
+  zIndex,
 }: TranslationPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController>();
   const activeRequestRef = useRef<TranslationRequest>();
-  const onPinRef = useRef(onPin);
+  const onFavoriteRef = useRef(onFavorite);
   const onTranslationCompleteRef = useRef(onTranslationComplete);
   const payloadSelectionRef = useRef(pinSelection ?? selection);
-  const pinAfterTranslationRef = useRef(false);
+  const favoriteAfterTranslationRef = useRef(false);
   const [status, setStatus] = useState<TranslationStatus>("idle");
   const [translation, setTranslation] = useState("");
   const [errorMessage, setErrorMessage] = useState<string>();
   const [usage, setUsage] = useState<TokenUsage>();
   const [translationSource, setTranslationSource] = useState<TranslationSource>();
   const [activeCacheKey, setActiveCacheKey] = useState<string>();
-  const [pinStatus, setPinStatus] = useState<PinStatus>("idle");
+  const [favoriteStatus, setFavoriteStatus] = useState<FavoriteStatus>("idle");
   const [dragOffset, setDragOffset] = useState<DragOffset>({ x: 0, y: 0 });
   const [popoverSize, setPopoverSize] = useState<PopoverSize>();
   const dragStateRef = useRef<DragState>();
@@ -113,6 +139,7 @@ export function TranslationPopover({
         contextWindowN === 0 ? [] : selection.localContextBefore.slice(-contextWindowN),
       longContextEnabled: settings.longContextEnabled,
       model: settings.defaultModel,
+      paperContext: settings.longContextEnabled ? paperContext : undefined,
       pdfFingerprint: selection.pdfFingerprint,
       promptVersion: TRANSLATION_PROMPT_VERSION,
       sourceLang: settings.sourceLang,
@@ -125,6 +152,7 @@ export function TranslationPopover({
     selection.localContextBefore,
     selection.pdfFingerprint,
     selection.targetSentence,
+    paperContext,
     settings.contextWindowN,
     settings.defaultModel,
     settings.longContextEnabled,
@@ -149,31 +177,40 @@ export function TranslationPopover({
     }),
     [createRequest],
   );
-  const effectivePinStatus: PinStatus = isPinned
-    ? "saved"
-    : pinStatus === "saved"
-      ? "idle"
-      : pinStatus;
+  const effectiveFavoriteStatus: FavoriteStatus =
+    favoriteStatus === "saving" || favoriteStatus === "error"
+      ? favoriteStatus
+      : isFavorited
+        ? "saved"
+        : favoriteStatus === "saved"
+          ? "idle"
+          : favoriteStatus;
 
   useEffect(() => {
-    onPinRef.current = onPin;
+    onFavoriteRef.current = onFavorite;
     onTranslationCompleteRef.current = onTranslationComplete;
     payloadSelectionRef.current = pinSelection ?? selection;
-  }, [onPin, onTranslationComplete, pinSelection, selection]);
+  }, [onFavorite, onTranslationComplete, pinSelection, selection]);
 
-  const savePinPayload = useCallback(async (payload: TranslationPinPayload) => {
-    if (!onPinRef.current) {
-      return;
-    }
+  const saveFavoritePayload = useCallback(
+    async (
+      payload: TranslationPinPayload,
+      action: TranslationFavoriteAction = "add",
+    ) => {
+      if (!onFavoriteRef.current) {
+        return;
+      }
 
-    setPinStatus("saving");
-    try {
-      await onPinRef.current(payload);
-      setPinStatus("saved");
-    } catch {
-      setPinStatus("error");
-    }
-  }, []);
+      setFavoriteStatus("saving");
+      try {
+        await onFavoriteRef.current(payload, action);
+        setFavoriteStatus(action === "add" ? "saved" : "idle");
+      } catch {
+        setFavoriteStatus("error");
+      }
+    },
+    [],
+  );
 
   const startTranslation = useCallback(
     (options: { bypassCache?: boolean } = {}) => {
@@ -201,9 +238,11 @@ export function TranslationPopover({
       setUsage(undefined);
       setTranslationSource(undefined);
       setActiveCacheKey(cacheKey);
-      setPinStatus("idle");
-      pinAfterTranslationRef.current = false;
+      setFavoriteStatus("idle");
+      favoriteAfterTranslationRef.current = false;
       activeRequestRef.current = request;
+      let apiRequestStartedAt: number | undefined;
+      let streamedUsage: TokenUsage | undefined;
 
       void (async () => {
         if (!options.bypassCache) {
@@ -218,18 +257,18 @@ export function TranslationPopover({
             setUsage(cachedEntry.usage);
             setTranslationSource("cache");
             setStatus("success");
-            if (pinAfterTranslationRef.current) {
-              pinAfterTranslationRef.current = false;
-              await savePinPayload(createPinPayload(cachedEntry.translation, cacheKey, request));
+            if (favoriteAfterTranslationRef.current) {
+              favoriteAfterTranslationRef.current = false;
+              await saveFavoritePayload(createPinPayload(cachedEntry.translation, cacheKey, request));
             }
             return;
           }
         }
 
         let streamedTranslation = "";
-        let streamedUsage: TokenUsage | undefined;
 
         setTranslationSource("api");
+        apiRequestStartedAt = Date.now();
         await streamTranslation(
           request,
           {
@@ -247,8 +286,27 @@ export function TranslationPopover({
         );
 
         if (abortController.signal.aborted) {
+          await putApiCallLog({
+            request,
+            requestFinishedAt: Date.now(),
+            requestStartedAt: apiRequestStartedAt,
+            status: "aborted",
+            usage: streamedUsage,
+          }).catch(() => undefined);
           return;
         }
+
+        if (streamedTranslation.trim().length === 0) {
+          throw new Error("Translation returned no text.");
+        }
+
+        await putApiCallLog({
+          request,
+          requestFinishedAt: Date.now(),
+          requestStartedAt: apiRequestStartedAt,
+          status: "success",
+          usage: streamedUsage,
+        }).catch(() => undefined);
 
         setStatus("success");
 
@@ -268,44 +326,66 @@ export function TranslationPopover({
             usage: streamedUsage,
           }).catch(() => undefined);
           onTranslationCompleteRef.current?.(createPinPayload(streamedTranslation, cacheKey, request));
-          if (pinAfterTranslationRef.current) {
-            pinAfterTranslationRef.current = false;
-            await savePinPayload(createPinPayload(streamedTranslation, cacheKey, request));
+          if (favoriteAfterTranslationRef.current) {
+            favoriteAfterTranslationRef.current = false;
+            await saveFavoritePayload(createPinPayload(streamedTranslation, cacheKey, request));
           }
         }
       })().catch((error) => {
+        const errorMessage = getTranslationErrorMessage(error);
+
         if (abortController.signal.aborted) {
+          if (apiRequestStartedAt) {
+            void putApiCallLog({
+              errorMessage,
+              request,
+              requestFinishedAt: Date.now(),
+              requestStartedAt: apiRequestStartedAt,
+              status: "aborted",
+              usage: streamedUsage,
+            }).catch(() => undefined);
+          }
           return;
         }
 
         setStatus("error");
-        if (pinAfterTranslationRef.current) {
-          pinAfterTranslationRef.current = false;
-          setPinStatus("error");
+        if (favoriteAfterTranslationRef.current) {
+          favoriteAfterTranslationRef.current = false;
+          setFavoriteStatus("error");
         }
-        setErrorMessage(error instanceof Error ? error.message : "Translation failed.");
+        if (apiRequestStartedAt) {
+          void putApiCallLog({
+            errorMessage,
+            request,
+            requestFinishedAt: Date.now(),
+            requestStartedAt: apiRequestStartedAt,
+            status: "error",
+            usage: streamedUsage,
+          }).catch(() => undefined);
+        }
+        setErrorMessage(errorMessage);
       });
     },
-    [createPinPayload, createRequest, savePinPayload, selection.normalizedSentence],
+    [createPinPayload, createRequest, saveFavoritePayload, selection.normalizedSentence],
   );
 
   useEffect(() => {
     activeRequestRef.current = undefined;
-    setDragOffset({ x: 0, y: 0 });
-    setPopoverSize(undefined);
-    setPinStatus("idle");
-    pinAfterTranslationRef.current = false;
+    setDragOffset(view?.dragOffset ?? { x: 0, y: 0 });
+    setPopoverSize(view?.size);
+    setFavoriteStatus("idle");
+    favoriteAfterTranslationRef.current = false;
   }, [selectionKey]);
 
   useEffect(() => {
-    if (isPinned) {
-      pinAfterTranslationRef.current = false;
-      setPinStatus("saved");
+    if (isFavorited) {
+      favoriteAfterTranslationRef.current = false;
+      setFavoriteStatus("saved");
       return;
     }
 
-    setPinStatus((currentStatus) => (currentStatus === "saved" ? "idle" : currentStatus));
-  }, [isPinned, selectionKey]);
+    setFavoriteStatus((currentStatus) => (currentStatus === "saved" ? "idle" : currentStatus));
+  }, [isFavorited, selectionKey]);
 
   useEffect(() => {
     startTranslation();
@@ -319,30 +399,52 @@ export function TranslationPopover({
     event.stopPropagation();
   }, []);
 
-  const handlePin = useCallback(() => {
-    if (!onPin || isPinned || pinStatus === "saving" || status === "error") {
+  const handleCardPin = useCallback(() => {
+    onCardPin?.({
+      dragOffset,
+      size: popoverSize,
+    });
+  }, [dragOffset, onCardPin, popoverSize]);
+
+  const handleFavorite = useCallback(() => {
+    if (!onFavorite || favoriteStatus === "saving" || (!isFavorited && status === "error")) {
+      return;
+    }
+
+    if (isFavorited) {
+      favoriteAfterTranslationRef.current = false;
+      void saveFavoritePayload(createPinPayload(translation, activeCacheKey), "remove");
       return;
     }
 
     if (status === "success" && translation.trim().length > 0) {
-      void savePinPayload(createPinPayload(translation, activeCacheKey));
+      void saveFavoritePayload(createPinPayload(translation, activeCacheKey));
       return;
     }
 
-    pinAfterTranslationRef.current = true;
-    setPinStatus("saving");
-  }, [activeCacheKey, createPinPayload, isPinned, onPin, pinStatus, savePinPayload, status, translation]);
+    favoriteAfterTranslationRef.current = true;
+    setFavoriteStatus("saving");
+  }, [
+    activeCacheKey,
+    createPinPayload,
+    favoriteStatus,
+    isFavorited,
+    onFavorite,
+    saveFavoritePayload,
+    status,
+    translation,
+  ]);
 
-  const handlePinPointerDown = useCallback(
+  const handleCardPinPointerDown = useCallback(
     (event: PointerEvent<HTMLButtonElement>) => {
       event.stopPropagation();
       event.preventDefault();
-      handlePin();
+      handleCardPin();
     },
-    [handlePin],
+    [handleCardPin],
   );
 
-  const handlePinKeyDown = useCallback(
+  const handleCardPinKeyDown = useCallback(
     (event: KeyboardEvent<HTMLButtonElement>) => {
       if (event.key !== "Enter" && event.key !== " ") {
         return;
@@ -350,9 +452,9 @@ export function TranslationPopover({
 
       event.stopPropagation();
       event.preventDefault();
-      handlePin();
+      handleCardPin();
     },
-    [handlePin],
+    [handleCardPin],
   );
 
   const handleDragStart = useCallback(
@@ -383,11 +485,14 @@ export function TranslationPopover({
       return;
     }
 
-    setDragOffset({
+    const nextDragOffset = {
       x: dragState.baseX + event.clientX - dragState.startX,
       y: dragState.baseY + event.clientY - dragState.startY,
-    });
-  }, []);
+    };
+
+    setDragOffset(nextDragOffset);
+    onViewChange?.({ dragOffset: nextDragOffset });
+  }, [onViewChange]);
 
   const handleDragEnd = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (dragStateRef.current?.pointerId === event.pointerId) {
@@ -421,7 +526,7 @@ export function TranslationPopover({
       return;
     }
 
-    setPopoverSize({
+    const nextPopoverSize = {
       height: clamp(
         resizeState.startHeight + event.clientY - resizeState.startY,
         POPOVER_MIN_HEIGHT,
@@ -432,9 +537,12 @@ export function TranslationPopover({
         POPOVER_MIN_WIDTH,
         POPOVER_MAX_WIDTH,
       ),
-    });
+    };
+
+    setPopoverSize(nextPopoverSize);
+    onViewChange?.({ size: nextPopoverSize });
     event.preventDefault();
-  }, []);
+  }, [onViewChange]);
 
   const handleResizeEnd = useCallback((event: PointerEvent<HTMLButtonElement>) => {
     if (resizeStateRef.current?.pointerId === event.pointerId) {
@@ -455,15 +563,18 @@ export function TranslationPopover({
           }
         : undefined),
       transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)`,
+      ...(typeof zIndex === "number" ? { zIndex } : undefined),
     }),
-    [dragOffset.x, dragOffset.y, popoverSize, style],
+    [dragOffset.x, dragOffset.y, popoverSize, style, zIndex],
   );
 
   return (
     <div
       className={`translation-popover translation-popover--${placement}`}
+      onFocusCapture={onActivate}
       onMouseDown={stopEvent}
       onMouseUp={stopEvent}
+      onPointerDownCapture={onActivate}
       onPointerDown={stopEvent}
       onPointerUp={stopEvent}
       ref={popoverRef}
@@ -491,17 +602,42 @@ export function TranslationPopover({
       />
       <div className="translation-popover-toolbar translation-popover-toolbar--actions-only">
         <div className="translation-popover-actions">
-          {effectivePinStatus !== "idle" ? (
-            <span className={`translation-popover-pin-chip translation-popover-pin-chip--${effectivePinStatus}`}>
-              {effectivePinStatus === "saving"
-                ? "Saving"
-                : effectivePinStatus === "saved"
-                  ? "Pinned"
-                  : "Failed"}
-            </span>
-          ) : null}
           <button
-            className="icon-button icon-button--small"
+            aria-label={isCardPinned ? "Unpin translation card" : "Pin translation card"}
+            aria-pressed={isCardPinned}
+            className={`icon-button icon-button--small pinned-translation-card-action translation-popover-action ${
+              isCardPinned ? "icon-button--success" : ""
+            }`}
+            onKeyDown={handleCardPinKeyDown}
+            onPointerDown={handleCardPinPointerDown}
+            title={isCardPinned ? "Unpin" : "Pin"}
+            type="button"
+          >
+            <Pin aria-hidden="true" size={16} strokeWidth={2} />
+          </button>
+          <button
+            aria-label={isFavorited ? "Remove favorite" : "Favorite translation"}
+            aria-pressed={isFavorited}
+            className={`icon-button icon-button--small pinned-translation-card-action translation-popover-action ${
+              effectiveFavoriteStatus === "saved"
+                ? "icon-button--success"
+                : effectiveFavoriteStatus === "error"
+                  ? "icon-button--danger"
+                  : ""
+            }`}
+            disabled={
+              !onFavorite ||
+              effectiveFavoriteStatus === "saving" ||
+              (!isFavorited && status === "error")
+            }
+            onClick={handleFavorite}
+            title={isFavorited ? "Remove favorite" : "Favorite"}
+            type="button"
+          >
+            <Bookmark aria-hidden="true" size={16} strokeWidth={2} />
+          </button>
+          <button
+            className="icon-button icon-button--small pinned-translation-card-action translation-popover-action"
             onClick={() => startTranslation({ bypassCache: true })}
             title="Retranslate"
             type="button"
@@ -509,28 +645,7 @@ export function TranslationPopover({
             <RefreshCw aria-hidden="true" size={16} strokeWidth={2} />
           </button>
           <button
-            className={`icon-button icon-button--small ${
-              effectivePinStatus === "saved"
-                ? "icon-button--success"
-                : effectivePinStatus === "error"
-                  ? "icon-button--danger"
-                  : ""
-            }`}
-            disabled={
-              !onPin ||
-              status === "error" ||
-              effectivePinStatus === "saving" ||
-              effectivePinStatus === "saved"
-            }
-            onKeyDown={handlePinKeyDown}
-            onPointerDown={handlePinPointerDown}
-            title={effectivePinStatus === "saved" ? "Pinned" : "Pin"}
-            type="button"
-          >
-            <Pin aria-hidden="true" size={16} strokeWidth={2} />
-          </button>
-          <button
-            className="icon-button icon-button--small"
+            className="icon-button icon-button--small pinned-translation-card-action translation-popover-action"
             onClick={onClose}
             title="Close"
             type="button"
@@ -542,15 +657,15 @@ export function TranslationPopover({
 
       <div className="translation-popover-content">
         <div className="translation-popover-section">
-          <div className="translation-popover-label">Original</div>
-          <div className="translation-popover-source">{selection.targetSentence}</div>
-        </div>
-
-        <div className="translation-popover-section">
           <div className="translation-popover-label">Translation</div>
           <div className={`translation-popover-output translation-popover-output--${status}`}>
             {status === "error" ? errorMessage : translation || "Translating..."}
           </div>
+        </div>
+
+        <div className="translation-popover-section">
+          <div className="translation-popover-label">Original</div>
+          <div className="translation-popover-source">{selection.targetSentence}</div>
         </div>
 
         {usage || translationSource === "cache" ? (

@@ -11,7 +11,11 @@ export async function listPdfLibraryEntries() {
 
   return entries
     .filter((entry) => !entry.deletedAt && entry.blob instanceof Blob)
-    .sort((left, right) => right.lastOpenedAt - left.lastOpenedAt);
+    .sort((left, right) => left.fileName.localeCompare(
+      right.fileName,
+      undefined,
+      { numeric: true, sensitivity: "base" },
+    ));
 }
 
 export async function getPdfLibraryEntry(fingerprint: string) {
@@ -104,16 +108,17 @@ export async function updatePdfReadingPosition(
 
 export async function deletePdfLocalData(fingerprint: string) {
   const db = await getAppDb();
-  const [cacheKeys, pinKeys, apiLogKeys] = await Promise.all([
-    db.getAllKeysFromIndex("translationCache", "by-pdf", fingerprint),
+  const [pinKeys, apiLogKeys, pinnedTranslationCardKeys] = await Promise.all([
     db.getAllKeysFromIndex("pins", "by-pdf", fingerprint),
     db.getAllKeysFromIndex("apiLogs", "by-pdf", fingerprint),
+    db.getAllKeysFromIndex("pinnedTranslationCards", "by-pdf", fingerprint),
   ]);
 
   await Promise.all([
     db.delete("pdfLibrary", fingerprint),
-    ...cacheKeys.map((key) => db.delete("translationCache", key)),
+    db.delete("paperContexts", fingerprint),
     ...pinKeys.map((key) => db.delete("pins", key)),
     ...apiLogKeys.map((key) => db.delete("apiLogs", key)),
+    ...pinnedTranslationCardKeys.map((key) => db.delete("pinnedTranslationCards", key)),
   ]);
 }

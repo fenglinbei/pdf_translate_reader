@@ -1,24 +1,27 @@
 import { getAppDb } from "../cache";
-import type { ApiCallLog, AppSettings } from "../types/domain";
+import { PROJECT_CONFIG } from "../config/projectConfig";
+import type { ApiCallLog, AppSettings, TranslationModel } from "../types/domain";
 
 const APP_SETTINGS_KEY = "app";
-export const MAX_DRAGGED_WORDS_LIMIT = 256;
-export const MIN_DRAGGED_WORDS_LIMIT = 1;
+export const MAX_DRAGGED_WORDS_LIMIT = PROJECT_CONFIG.selection.maxDraggedWordsLimit;
+export const MIN_DRAGGED_WORDS_LIMIT = PROJECT_CONFIG.selection.minDraggedWordsLimit;
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   contextWindowN: 2,
   defaultModel: "deepseek-v4-flash",
   longContextEnabled: true,
-  maxDraggedWords: 128,
+  maxDraggedWords: PROJECT_CONFIG.selection.defaultMaxDraggedWords,
   sourceLang: "en",
   targetLang: "zh",
 };
 
 export type ApiUsageSummary = {
+  abortedCalls: number;
   cacheHitTokens: number;
   cacheMissTokens: number;
   completionTokens: number;
   errorCalls: number;
+  modelCounts: Record<TranslationModel, number>;
   promptTokens: number;
   recentLogs: ApiCallLog[];
   successfulCalls: number;
@@ -98,10 +101,15 @@ function summarizeApiLogs(logs: ApiCallLog[]): ApiUsageSummary {
     .slice(0, 6);
 
   return {
+    abortedCalls: logs.filter((log) => log.status === "aborted").length,
     cacheHitTokens: sum(logs, "promptCacheHitTokens"),
     cacheMissTokens: sum(logs, "promptCacheMissTokens"),
     completionTokens: sum(logs, "completionTokens"),
     errorCalls: logs.filter((log) => log.status === "error").length,
+    modelCounts: {
+      "deepseek-v4-flash": logs.filter((log) => log.model === "deepseek-v4-flash").length,
+      "deepseek-v4-pro": logs.filter((log) => log.model === "deepseek-v4-pro").length,
+    },
     promptTokens: sum(logs, "promptTokens"),
     recentLogs,
     successfulCalls: logs.filter((log) => log.status === "success").length,

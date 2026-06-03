@@ -50,6 +50,7 @@ export async function putPin(input: PinWriteInput) {
   const existing = existingPins.find((pin) => pin.id === id) ?? existingPins[0];
   const now = Date.now();
   const pin: TranslationPin = {
+    anchorRegionIndex: input.selection.anchorRegionIndex,
     cacheKey: input.cacheKey,
     contextWindowN: input.contextWindowN,
     createdAt: existing?.createdAt ?? now,
@@ -66,6 +67,7 @@ export async function putPin(input: PinWriteInput) {
     pdfFingerprint: input.selection.pdfFingerprint,
     promptVersion: input.promptVersion,
     rectsOnPage: input.selection.rectsOnPage,
+    regions: input.selection.regions,
     selectedText: input.selection.selectedText,
     sourceLang: input.sourceLang,
     targetLang: input.targetLang,

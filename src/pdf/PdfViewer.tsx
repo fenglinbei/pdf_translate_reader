@@ -1,34 +1,74 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
+  CSSProperties,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import { Minus, Plus } from "lucide-react";
+import { Check, Minus, Plus, RotateCcw, X } from "lucide-react";
 import { pdfjsLib } from "./pdfjs";
+import type { TextContent } from "pdfjs-dist/types/src/display/api";
 import type { PinWriteInput } from "../pins/pinRepository";
-import type { AppSettings, PdfLibraryEntry, SentenceSelection, TranslationPin } from "../types/domain";
+import type {
+  AppSettings,
+  PaperContext,
+  PdfLibraryEntry,
+  ReaderMode,
+  SelectionMode,
+  SelectionRegion,
+  SentenceSelection,
+  TranslationPin,
+} from "../types/domain";
 import type { ReadingPositionUpdate } from "../cache/pdfLibraryRepository";
+import type {
+  PinnedTranslationCard,
+  TranslationCardPinInput,
+  TranslationFavoriteAction,
+  TranslationCardViewChange,
+} from "../translation/floatingCardTypes";
 import {
   createPageTextIndex,
+  createPageTextMetadata,
   getTextSpanPointerHit,
   getTextSpanPointerHitFromPoint,
   pointerHitRangeToWordSelection,
-  pointerHitToSentenceSelection,
   type TextSpanPointerHit,
+  type PageTextMetadata,
   type PageTextIndex,
 } from "../selection/selectionToSpan";
+import {
+  CROSS_PAGE_SELECTION_MESSAGE,
+  OCR_UNSUPPORTED_MESSAGE,
+  hasUsableTextLayerText,
+  isCrossPageSelection,
+} from "../selection/edgeCases";
+import { normalizeSentence } from "../selection/sentenceBoundary";
 import { PageOverlayLayer } from "./pageOverlayLayer";
 
 type PdfViewerProps = {
+  activeTranslationCardZIndex: number;
   activeSelection?: SentenceSelection;
   entry: PdfLibraryEntry;
   locateRequest?: PinLocateRequest;
-  onActiveSelectionClose: () => void;
+  onActivateTranslationCard: (selection: SentenceSelection) => void;
+  onCloseTranslationCard: (selection: SentenceSelection) => void;
+  onPinTranslationCard: (input: TranslationCardPinInput) => void;
   onPinnedTranslationRefresh: (input: PinWriteInput) => void;
-  onPinTranslation: (input: PinWriteInput) => Promise<void>;
+  onPinTranslation: (
+    input: PinWriteInput,
+    action: TranslationFavoriteAction,
+  ) => Promise<void>;
+  onPageTextReadyForPaperContext: (pageIndex: number, text: string) => void;
   onReadingPositionChange: (position: ReadingPositionUpdate) => void;
   onSentenceSelectionChange: (selection: SentenceSelection | undefined) => void;
+  onTranslationCardViewChange: (
+    selection: SentenceSelection,
+    viewChange: TranslationCardViewChange,
+  ) => void;
+  pinnedTranslationCards: PinnedTranslationCard[];
+  paperContext?: PaperContext;
   pins: TranslationPin[];
+  readerMode: ReaderMode;
+  selectionMode: SelectionMode;
   settings: AppSettings;
 };
 
@@ -45,6 +85,24 @@ type PageDescriptor = {
   height: number;
   pageNumber: number;
   width: number;
+};
+type PageLayout = {
+  heights: number[];
+  tops: number[];
+};
+type CachedPageText = {
+  content: TextContent;
+  metadata: PageTextMetadata;
+  hasUsableText: boolean;
+};
+type PdfPageStyle = CSSProperties & {
+  "--pdf-page-height": string;
+  "--pdf-page-width": string;
+};
+type PdfPageListStyle = CSSProperties & {
+  "--pdf-display-scale": number;
+  "--pdf-render-scale": number;
+  "--pdf-scale-ratio": number;
 };
 
 type SpanDragState = {
@@ -70,24 +128,37 @@ type ZoomAnchor = {
 };
 
 const MAX_RENDER_SCALE = 1.35;
+const MAX_PDF_RENDER_SCALE = 2;
+const MAX_CANVAS_OUTPUT_SCALE = 1.5;
 const MIN_RENDER_SCALE = 0.7;
+const PDF_PAGE_GAP_PX = 18;
+const PDF_PAGE_LIST_PADDING_PX = 24;
+const PAGE_RENDER_OVERSCAN = 1;
 const POINTER_DRAG_THRESHOLD_PX = 8;
-const TARGET_FORWARD_SENTENCE_COUNT = 0;
-const MAX_TARGET_SENTENCE_COUNT = 4;
+const REAL_ZOOM_COMMIT_DELAY_MS = 180;
 const USER_ZOOM_MAX = 2.4;
 const USER_ZOOM_MIN = 0.6;
 const USER_ZOOM_STEP = 0.1;
 
 export function PdfViewer({
+  activeTranslationCardZIndex,
   activeSelection,
   entry,
   locateRequest,
-  onActiveSelectionClose,
+  onActivateTranslationCard,
+  onCloseTranslationCard,
+  onPageTextReadyForPaperContext,
+  onPinTranslationCard,
   onPinnedTranslationRefresh,
   onPinTranslation,
   onReadingPositionChange,
   onSentenceSelectionChange,
+  onTranslationCardViewChange,
+  pinnedTranslationCards,
+  paperContext,
   pins,
+  readerMode,
+  selectionMode,
   settings,
 }: PdfViewerProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -95,19 +166,30 @@ export function PdfViewer({
   const locatedPinTimerRef = useRef<number>();
   const panDragRef = useRef<PanDragState>();
   const saveTimerRef = useRef<number>();
+  const selectionNoticeTimerRef = useRef<number>();
   const pendingPositionRef = useRef<ReadingPositionUpdate>();
   const restoredFingerprintRef = useRef<string>();
   const spanDragRef = useRef<SpanDragState>();
   const draftSelectionRef = useRef<SentenceSelection>();
+  const realZoomCommitTimerRef = useRef<number>();
+  const textContentCacheRef = useRef(new Map<number, CachedPageText>());
   const zoomAnchorRef = useRef<ZoomAnchor>();
   const [pdfDocument, setPdfDocument] = useState<PdfDocumentProxy>();
   const [pages, setPages] = useState<PageDescriptor[]>([]);
   const [availableWidth, setAvailableWidth] = useState(760);
+  const [baseScale, setBaseScale] = useState<number>();
+  const [hasMeasuredAvailableWidth, setHasMeasuredAvailableWidth] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
   const [draftSelection, setDraftSelection] = useState<SentenceSelection>();
+  const [queuedCrossSelections, setQueuedCrossSelections] = useState<SentenceSelection[]>([]);
+  const [copyNotice, setCopyNotice] = useState<string>();
+  const [copiedSelection, setCopiedSelection] = useState<SentenceSelection>();
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [locatedPinId, setLocatedPinId] = useState<string>();
   const [errorMessage, setErrorMessage] = useState<string>();
+  const [selectionNotice, setSelectionNotice] = useState<string>();
+  const [renderPageIndexes, setRenderPageIndexes] = useState<Set<number>>(() => new Set());
+  const [renderZoom, setRenderZoom] = useState(1);
   const [userZoom, setUserZoom] = useState(1);
 
   useEffect(() => {
@@ -119,6 +201,7 @@ export function PdfViewer({
 
     const resizeObserver = new ResizeObserver(([entry]) => {
       setAvailableWidth(Math.max(320, entry.contentRect.width - 48));
+      setHasMeasuredAvailableWidth(true);
     });
 
     resizeObserver.observe(scrollElement);
@@ -137,9 +220,14 @@ export function PdfViewer({
     setErrorMessage(undefined);
     setPages([]);
     setPdfDocument(undefined);
+    setBaseScale(undefined);
+    setRenderPageIndexes(new Set());
+    setRenderZoom(1);
     setUserZoom(1);
     setDraftSelection(undefined);
+    setQueuedCrossSelections([]);
     pageIndexesRef.current = new Map();
+    textContentCacheRef.current = new Map();
     draftSelectionRef.current = undefined;
     restoredFingerprintRef.current = undefined;
     onSentenceSelectionChange(undefined);
@@ -172,7 +260,8 @@ export function PdfViewer({
         }
 
         setLoadState("error");
-        setErrorMessage(error instanceof Error ? error.message : "Unable to open this PDF.");
+        const detail = error instanceof Error && error.message.trim() ? ` ${error.message}` : "";
+        setErrorMessage(`Unable to open this local PDF record. Remove it from PDF History and import it again.${detail}`);
       }
     }
 
@@ -188,13 +277,37 @@ export function PdfViewer({
     };
   }, [entry.blob, entry.fingerprint, onSentenceSelectionChange]);
 
-  const baseScale = useMemo(() => {
-    const widestPage = pages.reduce((width, page) => Math.max(width, page.width), 612);
-    const nextScale = availableWidth / widestPage;
+  const liveFitScale = useMemo(
+    () => getFitScale(pages, availableWidth),
+    [availableWidth, pages],
+  );
 
-    return Math.min(MAX_RENDER_SCALE, Math.max(MIN_RENDER_SCALE, nextScale));
-  }, [availableWidth, pages]);
-  const scale = useMemo(() => baseScale * userZoom, [baseScale, userZoom]);
+  useEffect(() => {
+    if (baseScale !== undefined || pages.length === 0 || !hasMeasuredAvailableWidth) {
+      return;
+    }
+
+    setBaseScale(getFitScale(pages, availableWidth));
+  }, [availableWidth, baseScale, hasMeasuredAvailableWidth, pages]);
+
+  const fitScale = baseScale ?? liveFitScale;
+  const displayScale = useMemo(() => fitScale * userZoom, [fitScale, userZoom]);
+  const committedDisplayScale = useMemo(() => fitScale * renderZoom, [fitScale, renderZoom]);
+  const pdfRenderScale = useMemo(
+    () => Math.min(committedDisplayScale, MAX_PDF_RENDER_SCALE),
+    [committedDisplayScale],
+  );
+  const displayScaleRatio = pdfRenderScale > 0 ? displayScale / pdfRenderScale : 1;
+  const pageLayout = useMemo(() => createPageLayout(pages, displayScale), [displayScale, pages]);
+  const pageListStyle = useMemo<PdfPageListStyle>(
+    () =>
+      ({
+        "--pdf-display-scale": displayScale,
+        "--pdf-render-scale": pdfRenderScale,
+        "--pdf-scale-ratio": displayScaleRatio,
+      }) as PdfPageListStyle,
+    [displayScale, displayScaleRatio, pdfRenderScale],
+  );
 
   const flushReadingPosition = useCallback(() => {
     if (!pendingPositionRef.current) {
@@ -217,9 +330,32 @@ export function PdfViewer({
   useEffect(() => {
     return () => {
       window.clearTimeout(saveTimerRef.current);
+      window.clearTimeout(selectionNoticeTimerRef.current);
+      window.clearTimeout(realZoomCommitTimerRef.current);
       flushReadingPosition();
     };
   }, [flushReadingPosition]);
+
+  useEffect(() => {
+    spanDragRef.current = undefined;
+    draftSelectionRef.current = undefined;
+    setCopyNotice(undefined);
+    setCopiedSelection(undefined);
+    setDraftSelection(undefined);
+    window.getSelection()?.removeAllRanges();
+  }, [readerMode]);
+
+  useEffect(() => {
+    spanDragRef.current = undefined;
+    draftSelectionRef.current = undefined;
+    setCopyNotice(undefined);
+    setCopiedSelection(undefined);
+    setDraftSelection(undefined);
+    if (selectionMode !== "cross") {
+      setQueuedCrossSelections([]);
+    }
+    window.getSelection()?.removeAllRanges();
+  }, [selectionMode]);
 
   useEffect(() => {
     return () => {
@@ -242,7 +378,7 @@ export function PdfViewer({
       scrollElement.scrollTop =
         (zoomAnchor.scrollTop + zoomAnchor.offsetY) * zoomAnchor.scaleRatio - zoomAnchor.offsetY;
     });
-  }, [scale]);
+  }, [displayScale]);
 
   useEffect(() => {
     const scrollElement = scrollRef.current;
@@ -255,18 +391,14 @@ export function PdfViewer({
       if (typeof entry.lastScrollTop === "number") {
         scrollElement.scrollTop = entry.lastScrollTop;
       } else if (typeof entry.lastPageIndex === "number") {
-        const pageElement = scrollElement.querySelector<HTMLElement>(
-          `[data-page-index="${entry.lastPageIndex}"]`,
-        );
-
-        scrollElement.scrollTop = pageElement ? getScrollTopForElement(scrollElement, pageElement) : 0;
+        scrollElement.scrollTop = pageLayout.tops[entry.lastPageIndex] ?? 0;
       } else {
         scrollElement.scrollTop = 0;
       }
 
       restoredFingerprintRef.current = entry.fingerprint;
     });
-  }, [entry.fingerprint, entry.lastPageIndex, entry.lastScrollTop, pages.length, scale]);
+  }, [entry.fingerprint, entry.lastPageIndex, entry.lastScrollTop, pages.length, displayScale, pageLayout]);
 
   const handleScroll = useCallback(() => {
     const scrollElement = scrollRef.current;
@@ -275,11 +407,38 @@ export function PdfViewer({
       return;
     }
 
+    updateRenderedPageWindowFromLayout({
+      pageLayout,
+      setRenderPageIndexes,
+      viewportHeight: scrollElement.clientHeight,
+      viewportTop: scrollElement.scrollTop,
+    });
     queueReadingPosition({
-      lastPageIndex: getCurrentPageIndex(scrollElement),
+      lastPageIndex: getCurrentPageIndexFromLayout(
+        pageLayout,
+        scrollElement.scrollTop,
+        scrollElement.clientHeight,
+      ),
       lastScrollTop: scrollElement.scrollTop,
     });
-  }, [queueReadingPosition]);
+  }, [pageLayout, queueReadingPosition]);
+
+  useEffect(() => {
+    const scrollElement = scrollRef.current;
+
+    if (!scrollElement || pages.length === 0) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      updateRenderedPageWindowFromLayout({
+        pageLayout,
+        setRenderPageIndexes,
+        viewportHeight: scrollElement.clientHeight,
+        viewportTop: scrollElement.scrollTop,
+      });
+    });
+  }, [pageLayout, pages.length]);
 
   const handleZoom = useCallback(
     (direction: 1 | -1, anchor?: { clientX: number; clientY: number }) => {
@@ -309,6 +468,10 @@ export function PdfViewer({
           scrollLeft: scrollElement.scrollLeft,
           scrollTop: scrollElement.scrollTop,
         };
+        window.clearTimeout(realZoomCommitTimerRef.current);
+        realZoomCommitTimerRef.current = window.setTimeout(() => {
+          setRenderZoom(nextZoom);
+        }, REAL_ZOOM_COMMIT_DELAY_MS);
 
         return nextZoom;
       });
@@ -358,17 +521,42 @@ export function PdfViewer({
     }
   }, []);
 
+  const showSelectionNotice = useCallback((message: string) => {
+    setSelectionNotice(message);
+    window.clearTimeout(selectionNoticeTimerRef.current);
+    selectionNoticeTimerRef.current = window.setTimeout(() => {
+      setSelectionNotice(undefined);
+    }, 2200);
+  }, []);
+
+  const copySelectedText = useCallback(async (selection: SentenceSelection) => {
+    setCopiedSelection(selection);
+
+    try {
+      await copyTextToClipboard(selection.targetSentence);
+      setCopyNotice("Copied");
+    } catch {
+      setCopyNotice("Copy failed");
+    }
+
+    window.clearTimeout(selectionNoticeTimerRef.current);
+    selectionNoticeTimerRef.current = window.setTimeout(() => {
+      setCopiedSelection(undefined);
+      setCopyNotice(undefined);
+    }, 1800);
+  }, []);
+
   const addPageMetricsToSelection = useCallback(
     (selection: SentenceSelection): SentenceSelection => {
       const pageDescriptor = pages.find((page) => page.pageNumber - 1 === selection.pageIndex);
 
       return {
         ...selection,
-        pageHeight: pageDescriptor ? pageDescriptor.height * scale : undefined,
-        pageWidth: pageDescriptor ? pageDescriptor.width * scale : undefined,
+        pageHeight: pageDescriptor ? pageDescriptor.height * displayScale : undefined,
+        pageWidth: pageDescriptor ? pageDescriptor.width * displayScale : undefined,
       };
     },
-    [pages, scale],
+    [displayScale, pages],
   );
 
   const updateDraftSelection = useCallback(
@@ -380,6 +568,47 @@ export function PdfViewer({
     },
     [addPageMetricsToSelection],
   );
+
+  const addCrossSelectionPart = useCallback(
+    (selection: SentenceSelection) => {
+      setQueuedCrossSelections((currentSelections) => [...currentSelections, selection]);
+      onSentenceSelectionChange(undefined);
+      showSelectionNotice(`Added region ${queuedCrossSelections.length + 1}.`);
+    },
+    [onSentenceSelectionChange, queuedCrossSelections.length, showSelectionNotice],
+  );
+
+  const handleConfirmCrossSelection = useCallback(() => {
+    const selection = createCompositeCrossSelection(queuedCrossSelections, entry.fingerprint);
+
+    if (!selection) {
+      return;
+    }
+
+    setQueuedCrossSelections([]);
+    if (readerMode === "select") {
+      void copySelectedText(selection);
+      onSentenceSelectionChange(undefined);
+      return;
+    }
+
+    onSentenceSelectionChange(selection);
+  }, [
+    copySelectedText,
+    entry.fingerprint,
+    onSentenceSelectionChange,
+    queuedCrossSelections,
+    readerMode,
+  ]);
+
+  const handleUndoCrossSelection = useCallback(() => {
+    setQueuedCrossSelections((currentSelections) => currentSelections.slice(0, -1));
+  }, []);
+
+  const handleClearCrossSelection = useCallback(() => {
+    setQueuedCrossSelections([]);
+    onSentenceSelectionChange(undefined);
+  }, [onSentenceSelectionChange]);
 
   const handleTextPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button === 1) {
@@ -415,7 +644,6 @@ export function PdfViewer({
 
     draftSelectionRef.current = undefined;
     setDraftSelection(undefined);
-    onSentenceSelectionChange(undefined);
     spanDragRef.current = {
       latestHit: pointerHit,
       pointerId: event.pointerId,
@@ -426,7 +654,7 @@ export function PdfViewer({
     window.getSelection()?.removeAllRanges();
     event.currentTarget.setPointerCapture(event.pointerId);
     event.preventDefault();
-  }, [onSentenceSelectionChange]);
+  }, []);
 
   const handleTextPointerMove = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -448,6 +676,10 @@ export function PdfViewer({
 
       const pointerHit = getTextSpanPointerHitFromPoint(event.clientX, event.clientY);
 
+      if (isCrossPageSelection(dragState.startHit, pointerHit)) {
+        showSelectionNotice(CROSS_PAGE_SELECTION_MESSAGE);
+      }
+
       if (pointerHit && pointerHit.pageIndex === dragState.startHit.pageIndex) {
         dragState.latestHit = pointerHit;
       }
@@ -463,7 +695,6 @@ export function PdfViewer({
           ? pointerHitRangeToWordSelection({
               contextWindowSize: settings.contextWindowN,
               endHit: dragState.latestHit,
-              maxSentenceCount: MAX_TARGET_SENTENCE_COUNT,
               maxWordCount: settings.maxDraggedWords,
               pageIndexes: pageIndexesRef.current,
               pdfFingerprint: entry.fingerprint,
@@ -474,7 +705,13 @@ export function PdfViewer({
 
       event.preventDefault();
     },
-    [entry.fingerprint, settings.contextWindowN, settings.maxDraggedWords, updateDraftSelection],
+    [
+      entry.fingerprint,
+      settings.contextWindowN,
+      settings.maxDraggedWords,
+      showSelectionNotice,
+      updateDraftSelection,
+    ],
   );
 
   const handleTextPointerUp = useCallback(
@@ -494,6 +731,9 @@ export function PdfViewer({
       }
 
       const pointerHit = getTextSpanPointerHitFromPoint(event.clientX, event.clientY);
+      if (isCrossPageSelection(dragState.startHit, pointerHit)) {
+        showSelectionNotice(CROSS_PAGE_SELECTION_MESSAGE);
+      }
       const endHit =
         pointerHit && pointerHit.pageIndex === dragState.startHit.pageIndex
           ? pointerHit
@@ -503,25 +743,17 @@ export function PdfViewer({
         movedDistance >= POINTER_DRAG_THRESHOLD_PX &&
         endHit.pageIndex === dragState.startHit.pageIndex &&
         endHit.rawOffset !== dragState.startHit.rawOffset;
-      const sentenceSelection = isRangeDrag
+      const wordSelection = isRangeDrag
         ? draftSelectionRef.current ??
           (pointerHitRangeToWordSelection({
             contextWindowSize: settings.contextWindowN,
             endHit,
-            maxSentenceCount: MAX_TARGET_SENTENCE_COUNT,
             maxWordCount: settings.maxDraggedWords,
             pageIndexes: pageIndexesRef.current,
             pdfFingerprint: entry.fingerprint,
             startHit: dragState.startHit,
           }) ?? undefined)
-        : pointerHitToSentenceSelection({
-            contextWindowSize: settings.contextWindowN,
-            forwardSentenceCount: TARGET_FORWARD_SENTENCE_COUNT,
-            maxSentenceCount: MAX_TARGET_SENTENCE_COUNT,
-            pageIndexes: pageIndexesRef.current,
-            pdfFingerprint: entry.fingerprint,
-            pointerHit: dragState.startHit,
-          });
+        : undefined;
 
       spanDragRef.current = undefined;
       draftSelectionRef.current = undefined;
@@ -530,16 +762,29 @@ export function PdfViewer({
       event.currentTarget.releasePointerCapture(event.pointerId);
       event.preventDefault();
 
-      if (sentenceSelection) {
-        onSentenceSelectionChange(addPageMetricsToSelection(sentenceSelection));
+      if (wordSelection) {
+        const selectionWithMetrics = addPageMetricsToSelection(wordSelection);
+
+        if (selectionMode === "cross") {
+          addCrossSelectionPart(selectionWithMetrics);
+        } else if (readerMode === "select") {
+          void copySelectedText(selectionWithMetrics);
+        } else {
+          onSentenceSelectionChange(selectionWithMetrics);
+        }
       }
     },
     [
       addPageMetricsToSelection,
+      addCrossSelectionPart,
       entry.fingerprint,
       onSentenceSelectionChange,
+      copySelectedText,
+      readerMode,
+      selectionMode,
       settings.contextWindowN,
       settings.maxDraggedWords,
+      showSelectionNotice,
     ],
   );
 
@@ -571,18 +816,15 @@ export function PdfViewer({
       return;
     }
 
-    const pageElement = scrollElement.querySelector<HTMLElement>(
-      `[data-page-index="${pin.pageIndex}"]`,
-    );
+    const currentPageHeight = pageLayout.heights[pin.pageIndex];
+    const pageScrollTop = pageLayout.tops[pin.pageIndex];
 
-    if (!pageElement) {
+    if (currentPageHeight === undefined || pageScrollTop === undefined) {
       return;
     }
 
-    const currentPageHeight = pageElement.getBoundingClientRect().height || pageElement.offsetHeight;
     const scaleY = pin.pageHeight && pin.pageHeight > 0 ? currentPageHeight / pin.pageHeight : 1;
     const anchorTop = Math.min(...pin.rectsOnPage.map((rect) => rect.top)) * scaleY;
-    const pageScrollTop = getScrollTopForElement(scrollElement, pageElement);
     const targetScrollTop = Math.max(
       0,
       pageScrollTop + anchorTop - scrollElement.clientHeight * 0.24,
@@ -598,7 +840,7 @@ export function PdfViewer({
     locatedPinTimerRef.current = window.setTimeout(() => {
       setLocatedPinId((currentPinId) => (currentPinId === pin.id ? undefined : currentPinId));
     }, 1500);
-  }, []);
+  }, [pageLayout]);
 
   useEffect(() => {
     if (locateRequest) {
@@ -616,6 +858,43 @@ export function PdfViewer({
           </div>
         </div>
         <div className="pdf-viewer-actions" aria-label="PDF zoom controls">
+          {selectionMode === "cross" ? (
+            <div className="cross-selection-toolbar" aria-label="Cross-region selection controls">
+              <span className="cross-selection-count">
+                {queuedCrossSelections.length} region{queuedCrossSelections.length === 1 ? "" : "s"}
+              </span>
+              <button
+                aria-label={readerMode === "select" ? "Copy selected regions" : "Translate selected regions"}
+                className="icon-button icon-button--small icon-button--success"
+                disabled={queuedCrossSelections.length === 0}
+                onClick={handleConfirmCrossSelection}
+                title={readerMode === "select" ? "Copy selected regions" : "Translate selected regions"}
+                type="button"
+              >
+                <Check aria-hidden="true" size={16} strokeWidth={2} />
+              </button>
+              <button
+                aria-label="Undo last selected region"
+                className="icon-button icon-button--small"
+                disabled={queuedCrossSelections.length === 0}
+                onClick={handleUndoCrossSelection}
+                title="Undo last selected region"
+                type="button"
+              >
+                <RotateCcw aria-hidden="true" size={16} strokeWidth={2} />
+              </button>
+              <button
+                aria-label="Clear selected regions"
+                className="icon-button icon-button--small icon-button--danger"
+                disabled={queuedCrossSelections.length === 0}
+                onClick={handleClearCrossSelection}
+                title="Clear selected regions"
+                type="button"
+              >
+                <X aria-hidden="true" size={16} strokeWidth={2} />
+              </button>
+            </div>
+          ) : null}
           <button
             aria-label="Zoom out"
             className="icon-button icon-button--small"
@@ -639,6 +918,7 @@ export function PdfViewer({
           </button>
         </div>
       </div>
+      {selectionNotice ? <div className="reader-message reader-message--inline">{selectionNotice}</div> : null}
       <div
         className={`pdf-scroll-region ${isPanning ? "pdf-scroll-region--panning" : ""} ${
           draftSelection ? "pdf-scroll-region--selecting" : ""
@@ -654,23 +934,35 @@ export function PdfViewer({
         {loadState === "error" ? (
           <div className="reader-message">{errorMessage}</div>
         ) : (
-          <div className="pdf-page-list">
+          <div className="pdf-page-list" style={pageListStyle}>
             {pdfDocument && pages.length > 0
               ? pages.map((page) => (
                   <PdfPageView
+                    activeTranslationCardZIndex={activeTranslationCardZIndex}
                     activeSelection={activeSelection}
                     descriptor={page}
                     draftSelection={draftSelection}
                     key={`${entry.fingerprint}-${page.pageNumber}`}
-                    onActiveSelectionClose={onActiveSelectionClose}
+                    onActivateTranslationCard={onActivateTranslationCard}
+                    onCloseTranslationCard={onCloseTranslationCard}
+                    onPinTranslationCard={onPinTranslationCard}
                     onPinnedTranslationRefresh={onPinnedTranslationRefresh}
                     onPinTranslation={onPinTranslation}
+                    onPageTextReadyForPaperContext={onPageTextReadyForPaperContext}
                     onTextIndexClear={handleTextIndexClear}
                     onTextIndexReady={handleTextIndexReady}
+                    onTranslationCardViewChange={onTranslationCardViewChange}
                     pdfDocument={pdfDocument}
+                    pinnedTranslationCards={pinnedTranslationCards}
+                    paperContext={paperContext}
                     pins={pins}
+                    queuedCrossSelections={queuedCrossSelections}
+                    renderScale={renderPageIndexes.has(page.pageNumber - 1) ? pdfRenderScale : 0}
+                    shouldRender={renderPageIndexes.has(page.pageNumber - 1)}
+                    textContentCacheRef={textContentCacheRef}
+                    copyNotice={copyNotice}
+                    copySelection={copiedSelection}
                     locatedPinId={locatedPinId}
-                    scale={scale}
                     settings={settings}
                   />
                 ))
@@ -682,44 +974,96 @@ export function PdfViewer({
   );
 }
 
-function PdfPageView({
+const PdfPageView = memo(function PdfPageView({
+  activeTranslationCardZIndex,
   activeSelection,
   descriptor,
   draftSelection,
   locatedPinId,
-  onActiveSelectionClose,
+  onActivateTranslationCard,
+  onCloseTranslationCard,
+  onPinTranslationCard,
   onPinnedTranslationRefresh,
   onPinTranslation,
+  onPageTextReadyForPaperContext,
   onTextIndexClear,
   onTextIndexReady,
+  onTranslationCardViewChange,
   pdfDocument,
+  pinnedTranslationCards,
+  paperContext,
   pins,
-  scale,
+  queuedCrossSelections,
+  renderScale,
+  shouldRender,
+  textContentCacheRef,
+  copyNotice,
+  copySelection,
   settings,
 }: {
+  activeTranslationCardZIndex: number;
   activeSelection?: SentenceSelection;
   descriptor: PageDescriptor;
   draftSelection?: SentenceSelection;
   locatedPinId?: string;
-  onActiveSelectionClose: () => void;
+  onActivateTranslationCard: (selection: SentenceSelection) => void;
+  onCloseTranslationCard: (selection: SentenceSelection) => void;
+  onPinTranslationCard: (input: TranslationCardPinInput) => void;
   onPinnedTranslationRefresh: (input: PinWriteInput) => void;
-  onPinTranslation: (input: PinWriteInput) => Promise<void>;
+  onPinTranslation: (
+    input: PinWriteInput,
+    action: TranslationFavoriteAction,
+  ) => Promise<void>;
+  onPageTextReadyForPaperContext: (pageIndex: number, text: string) => void;
   onTextIndexClear: (pageIndex: number) => void;
   onTextIndexReady: (pageTextIndex: PageTextIndex) => void;
+  onTranslationCardViewChange: (
+    selection: SentenceSelection,
+    viewChange: TranslationCardViewChange,
+  ) => void;
   pdfDocument: PdfDocumentProxy;
+  pinnedTranslationCards: PinnedTranslationCard[];
+  paperContext?: PaperContext;
   pins: TranslationPin[];
-  scale: number;
+  queuedCrossSelections: SentenceSelection[];
+  renderScale: number;
+  shouldRender: boolean;
+  textContentCacheRef: { current: Map<number, CachedPageText> };
+  copyNotice?: string;
+  copySelection?: SentenceSelection;
   settings: AppSettings;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pageRef = useRef<HTMLDivElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
-  const [renderState, setRenderState] = useState<"rendering" | "ready" | "error">("rendering");
+  const pageIndex = descriptor.pageNumber - 1;
+  const pageStackZIndex = getTranslationCardPageZIndex({
+    activeSelection,
+    activeTranslationCardZIndex,
+    pageIndex,
+    pinnedTranslationCards,
+  });
+  const pageStyle = useMemo<PdfPageStyle>(
+    () =>
+      ({
+        "--pdf-page-height": `${descriptor.height}px`,
+        "--pdf-page-width": `${descriptor.width}px`,
+        ...(pageStackZIndex === undefined ? undefined : { zIndex: pageStackZIndex }),
+      }) as PdfPageStyle,
+    [descriptor.height, descriptor.width, pageStackZIndex],
+  );
+  const [renderState, setRenderState] = useState<"idle" | "rendering" | "ready" | "error" | "no-text">("idle");
 
   useEffect(() => {
     let cancelled = false;
     let renderTask: RenderTask | undefined;
     let textLayer: InstanceType<typeof pdfjsLib.TextLayer> | undefined;
+
+    if (!shouldRender) {
+      onTextIndexClear(descriptor.pageNumber - 1);
+      setRenderState("idle");
+      return undefined;
+    }
 
     async function renderPage() {
       setRenderState("rendering");
@@ -731,11 +1075,11 @@ function PdfPageView({
           return;
         }
 
-        const viewport = page.getViewport({ scale });
+        const viewport = page.getViewport({ scale: renderScale });
         const canvas = canvasRef.current;
         const pageElement = pageRef.current;
         const textLayerElement = textLayerRef.current;
-        const outputScale = window.devicePixelRatio || 1;
+        const outputScale = Math.min(window.devicePixelRatio || 1, MAX_CANVAS_OUTPUT_SCALE);
 
         if (!canvas || !pageElement || !textLayerElement) {
           return;
@@ -747,8 +1091,6 @@ function PdfPageView({
           throw new Error("Canvas is not available.");
         }
 
-        pageElement.style.width = `${viewport.width}px`;
-        pageElement.style.height = `${viewport.height}px`;
         canvas.width = Math.floor(viewport.width * outputScale);
         canvas.height = Math.floor(viewport.height * outputScale);
         canvas.style.width = `${viewport.width}px`;
@@ -757,7 +1099,7 @@ function PdfPageView({
         context.clearRect(0, 0, viewport.width, viewport.height);
 
         textLayerElement.replaceChildren();
-        textLayerElement.style.setProperty("--scale-factor", `${scale}`);
+        textLayerElement.style.setProperty("--scale-factor", `${renderScale}`);
 
         renderTask = page.render({ canvasContext: context, viewport });
         await renderTask.promise;
@@ -766,24 +1108,45 @@ function PdfPageView({
           return;
         }
 
-        const textContent = await page.getTextContent();
+        let cachedText = textContentCacheRef.current.get(descriptor.pageNumber);
+
+        if (!cachedText) {
+          const textContent = await page.getTextContent();
+          const metadata = createPageTextMetadata(textContent);
+
+          cachedText = {
+            content: textContent,
+            hasUsableText: hasUsableTextLayerText(metadata.text),
+            metadata,
+          };
+          textContentCacheRef.current.set(descriptor.pageNumber, cachedText);
+        }
+
         textLayer = new pdfjsLib.TextLayer({
           container: textLayerElement,
-          textContentSource: textContent,
+          textContentSource: cachedText.content,
           viewport,
         });
         await textLayer.render();
 
         if (!cancelled) {
-          onTextIndexReady(
-            createPageTextIndex({
-              pageElement,
-              pageIndex: descriptor.pageNumber - 1,
-              textContent,
-              textDivs: textLayer.textDivs,
-              textLayerElement,
-            }),
-          );
+          const pageTextIndex = createPageTextIndex({
+            pageElement,
+            pageIndex: descriptor.pageNumber - 1,
+            textContent: cachedText.content,
+            textMetadata: cachedText.metadata,
+            textDivs: textLayer.textDivs,
+            textLayerElement,
+          });
+
+          if (!cachedText.hasUsableText) {
+            onTextIndexClear(pageTextIndex.pageIndex);
+            setRenderState("no-text");
+            return;
+          }
+
+          onTextIndexReady(pageTextIndex);
+          onPageTextReadyForPaperContext(pageTextIndex.pageIndex, pageTextIndex.text);
           setRenderState("ready");
         }
       } catch (error) {
@@ -807,36 +1170,173 @@ function PdfPageView({
       textLayer?.cancel();
       renderTask?.cancel();
     };
-  }, [descriptor.pageNumber, onTextIndexClear, onTextIndexReady, pdfDocument, scale]);
+  }, [
+    descriptor.pageNumber,
+    onPageTextReadyForPaperContext,
+    onTextIndexClear,
+    onTextIndexReady,
+    pdfDocument,
+    renderScale,
+    shouldRender,
+    textContentCacheRef,
+  ]);
 
   return (
     <div
-      className={`pdf-page pdf-page--${renderState}`}
-      data-page-index={descriptor.pageNumber - 1}
-      ref={pageRef}
-      style={{
-        height: descriptor.height * scale,
-        width: descriptor.width * scale,
-      }}
+      className="pdf-page-shell"
+      data-page-index={pageIndex}
+      style={pageStyle}
     >
-      <canvas className="pdf-page-canvas" ref={canvasRef} />
-      <div className="textLayer pdf-text-layer" ref={textLayerRef} />
-      <PageOverlayLayer
-        locatedPinId={locatedPinId}
-        onCloseSelection={onActiveSelectionClose}
-        onPinnedTranslationRefresh={onPinnedTranslationRefresh}
-        onPinTranslation={onPinTranslation}
-        pageHeight={descriptor.height * scale}
-        pageIndex={descriptor.pageNumber - 1}
-        pageWidth={descriptor.width * scale}
-        pins={pins}
-        draftSelection={draftSelection}
-        selection={activeSelection}
-        settings={settings}
-      />
-      {renderState === "error" ? <div className="pdf-page-error">Page failed to render.</div> : null}
+      <div
+        className={`pdf-page pdf-page--${renderState}`}
+        ref={pageRef}
+      >
+        <canvas className="pdf-page-canvas" ref={canvasRef} />
+        <div className="textLayer pdf-text-layer" ref={textLayerRef} />
+        {shouldRender ? (
+          <PageOverlayLayer
+            activeTranslationCardZIndex={activeTranslationCardZIndex}
+            locatedPinId={locatedPinId}
+            onActivateTranslationCard={onActivateTranslationCard}
+            onCloseTranslationCard={onCloseTranslationCard}
+            onPinTranslationCard={onPinTranslationCard}
+            onPinnedTranslationRefresh={onPinnedTranslationRefresh}
+            onPinTranslation={onPinTranslation}
+            onTranslationCardViewChange={onTranslationCardViewChange}
+            pageHeight={descriptor.height * renderScale}
+            pageIndex={pageIndex}
+            pageWidth={descriptor.width * renderScale}
+            copyNotice={copyNotice}
+            copySelection={copySelection}
+            pinnedTranslationCards={pinnedTranslationCards}
+            paperContext={paperContext}
+            pins={pins}
+            queuedSelections={queuedCrossSelections}
+            draftSelection={draftSelection}
+            selection={activeSelection}
+            settings={settings}
+          />
+        ) : null}
+        {renderState === "no-text" ? <div className="pdf-page-error">{OCR_UNSUPPORTED_MESSAGE}</div> : null}
+        {renderState === "error" ? <div className="pdf-page-error">Page failed to render.</div> : null}
+      </div>
     </div>
   );
+});
+
+function getTranslationCardPageZIndex({
+  activeSelection,
+  activeTranslationCardZIndex,
+  pageIndex,
+  pinnedTranslationCards,
+}: {
+  activeSelection?: SentenceSelection;
+  activeTranslationCardZIndex: number;
+  pageIndex: number;
+  pinnedTranslationCards: PinnedTranslationCard[];
+}) {
+  let pageZIndex: number | undefined;
+
+  if (hasPopoverAnchorOnPage(activeSelection, pageIndex)) {
+    const activePinnedCard = pinnedTranslationCards.find((card) =>
+      isSameSelectionTarget(card.selection, activeSelection),
+    );
+
+    pageZIndex = activePinnedCard?.zIndex ?? activeTranslationCardZIndex;
+  }
+
+  for (const card of pinnedTranslationCards) {
+    if (!hasPopoverAnchorOnPage(card.selection, pageIndex)) {
+      continue;
+    }
+
+    pageZIndex = Math.max(pageZIndex ?? 0, card.zIndex);
+  }
+
+  return pageZIndex;
+}
+
+function hasPopoverAnchorOnPage(selection: SentenceSelection | undefined, pageIndex: number) {
+  return Boolean(
+    selection && selection.pageIndex === pageIndex && selection.rectsOnPage.length > 0,
+  );
+}
+
+function isSameSelectionTarget(
+  left: SentenceSelection,
+  right: SentenceSelection | undefined,
+) {
+  return Boolean(
+    right &&
+      left.pageIndex === right.pageIndex &&
+      left.pdfFingerprint === right.pdfFingerprint &&
+      left.normalizedSentence === right.normalizedSentence,
+  );
+}
+
+function createCompositeCrossSelection(
+  selections: SentenceSelection[],
+  pdfFingerprint: string,
+): SentenceSelection | undefined {
+  if (selections.length === 0) {
+    return undefined;
+  }
+
+  const targetSentence = joinCrossSelectionText(selections);
+  const normalizedSentence = normalizeSentence(targetSentence);
+  const firstSelection = selections[0];
+  const anchorSelection = selections[selections.length - 1];
+  const regions = selections.map(createSelectionRegion);
+
+  if (normalizedSentence.length === 0) {
+    return undefined;
+  }
+
+  return {
+    anchorRegionIndex: regions.length - 1,
+    localContextAfter: anchorSelection.localContextAfter,
+    localContextBefore: firstSelection.localContextBefore,
+    normalizedSentence,
+    pageHeight: anchorSelection.pageHeight,
+    pageIndex: anchorSelection.pageIndex,
+    pageWidth: anchorSelection.pageWidth,
+    pdfFingerprint,
+    rectsOnPage: anchorSelection.rectsOnPage,
+    regions,
+    selectedText: normalizedSentence,
+    targetSentence,
+    textSpan: anchorSelection.textSpan,
+  };
+}
+
+function createSelectionRegion(selection: SentenceSelection): SelectionRegion {
+  return {
+    normalizedSentence: selection.normalizedSentence,
+    pageHeight: selection.pageHeight,
+    pageIndex: selection.pageIndex,
+    pageWidth: selection.pageWidth,
+    rectsOnPage: selection.rectsOnPage,
+    selectedText: selection.selectedText,
+    targetSentence: selection.targetSentence,
+    textSpan: selection.textSpan,
+  };
+}
+
+function joinCrossSelectionText(selections: SentenceSelection[]) {
+  return selections
+    .map((selection) => selection.targetSentence.trim())
+    .filter((text) => text.length > 0)
+    .reduce((joinedText, nextText) => {
+      if (joinedText.length === 0) {
+        return nextText;
+      }
+
+      if (/[-‐‑‒]\s*$/.test(joinedText) && /^[A-Za-z]/.test(nextText)) {
+        return `${joinedText.replace(/[-‐‑‒]\s*$/, "")}${nextText}`;
+      }
+
+      return `${joinedText} ${nextText}`;
+    }, "");
 }
 
 async function loadPageDescriptors(pdfDocument: PdfDocumentProxy) {
@@ -856,27 +1356,110 @@ async function loadPageDescriptors(pdfDocument: PdfDocumentProxy) {
   return descriptors;
 }
 
-function getCurrentPageIndex(scrollElement: HTMLElement) {
-  const midpoint = scrollElement.scrollTop + scrollElement.clientHeight * 0.35;
-  const pageElements = Array.from(
-    scrollElement.querySelectorAll<HTMLElement>("[data-page-index]"),
-  );
-  let currentPageIndex = 0;
+function getFitScale(pages: PageDescriptor[], availableWidth: number) {
+  const widestPage = pages.reduce((width, page) => Math.max(width, page.width), 612);
+  const nextScale = availableWidth / widestPage;
 
-  for (const pageElement of pageElements) {
-    if (pageElement.offsetTop <= midpoint) {
-      currentPageIndex = Number(pageElement.dataset.pageIndex ?? 0);
+  return Math.min(MAX_RENDER_SCALE, Math.max(MIN_RENDER_SCALE, nextScale));
+}
+
+function createPageLayout(pages: PageDescriptor[], scale: number): PageLayout {
+  const heights: number[] = [];
+  const tops: number[] = [];
+  let top = PDF_PAGE_LIST_PADDING_PX;
+
+  for (const page of pages) {
+    const height = page.height * scale;
+
+    heights.push(height);
+    tops.push(top);
+    top += height + PDF_PAGE_GAP_PX;
+  }
+
+  return { heights, tops };
+}
+
+function updateRenderedPageWindowFromLayout({
+  pageLayout,
+  setRenderPageIndexes,
+  viewportHeight,
+  viewportTop,
+}: {
+  pageLayout: PageLayout;
+  setRenderPageIndexes: (updater: (currentIndexes: Set<number>) => Set<number>) => void;
+  viewportHeight: number;
+  viewportTop: number;
+}) {
+  if (pageLayout.tops.length === 0) {
+    return;
+  }
+
+  const viewportBottom = viewportTop + viewportHeight;
+  const maxPageIndex = pageLayout.tops.length - 1;
+  const firstVisibleIndex = findFirstPageEndingAfter(pageLayout, viewportTop);
+  const lastVisibleIndex = findLastPageStartingBefore(pageLayout, viewportBottom);
+  const startIndex = clamp(firstVisibleIndex - PAGE_RENDER_OVERSCAN, 0, maxPageIndex);
+  const endIndex = clamp(lastVisibleIndex + PAGE_RENDER_OVERSCAN, 0, maxPageIndex);
+  const nextIndexes = new Set<number>();
+
+  for (let pageIndex = startIndex; pageIndex <= endIndex; pageIndex += 1) {
+    nextIndexes.add(pageIndex);
+  }
+
+  setRenderPageIndexes((currentIndexes) =>
+    areSetsEqual(currentIndexes, nextIndexes) ? currentIndexes : nextIndexes,
+  );
+}
+
+function getCurrentPageIndexFromLayout(
+  pageLayout: PageLayout,
+  viewportTop: number,
+  viewportHeight: number,
+) {
+  if (pageLayout.tops.length === 0) {
+    return 0;
+  }
+
+  return findLastPageStartingBefore(pageLayout, viewportTop + viewportHeight * 0.35);
+}
+
+function findFirstPageEndingAfter(pageLayout: PageLayout, targetTop: number) {
+  let low = 0;
+  let high = pageLayout.tops.length - 1;
+  let result = pageLayout.tops.length - 1;
+
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const pageBottom = pageLayout.tops[middle] + pageLayout.heights[middle];
+
+    if (pageBottom >= targetTop) {
+      result = middle;
+      high = middle - 1;
+    } else {
+      low = middle + 1;
     }
   }
 
-  return currentPageIndex;
+  return result;
 }
 
-function getScrollTopForElement(scrollElement: HTMLElement, targetElement: HTMLElement) {
-  const scrollRect = scrollElement.getBoundingClientRect();
-  const targetRect = targetElement.getBoundingClientRect();
+function findLastPageStartingBefore(pageLayout: PageLayout, targetBottom: number) {
+  let low = 0;
+  let high = pageLayout.tops.length - 1;
+  let result = 0;
 
-  return Math.max(0, targetRect.top - scrollRect.top + scrollElement.scrollTop);
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+
+    if (pageLayout.tops[middle] <= targetBottom) {
+      result = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+
+  return result;
 }
 
 function roundZoom(value: number) {
@@ -885,4 +1468,43 @@ function roundZoom(value: number) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function areSetsEqual(left: Set<number>, right: Set<number>) {
+  if (left.size !== right.size) {
+    return false;
+  }
+
+  for (const value of left) {
+    if (!right.has(value)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+async function copyTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+
+  textarea.value = text;
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  textarea.setAttribute("readonly", "true");
+  document.body.append(textarea);
+  textarea.select();
+
+  try {
+    if (!document.execCommand("copy")) {
+      throw new Error("Copy failed.");
+    }
+  } finally {
+    textarea.remove();
+  }
 }

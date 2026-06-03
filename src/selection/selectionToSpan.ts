@@ -22,6 +22,20 @@ export type PageTextIndex = {
   words: WordRange[];
 };
 
+export type PageTextMetadata = {
+  rawSpanRanges: RawSpanRange[];
+  rawText: string;
+  sentences: SentenceRange[];
+  text: string;
+  textMap: NormalizedPageText;
+  words: WordRange[];
+};
+type RawSpanRange = {
+  rawEnd: number;
+  rawStart: number;
+  spanIndex: number;
+};
+
 export type TextSpanIndex = {
   element: HTMLElement;
   normalizedEnd: number;
@@ -48,18 +62,75 @@ export type WordRange = {
 export function createPageTextIndex({
   pageElement,
   pageIndex,
+  textMetadata,
   textContent,
   textDivs,
   textLayerElement,
 }: {
   pageElement: HTMLElement;
   pageIndex: number;
+  textMetadata?: PageTextMetadata;
   textContent: TextContent;
   textDivs: HTMLElement[];
   textLayerElement: HTMLElement;
 }): PageTextIndex {
+  const metadata = textMetadata ?? createPageTextMetadata(textContent);
+  const spans: TextSpanIndex[] = metadata.rawSpanRanges
+    .map((span) => {
+      const element = textDivs[span.spanIndex];
+
+      if (!element) {
+        return undefined;
+      }
+
+      element.dataset.pageIndex = String(pageIndex);
+      element.dataset.rawStart = String(span.rawStart);
+      element.dataset.rawEnd = String(span.rawEnd);
+      element.dataset.spanIndex = String(span.spanIndex);
+
+      const normalizedStart = clamp(
+        metadata.textMap.rawToNormalized[span.rawStart] ?? 0,
+        0,
+        metadata.text.length,
+      );
+      const normalizedEnd = clamp(
+        metadata.textMap.rawToNormalized[span.rawEnd] ?? metadata.text.length,
+        normalizedStart,
+        metadata.text.length,
+      );
+      const sentence = findSentenceForRange(metadata.sentences, normalizedStart, normalizedEnd);
+      const indexedSpan: TextSpanIndex = {
+        ...span,
+        element,
+        normalizedEnd,
+        normalizedStart,
+        sentenceIndex: sentence?.index,
+      };
+
+      if (typeof sentence?.index === "number") {
+        element.dataset.sentenceIndex = String(sentence.index);
+      }
+
+      return indexedSpan;
+    })
+    .filter((span): span is TextSpanIndex => Boolean(span));
+
+  return {
+    pageElement,
+    pageIndex,
+    rawText: metadata.rawText,
+    sentences: metadata.sentences,
+    spans,
+    text: metadata.text,
+    textLayerElement,
+    textMap: metadata.textMap,
+    words: metadata.words,
+  };
+}
+
+export function createPageTextMetadata(textContent: TextContent): PageTextMetadata {
   const rawParts: string[] = [];
-  const rawSpans: Array<Pick<TextSpanIndex, "element" | "rawEnd" | "rawStart" | "spanIndex">> = [];
+  const rawSpanRanges: RawSpanRange[] = [];
   let rawCursor = 0;
   let textDivIndex = 0;
 
@@ -68,7 +139,6 @@ export function createPageTextIndex({
       continue;
     }
 
-    const element = textDivs[textDivIndex];
     const rawStart = rawCursor;
 
     rawParts.push(item.str);
@@ -76,13 +146,7 @@ export function createPageTextIndex({
 
     const rawEnd = rawCursor;
 
-    if (element) {
-      element.dataset.pageIndex = String(pageIndex);
-      element.dataset.rawStart = String(rawStart);
-      element.dataset.rawEnd = String(rawEnd);
-      element.dataset.spanIndex = String(rawSpans.length);
-      rawSpans.push({ element, rawEnd, rawStart, spanIndex: rawSpans.length });
-    }
+    rawSpanRanges.push({ rawEnd, rawStart, spanIndex: textDivIndex });
 
     textDivIndex += 1;
 
@@ -96,162 +160,20 @@ export function createPageTextIndex({
   const textMap = normalizePageText(rawText);
   const sentences = findSentenceRanges(textMap.text);
   const words = findWordRanges(textMap.text);
-  const spans: TextSpanIndex[] = rawSpans.map((span) => {
-    const normalizedStart = clamp(
-      textMap.rawToNormalized[span.rawStart] ?? 0,
-      0,
-      textMap.text.length,
-    );
-    const normalizedEnd = clamp(
-      textMap.rawToNormalized[span.rawEnd] ?? textMap.text.length,
-      normalizedStart,
-      textMap.text.length,
-    );
-    const sentence = findSentenceForRange(sentences, normalizedStart, normalizedEnd);
-    const indexedSpan: TextSpanIndex = {
-      ...span,
-      normalizedEnd,
-      normalizedStart,
-      sentenceIndex: sentence?.index,
-    };
-
-    if (typeof sentence?.index === "number") {
-      span.element.dataset.sentenceIndex = String(sentence.index);
-    }
-
-    return indexedSpan;
-  });
 
   return {
-    pageElement,
-    pageIndex,
+    rawSpanRanges,
     rawText,
     sentences,
-    spans,
     text: textMap.text,
-    textLayerElement,
     textMap,
     words,
   };
 }
 
-export function pointerHitToSentenceSelection({
-  contextWindowSize = DEFAULT_CONTEXT_WINDOW_SIZE,
-  forwardSentenceCount = 0,
-  maxSentenceCount,
-  pageIndexes,
-  pdfFingerprint,
-  pointerHit,
-}: {
-  contextWindowSize?: number;
-  forwardSentenceCount?: number;
-  maxSentenceCount?: number;
-  pageIndexes: Map<number, PageTextIndex>;
-  pdfFingerprint: string;
-  pointerHit: TextSpanPointerHit;
-}) {
-  const pageTextIndex = pageIndexes.get(pointerHit.pageIndex);
-
-  if (!pageTextIndex || pageTextIndex.text.trim().length === 0) {
-    return undefined;
-  }
-
-  const pointerOffset = clamp(
-    pageTextIndex.textMap.rawToNormalized[pointerHit.rawOffset] ?? 0,
-    0,
-    pageTextIndex.text.length,
-  );
-  const targetSentence = findSentenceForRange(
-    pageTextIndex.sentences,
-    pointerOffset,
-    pointerOffset + 1,
-  );
-
-  if (!targetSentence) {
-    return undefined;
-  }
-
-  const requestedLastSentenceIndex = Math.min(
-    pageTextIndex.sentences.length - 1,
-    targetSentence.index + Math.max(0, forwardSentenceCount),
-  );
-  const lastSentenceIndex = clampLastSentenceIndex({
-    firstSentenceIndex: targetSentence.index,
-    lastSentenceIndex: requestedLastSentenceIndex,
-    maxSentenceCount,
-  });
-
-  return createSentenceSelectionFromSentences({
-    contextWindowSize,
-    pageTextIndex,
-    pdfFingerprint,
-    targetSentences: pageTextIndex.sentences.slice(targetSentence.index, lastSentenceIndex + 1),
-  });
-}
-
-export function pointerHitRangeToSentenceSelection({
-  contextWindowSize = DEFAULT_CONTEXT_WINDOW_SIZE,
-  endHit,
-  maxSentenceCount,
-  pageIndexes,
-  pdfFingerprint,
-  startHit,
-}: {
-  contextWindowSize?: number;
-  endHit: TextSpanPointerHit;
-  maxSentenceCount?: number;
-  pageIndexes: Map<number, PageTextIndex>;
-  pdfFingerprint: string;
-  startHit: TextSpanPointerHit;
-}) {
-  if (startHit.pageIndex !== endHit.pageIndex) {
-    return undefined;
-  }
-
-  const pageTextIndex = pageIndexes.get(startHit.pageIndex);
-
-  if (!pageTextIndex || pageTextIndex.text.trim().length === 0) {
-    return undefined;
-  }
-
-  const rawStart = Math.min(startHit.rawOffset, endHit.rawOffset);
-  const rawEnd = Math.min(
-    pageTextIndex.rawText.length,
-    Math.max(startHit.rawOffset, endHit.rawOffset) + 1,
-  );
-  const selectionStart = clamp(
-    pageTextIndex.textMap.rawToNormalized[rawStart] ?? 0,
-    0,
-    pageTextIndex.text.length,
-  );
-  const selectionEnd = clamp(
-    pageTextIndex.textMap.rawToNormalized[rawEnd] ?? pageTextIndex.text.length,
-    selectionStart,
-    pageTextIndex.text.length,
-  );
-  const targetSentences = findSentencesForRange(
-    pageTextIndex.sentences,
-    selectionStart,
-    selectionEnd,
-    maxSentenceCount,
-  );
-
-  if (targetSentences.length === 0) {
-    return undefined;
-  }
-
-  return createSentenceSelectionFromSentences({
-    contextWindowSize,
-    pageTextIndex,
-    pdfFingerprint,
-    targetSentences,
-  });
-}
-
 export function pointerHitRangeToWordSelection({
   contextWindowSize = DEFAULT_CONTEXT_WINDOW_SIZE,
   endHit,
-  maxSentenceCount,
   maxWordCount,
   pageIndexes,
   pdfFingerprint,
@@ -259,7 +181,6 @@ export function pointerHitRangeToWordSelection({
 }: {
   contextWindowSize?: number;
   endHit: TextSpanPointerHit;
-  maxSentenceCount?: number;
   maxWordCount?: number;
   pageIndexes: Map<number, PageTextIndex>;
   pdfFingerprint: string;
@@ -306,7 +227,6 @@ export function pointerHitRangeToWordSelection({
     pageTextIndex.sentences,
     targetStart,
     targetEnd,
-    maxSentenceCount,
   );
 
   if (targetSentences.length > 0) {
@@ -346,50 +266,6 @@ export function getTextSpanPointerHit(
 
 export function getTextSpanPointerHitFromPoint(clientX: number, clientY: number) {
   return getTextSpanPointerHit(document.elementFromPoint(clientX, clientY), clientX, clientY);
-}
-
-function createSentenceSelectionFromSentences({
-  contextWindowSize,
-  pageTextIndex,
-  pdfFingerprint,
-  targetSentences,
-}: {
-  contextWindowSize: number;
-  pageTextIndex: PageTextIndex;
-  pdfFingerprint: string;
-  targetSentences: SentenceRange[];
-}): SentenceSelection {
-  const firstSentence = targetSentences[0];
-  const lastSentence = targetSentences[targetSentences.length - 1];
-  const contextBefore = pageTextIndex.sentences
-    .slice(Math.max(0, firstSentence.index - contextWindowSize), firstSentence.index)
-    .map((sentence) => sentence.normalized);
-  const contextAfter = pageTextIndex.sentences
-    .slice(lastSentence.index + 1, lastSentence.index + 1 + contextWindowSize)
-    .map((sentence) => sentence.normalized);
-  const targetSentence = targetSentences.map((sentence) => sentence.text).join(" ");
-  const normalizedSentence = normalizeSentence(
-    targetSentences.map((sentence) => sentence.normalized).join(" "),
-  );
-
-  return {
-    localContextAfter: contextAfter,
-    localContextBefore: contextBefore,
-    normalizedSentence,
-    pageIndex: pageTextIndex.pageIndex,
-    pdfFingerprint,
-    rectsOnPage: getSentenceRectsOnPage(
-      pageTextIndex,
-      firstSentence.start,
-      lastSentence.end,
-    ),
-    selectedText: normalizedSentence,
-    targetSentence,
-    textSpan: {
-      endGlobalChar: lastSentence.end,
-      startGlobalChar: firstSentence.start,
-    },
-  };
 }
 
 function createTextSelectionFromRange({

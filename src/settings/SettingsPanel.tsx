@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { Check, Trash2, X } from "lucide-react";
-import type { AppSettings, PdfLibraryEntry } from "../types/domain";
+import type { AppSettings, PaperContextRecord, PdfLibraryEntry } from "../types/domain";
+import { PaperContextEditor } from "./PaperContextEditor";
+import { API_LOGS_UPDATED_EVENT } from "../translation/apiLogRepository";
 import {
   getApiUsageSummary,
   MAX_DRAGGED_WORDS_LIMIT,
   MIN_DRAGGED_WORDS_LIMIT,
   type ApiUsageSummary,
 } from "./settingsRepository";
+import type { PaperContextDraft } from "../translation/paperContext";
 
 type SettingsPanelProps = {
   apiKeyConfigured?: boolean;
@@ -18,7 +21,9 @@ type SettingsPanelProps = {
   onClearTranslationCache: () => Promise<void>;
   onClose: () => void;
   onDeletePdfData: (fingerprint: string) => Promise<void>;
+  onPaperContextSave: (draft: PaperContextDraft) => Promise<void> | void;
   onSettingsChange: (settings: Partial<AppSettings>) => Promise<void> | void;
+  paperContext?: PaperContextRecord;
   settings: AppSettings;
 };
 
@@ -29,10 +34,15 @@ type PendingAction =
   | `delete-pdf:${string}`;
 
 const EMPTY_USAGE_SUMMARY: ApiUsageSummary = {
+  abortedCalls: 0,
   cacheHitTokens: 0,
   cacheMissTokens: 0,
   completionTokens: 0,
   errorCalls: 0,
+  modelCounts: {
+    "deepseek-v4-flash": 0,
+    "deepseek-v4-pro": 0,
+  },
   promptTokens: 0,
   recentLogs: [],
   successfulCalls: 0,
@@ -50,7 +60,9 @@ export function SettingsPanel({
   onClearTranslationCache,
   onClose,
   onDeletePdfData,
+  onPaperContextSave,
   onSettingsChange,
+  paperContext,
   settings,
 }: SettingsPanelProps) {
   const [pendingAction, setPendingAction] = useState<PendingAction>();
@@ -67,6 +79,14 @@ export function SettingsPanel({
 
   useEffect(() => {
     refreshUsageSummary();
+  }, [refreshUsageSummary]);
+
+  useEffect(() => {
+    window.addEventListener(API_LOGS_UPDATED_EVENT, refreshUsageSummary);
+
+    return () => {
+      window.removeEventListener(API_LOGS_UPDATED_EVENT, refreshUsageSummary);
+    };
   }, [refreshUsageSummary]);
 
   const updateSettings = useCallback(
@@ -103,7 +123,15 @@ export function SettingsPanel({
   );
 
   return (
-    <div className="settings-backdrop" role="presentation">
+    <div
+      className="settings-backdrop"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+      role="presentation"
+    >
       <aside className="settings-panel" aria-label="Settings panel">
         <header className="settings-panel-header">
           <div>
@@ -196,16 +224,19 @@ export function SettingsPanel({
               type="number"
               value={settings.maxDraggedWords}
             />
+            <small className="settings-field-hint">
+              Maximum {MAX_DRAGGED_WORDS_LIMIT} words.
+            </small>
           </label>
         </section>
 
         <section className="settings-section" aria-label="Paper context">
           <div className="settings-section-heading">Paper Context</div>
-          <div className="settings-readout-list">
-            <Readout label="Title" value={currentEntry?.pdfMetadata?.title || currentEntry?.fileName || "-"} />
-            <Readout label="Abstract" value="-" />
-            <Readout label="Terms" value="0" />
-          </div>
+          <PaperContextEditor
+            currentEntry={currentEntry}
+            onSave={onPaperContextSave}
+            paperContext={paperContext}
+          />
         </section>
 
         <section className="settings-section" aria-label="API status and usage">
@@ -217,8 +248,14 @@ export function SettingsPanel({
               value={apiKeyConfigured === undefined ? "-" : apiKeyConfigured ? "configured" : "missing"}
             />
             <Readout label="Calls" value={String(usageSummary.totalCalls)} />
+            <Readout label="Errors" value={String(usageSummary.errorCalls)} />
             <Readout label="Tokens" value={formatNumber(usageSummary.totalTokens)} />
-            <Readout label="Cache hit" value={formatNumber(usageSummary.cacheHitTokens)} />
+            <Readout
+              label="Models"
+              value={`F ${usageSummary.modelCounts["deepseek-v4-flash"]} / P ${usageSummary.modelCounts["deepseek-v4-pro"]}`}
+            />
+            <Readout label="DS cache hit" value={formatNumber(usageSummary.cacheHitTokens)} />
+            <Readout label="DS cache miss" value={formatNumber(usageSummary.cacheMissTokens)} />
           </div>
           <div className="settings-log-list" aria-label="Recent API calls">
             {usageSummary.recentLogs.length > 0
@@ -226,6 +263,7 @@ export function SettingsPanel({
                   <div className="settings-log-row" key={log.id}>
                     <span>{log.model === "deepseek-v4-pro" ? "Pro" : "Flash"}</span>
                     <span>{log.status}</span>
+                    <span>{formatDuration(log)}</span>
                     <span>{formatNumber(log.totalTokens ?? 0)}</span>
                   </div>
                 ))
@@ -265,13 +303,13 @@ export function SettingsPanel({
             <ConfirmButton
               disabled={!currentEntry}
               isPending={pendingAction === "clear-current-pins"}
-              label="Clear current PDF pins"
+              label="Clear current PDF favorites"
               onCancel={() => setPendingAction(undefined)}
               onConfirm={() =>
                 void runConfirmedAction(
                   "clear-current-pins",
                   onClearCurrentPdfPins,
-                  "Current PDF pins cleared.",
+                  "Current PDF favorites cleared.",
                 )
               }
             />
@@ -412,4 +450,12 @@ function formatBytes(bytes: number) {
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatDuration(log: { requestFinishedAt?: number; requestStartedAt: number }) {
+  if (!log.requestFinishedAt) {
+    return "-";
+  }
+
+  return `${Math.max(0, log.requestFinishedAt - log.requestStartedAt)} ms`;
 }

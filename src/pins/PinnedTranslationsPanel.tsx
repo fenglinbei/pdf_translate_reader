@@ -1,6 +1,6 @@
 import { Highlighter, LocateFixed, RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { TokenUsage, TranslationPin, TranslationRequest } from "../types/domain";
+import type { PaperContext, TokenUsage, TranslationPin, TranslationRequest } from "../types/domain";
 import { createTranslationCacheKey } from "../translation/cacheKey";
 import {
   DEFAULT_SOURCE_LANG,
@@ -9,12 +9,15 @@ import {
 import { streamTranslation } from "../translation/translationClient";
 import { putTranslationCacheEntry } from "../translation/translationRepository";
 import { updatePinTranslation } from "./pinRepository";
+import { putApiCallLog } from "../translation/apiLogRepository";
+import { getTranslationErrorMessage } from "../translation/errors";
 
 type PinnedTranslationsPanelProps = {
   onHighlightPin: (pin: TranslationPin, highlighted: boolean) => void;
   onLocatePin: (pin: TranslationPin) => void;
   onPinUpdated: (pin: TranslationPin) => void;
   onUnpin: (pin: TranslationPin) => void;
+  paperContext?: PaperContext;
   pins: TranslationPin[];
 };
 
@@ -29,6 +32,7 @@ export function PinnedTranslationsPanel({
   onLocatePin,
   onPinUpdated,
   onUnpin,
+  paperContext,
   pins,
 }: PinnedTranslationsPanelProps) {
   const abortControllersRef = useRef(new Map<string, AbortController>());
@@ -57,6 +61,7 @@ export function PinnedTranslationsPanel({
         localContextBefore: pin.localContextBefore ?? [],
         longContextEnabled: pin.longContextEnabled,
         model: pin.model,
+        paperContext: pin.longContextEnabled ? paperContext : undefined,
         pdfFingerprint: pin.pdfFingerprint,
         promptVersion: pin.promptVersion,
         sourceLang,
@@ -69,6 +74,7 @@ export function PinnedTranslationsPanel({
         longContextEnabled: request.longContextEnabled,
         model: request.model,
         normalizedSentence: pin.normalizedSentence,
+        paperContextHash: request.paperContext?.contextHash,
         pdfFingerprint: request.pdfFingerprint,
         promptVersion: request.promptVersion,
         sourceLang,
@@ -82,10 +88,12 @@ export function PinnedTranslationsPanel({
           status: "loading",
         },
       }));
+      let apiRequestStartedAt: number | undefined;
+      let streamedUsage: TokenUsage | undefined;
 
       void (async () => {
         let streamedTranslation = "";
-        let streamedUsage: TokenUsage | undefined;
+        apiRequestStartedAt = Date.now();
 
         await streamTranslation(
           request,
@@ -108,6 +116,15 @@ export function PinnedTranslationsPanel({
         );
 
         if (abortController.signal.aborted) {
+          if (apiRequestStartedAt) {
+            await putApiCallLog({
+              request,
+              requestFinishedAt: Date.now(),
+              requestStartedAt: apiRequestStartedAt,
+              status: "aborted",
+              usage: streamedUsage,
+            }).catch(() => undefined);
+          }
           return;
         }
 
@@ -115,12 +132,21 @@ export function PinnedTranslationsPanel({
           throw new Error("Translation returned no text.");
         }
 
+        await putApiCallLog({
+          request,
+          requestFinishedAt: Date.now(),
+          requestStartedAt: apiRequestStartedAt,
+          status: "success",
+          usage: streamedUsage,
+        }).catch(() => undefined);
+
         await putTranslationCacheEntry({
           cacheKey,
           contextWindowN: request.contextWindowN,
           longContextEnabled: request.longContextEnabled,
           model: request.model,
           normalizedSentence: pin.normalizedSentence,
+          paperContextHash: request.paperContext?.contextHash,
           pdfFingerprint: request.pdfFingerprint,
           promptVersion: request.promptVersion,
           sourceLang,
@@ -146,7 +172,19 @@ export function PinnedTranslationsPanel({
           return nextState;
         });
       })().catch((error) => {
+        const errorMessage = getTranslationErrorMessage(error);
+
         if (abortController.signal.aborted) {
+          if (apiRequestStartedAt) {
+            void putApiCallLog({
+              errorMessage,
+              request,
+              requestFinishedAt: Date.now(),
+              requestStartedAt: apiRequestStartedAt,
+              status: "aborted",
+              usage: streamedUsage,
+            }).catch(() => undefined);
+          }
           return;
         }
 
@@ -155,17 +193,27 @@ export function PinnedTranslationsPanel({
           ...state,
           [pin.id]: {
             draftTranslation: "",
-            errorMessage: error instanceof Error ? error.message : "Translation failed.",
+            errorMessage,
             status: "error",
           },
         }));
+        if (apiRequestStartedAt) {
+          void putApiCallLog({
+            errorMessage,
+            request,
+            requestFinishedAt: Date.now(),
+            requestStartedAt: apiRequestStartedAt,
+            status: "error",
+            usage: streamedUsage,
+          }).catch(() => undefined);
+        }
       });
     },
-    [onPinUpdated],
+    [onPinUpdated, paperContext],
   );
 
   if (pins.length === 0) {
-    return <div className="pins-pane-empty">No pins yet</div>;
+    return <div className="pins-pane-empty">No favorites yet</div>;
   }
 
   return (
@@ -203,7 +251,7 @@ export function PinnedTranslationsPanel({
                   <LocateFixed aria-hidden="true" size={16} strokeWidth={2} />
                 </button>
                 <button
-                  aria-label="Retranslate pinned text"
+                  aria-label="Retranslate favorite text"
                   className="icon-button icon-button--small pinned-translation-card-action"
                   disabled={isRetranslating}
                   onClick={() => handleRetranslate(pin)}
@@ -213,10 +261,10 @@ export function PinnedTranslationsPanel({
                   <RefreshCw aria-hidden="true" size={16} strokeWidth={2} />
                 </button>
                 <button
-                  aria-label="Unpin translation"
+                  aria-label="Remove favorite"
                   className="icon-button icon-button--small pinned-translation-card-action"
                   onClick={() => onUnpin(pin)}
-                  title="Unpin"
+                  title="Remove favorite"
                   type="button"
                 >
                   <X aria-hidden="true" size={16} strokeWidth={2} />

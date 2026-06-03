@@ -1,64 +1,130 @@
 import { useEffect, useRef, useState } from "react";
 import type { PinWriteInput } from "../pins/pinRepository";
-import type { AppSettings, DOMRectLike, SentenceSelection, TranslationPin } from "../types/domain";
+import type {
+  AppSettings,
+  DOMRectLike,
+  PaperContext,
+  SelectionRegion,
+  SentenceSelection,
+  TranslationPin,
+} from "../types/domain";
+import type {
+  PinnedTranslationCard,
+  TranslationCardPinInput,
+  TranslationFavoriteAction,
+  TranslationCardViewChange,
+} from "../translation/floatingCardTypes";
 import { TranslationPopover } from "../translation/TranslationPopover";
 import { getPopoverPlacement, getSelectionBounds, type PageGutters } from "./overlayPlacement";
 
 type PageOverlayLayerProps = {
+  activeTranslationCardZIndex: number;
+  copyNotice?: string;
+  copySelection?: SentenceSelection;
   draftSelection?: SentenceSelection;
   locatedPinId?: string;
-  onCloseSelection: () => void;
+  onActivateTranslationCard: (selection: SentenceSelection) => void;
+  onCloseTranslationCard: (selection: SentenceSelection) => void;
+  onPinTranslationCard: (input: TranslationCardPinInput) => void;
   onPinnedTranslationRefresh: (input: PinWriteInput) => void;
-  onPinTranslation: (input: PinWriteInput) => Promise<void>;
+  onPinTranslation: (
+    input: PinWriteInput,
+    action: TranslationFavoriteAction,
+  ) => Promise<void>;
+  onTranslationCardViewChange: (
+    selection: SentenceSelection,
+    viewChange: TranslationCardViewChange,
+  ) => void;
   pageHeight: number;
   pageIndex: number;
   pageWidth: number;
+  paperContext?: PaperContext;
+  pinnedTranslationCards: PinnedTranslationCard[];
   pins: TranslationPin[];
+  queuedSelections?: SentenceSelection[];
   selection?: SentenceSelection;
   settings: AppSettings;
 };
 
 export function PageOverlayLayer({
+  activeTranslationCardZIndex,
+  copyNotice,
+  copySelection,
   draftSelection,
   locatedPinId,
-  onCloseSelection,
+  onActivateTranslationCard,
+  onCloseTranslationCard,
+  onPinTranslationCard,
   onPinnedTranslationRefresh,
   onPinTranslation,
+  onTranslationCardViewChange,
   pageHeight,
   pageIndex,
   pageWidth,
+  paperContext,
+  pinnedTranslationCards,
   pins,
+  queuedSelections = [],
   selection,
   settings,
 }: PageOverlayLayerProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const [pageGutters, setPageGutters] = useState<PageGutters>({ left: 0, right: 0 });
   const selectionKey = selection
-    ? `${selection.pdfFingerprint}:${selection.pageIndex}:${selection.normalizedSentence}`
+    ? `${selection.pdfFingerprint}:${selection.pageIndex}:${selection.normalizedSentence}:${
+        selection.regions?.length ?? 0
+      }`
     : "";
-  const hasSelection = Boolean(selection && selection.pageIndex === pageIndex && selection.rectsOnPage.length > 0);
+  const selectionRectSources = selection ? getSelectionRectSourcesOnPage(selection, pageIndex) : [];
+  const selectionAnchorSource = selection ? getAnchorRectSourceOnPage(selection, pageIndex) : undefined;
+  const hasSelection = selectionRectSources.length > 0;
+  const hasCopySelection = Boolean(
+    copySelection && hasSelectionOnPage(copySelection, pageIndex),
+  );
   const hasDraftSelection = Boolean(
-    draftSelection && draftSelection.pageIndex === pageIndex && draftSelection.rectsOnPage.length > 0,
+    draftSelection && hasSelectionOnPage(draftSelection, pageIndex),
+  );
+  const queuedSelectionRects = queuedSelections.flatMap((queuedSelection) =>
+    getSelectionRectsOnPage(queuedSelection, pageIndex, pageWidth, pageHeight),
+  );
+  const pinnedTranslationCardsOnPage = pinnedTranslationCards.filter(
+    (card) =>
+      hasSelectionOnPage(card.selection, pageIndex) &&
+      !(selection && isSamePinTarget(card.selection, selection)),
   );
   const locatedPin = pins.find(
-    (pin) => pin.id === locatedPinId && pin.pageIndex === pageIndex && pin.rectsOnPage.length > 0,
+    (pin) => pin.id === locatedPinId && hasSelectionOnPage(pin, pageIndex),
   );
   const highlightedPins = pins.filter(
-    (pin) => pin.highlighted && pin.pageIndex === pageIndex && pin.rectsOnPage.length > 0,
+    (pin) => pin.highlighted && hasSelectionOnPage(pin, pageIndex),
   );
   const selectionPinned = Boolean(
     selection && pins.some((pin) => isSamePinTarget(pin, selection)),
   );
-  const selectionRects =
-    selection && hasSelection
-      ? scaleStoredRects(selection, pageWidth, pageHeight)
-      : [];
+  const activePinnedCard = selection
+    ? pinnedTranslationCards.find((card) => isSamePinTarget(card.selection, selection))
+    : undefined;
+  const selectionRects = selectionRectSources.flatMap((source) =>
+    scaleStoredRects(source, pageWidth, pageHeight),
+  );
+  const selectionAnchorRects = selectionAnchorSource
+    ? scaleStoredRects(selectionAnchorSource, pageWidth, pageHeight)
+    : [];
   const draftRects =
     draftSelection && hasDraftSelection
-      ? scaleStoredRects(draftSelection, pageWidth, pageHeight)
+      ? getSelectionRectsOnPage(draftSelection, pageIndex, pageWidth, pageHeight)
       : [];
+  const copyRects =
+    copySelection && hasCopySelection
+      ? getSelectionRectsOnPage(copySelection, pageIndex, pageWidth, pageHeight)
+      : [];
+  const needsPopoverPlacement = Boolean(selection && selectionAnchorRects.length > 0);
 
   useEffect(() => {
+    if (!needsPopoverPlacement) {
+      return undefined;
+    }
+
     const overlayElement = overlayRef.current;
     const pageElement = overlayElement?.parentElement;
     const scrollElement = overlayElement?.closest<HTMLElement>(".pdf-scroll-region");
@@ -93,25 +159,37 @@ export function PageOverlayLayer({
       currentScrollElement.removeEventListener("scroll", updatePageGutters);
       window.removeEventListener("resize", updatePageGutters);
     };
-  }, [pageHeight, pageWidth, selectionKey]);
+  }, [needsPopoverPlacement, pageHeight, pageWidth, selectionKey]);
 
-  if (!hasSelection && !hasDraftSelection && highlightedPins.length === 0 && !locatedPin) {
+  if (
+    !hasSelection &&
+    !hasCopySelection &&
+    !hasDraftSelection &&
+    queuedSelectionRects.length === 0 &&
+    pinnedTranslationCardsOnPage.length === 0 &&
+    highlightedPins.length === 0 &&
+    !locatedPin
+  ) {
     return <div className="pdf-page-overlay" ref={overlayRef} />;
   }
 
   const popoverPlacement =
-    selection && hasSelection
-      ? getPopoverPlacement(getSelectionBounds(selectionRects), {
+    selection && selectionAnchorRects.length > 0
+      ? getPopoverPlacement(getSelectionBounds(selectionAnchorRects), {
           gutters: pageGutters,
           height: pageHeight,
           width: pageWidth,
         })
       : undefined;
+  const activePopoverSelection =
+    selection && popoverPlacement
+      ? hydrateSelectionForCurrentPage(selection, pageIndex, pageWidth, pageHeight)
+      : undefined;
 
   return (
     <div className="pdf-page-overlay" ref={overlayRef}>
       {highlightedPins.flatMap((pin) =>
-        scaleStoredRects(pin, pageWidth, pageHeight).map((rect, index) => (
+        getSelectionRectsOnPage(pin, pageIndex, pageWidth, pageHeight).map((rect, index) => (
           <div
             aria-hidden="true"
             className="selection-highlight selection-highlight--pinned"
@@ -126,7 +204,7 @@ export function PageOverlayLayer({
         )),
       )}
       {locatedPin
-        ? scaleStoredRects(locatedPin, pageWidth, pageHeight).map((rect, index) => (
+        ? getSelectionRectsOnPage(locatedPin, pageIndex, pageWidth, pageHeight).map((rect, index) => (
             <div
               aria-hidden="true"
               className="selection-highlight selection-highlight--located"
@@ -140,6 +218,19 @@ export function PageOverlayLayer({
             />
           ))
         : null}
+      {queuedSelectionRects.map((rect, index) => (
+        <div
+          aria-hidden="true"
+          className="selection-highlight selection-highlight--queued"
+          key={`${Math.round(rect.left)}-${Math.round(rect.top)}-queued-${index}`}
+          style={{
+            height: rect.height,
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+          }}
+        />
+      ))}
       {hasDraftSelection ? (
         <>
           {draftRects.map((rect, index) => (
@@ -160,9 +251,30 @@ export function PageOverlayLayer({
           </div>
         </>
       ) : null}
-      {selection && popoverPlacement && !hasDraftSelection ? (
+      {hasCopySelection ? (
         <>
-          {selectionRects.map((rect, index) => (
+          {copyRects.map((rect, index) => (
+            <div
+              aria-hidden="true"
+              className="selection-highlight selection-highlight--copied"
+              key={`${Math.round(rect.left)}-${Math.round(rect.top)}-copied-${index}`}
+              style={{
+                height: rect.height,
+                left: rect.left,
+                top: rect.top,
+                width: rect.width,
+              }}
+            />
+          ))}
+          {copyNotice ? (
+            <div className="selection-copy-badge" style={getDraftBadgeStyle(copyRects, pageWidth)}>
+              {copyNotice}
+            </div>
+          ) : null}
+        </>
+      ) : null}
+      {selection && hasSelection && !hasDraftSelection
+        ? selectionRects.map((rect, index) => (
             <div
               aria-hidden="true"
               className="selection-highlight"
@@ -174,39 +286,199 @@ export function PageOverlayLayer({
                 width: rect.width,
               }}
             />
-          ))}
-          <TranslationPopover
-            isPinned={selectionPinned}
-            onClose={onCloseSelection}
-            onPin={(payload) =>
-              onPinTranslation({
+          ))
+        : null}
+      {selection && activePopoverSelection && popoverPlacement && !hasDraftSelection ? (
+        <TranslationPopover
+          isCardPinned={Boolean(activePinnedCard)}
+          isFavorited={selectionPinned}
+          onActivate={() => onActivateTranslationCard(selection)}
+          onCardPin={(view) =>
+            onPinTranslationCard({
+              placement: activePinnedCard?.placement ?? popoverPlacement.placement,
+              selection: activePopoverSelection,
+              style: activePinnedCard?.style ?? popoverPlacement.style,
+              view,
+            })
+          }
+          onClose={() => onCloseTranslationCard(selection)}
+          onFavorite={(payload, action) =>
+            onPinTranslation(
+              {
                 ...payload,
                 pageHeight,
                 pageWidth,
-              })
-            }
-            onTranslationComplete={(payload) =>
-              onPinnedTranslationRefresh({
-                ...payload,
-                pageHeight,
-                pageWidth,
-              })
-            }
-            pinSelection={{
-              ...selection,
+              },
+              action,
+            )
+          }
+          onTranslationComplete={(payload) =>
+            onPinnedTranslationRefresh({
+              ...payload,
               pageHeight,
               pageWidth,
-              rectsOnPage: selectionRects,
-            }}
-            placement={popoverPlacement.placement}
-            selection={selection}
-            settings={settings}
-            style={popoverPlacement.style}
-          />
-        </>
+            })
+          }
+          onViewChange={(viewChange) => onTranslationCardViewChange(selection, viewChange)}
+          pinSelection={{
+            ...activePopoverSelection,
+          }}
+          placement={activePinnedCard?.placement ?? popoverPlacement.placement}
+          paperContext={paperContext}
+          selection={activePopoverSelection}
+          settings={settings}
+          style={activePinnedCard?.style ?? popoverPlacement.style}
+          view={activePinnedCard?.view}
+          zIndex={activePinnedCard?.zIndex ?? activeTranslationCardZIndex}
+        />
       ) : null}
+      {pinnedTranslationCardsOnPage.map((card) => {
+            const cardSelection = card.selection;
+            const cardRects = getSelectionRectsOnPage(cardSelection, pageIndex, pageWidth, pageHeight);
+            const hydratedCardSelection = hydrateSelectionForCurrentPage(
+              cardSelection,
+              pageIndex,
+              pageWidth,
+              pageHeight,
+            );
+            const shouldShowCardPopover =
+              cardSelection.pageIndex === pageIndex && cardSelection.rectsOnPage.length > 0;
+
+            return (
+              <div key={card.key}>
+                {cardRects.map((rect, index) => (
+                  <div
+                    aria-hidden="true"
+                    className="selection-highlight"
+                    key={`${Math.round(rect.left)}-${Math.round(rect.top)}-pinned-card-${index}`}
+                    style={{
+                      height: rect.height,
+                      left: rect.left,
+                      top: rect.top,
+                      width: rect.width,
+                    }}
+                  />
+                ))}
+                {shouldShowCardPopover ? (
+                  <TranslationPopover
+                    isCardPinned={true}
+                    isFavorited={pins.some((pin) => isSamePinTarget(pin, cardSelection))}
+                    onActivate={() => onActivateTranslationCard(cardSelection)}
+                    onCardPin={(view) =>
+                      onPinTranslationCard({
+                        placement: card.placement,
+                        selection: hydratedCardSelection,
+                        style: card.style,
+                        view,
+                      })
+                    }
+                    onClose={() => onCloseTranslationCard(cardSelection)}
+                    onFavorite={(payload, action) =>
+                      onPinTranslation(
+                        {
+                          ...payload,
+                          pageHeight,
+                          pageWidth,
+                        },
+                        action,
+                      )
+                    }
+                    onTranslationComplete={(payload) =>
+                      onPinnedTranslationRefresh({
+                        ...payload,
+                        pageHeight,
+                        pageWidth,
+                      })
+                    }
+                    onViewChange={(viewChange) =>
+                      onTranslationCardViewChange(cardSelection, viewChange)
+                    }
+                    pinSelection={hydratedCardSelection}
+                    placement={card.placement}
+                    paperContext={paperContext}
+                    selection={hydratedCardSelection}
+                    settings={settings}
+                    style={card.style}
+                    view={card.view}
+                    zIndex={card.zIndex}
+                  />
+                ) : null}
+              </div>
+            );
+          })}
     </div>
   );
+}
+
+type SelectionRectSource = {
+  pageHeight?: number;
+  pageIndex: number;
+  pageWidth?: number;
+  rectsOnPage: DOMRectLike[];
+  regions?: SelectionRegion[];
+};
+
+function getSelectionRectSourcesOnPage(input: SelectionRectSource, pageIndex: number) {
+  if (input.regions && input.regions.length > 0) {
+    return input.regions.filter(
+      (region) => region.pageIndex === pageIndex && region.rectsOnPage.length > 0,
+    );
+  }
+
+  return input.pageIndex === pageIndex && input.rectsOnPage.length > 0 ? [input] : [];
+}
+
+function getAnchorRectSourceOnPage(input: SelectionRectSource, pageIndex: number) {
+  return input.pageIndex === pageIndex && input.rectsOnPage.length > 0 ? input : undefined;
+}
+
+function getSelectionRectsOnPage(
+  input: SelectionRectSource,
+  pageIndex: number,
+  pageWidth: number,
+  pageHeight: number,
+) {
+  return getSelectionRectSourcesOnPage(input, pageIndex).flatMap((source) =>
+    scaleStoredRects(source, pageWidth, pageHeight),
+  );
+}
+
+function hasSelectionOnPage(input: SelectionRectSource, pageIndex: number) {
+  return getSelectionRectSourcesOnPage(input, pageIndex).length > 0;
+}
+
+function hydrateSelectionForCurrentPage(
+  selection: SentenceSelection,
+  pageIndex: number,
+  pageWidth: number,
+  pageHeight: number,
+): SentenceSelection {
+  const selectionOnCurrentPage =
+    selection.pageIndex === pageIndex
+      ? {
+          ...selection,
+          pageHeight,
+          pageWidth,
+          rectsOnPage: scaleStoredRects(selection, pageWidth, pageHeight),
+        }
+      : selection;
+  const regions = selection.regions?.map((region) =>
+    region.pageIndex === pageIndex
+      ? {
+          ...region,
+          pageHeight,
+          pageWidth,
+          rectsOnPage: scaleStoredRects(region, pageWidth, pageHeight),
+        }
+      : region,
+  );
+
+  return regions
+    ? {
+        ...selectionOnCurrentPage,
+        regions,
+      }
+    : selectionOnCurrentPage;
 }
 
 function scaleStoredRects(

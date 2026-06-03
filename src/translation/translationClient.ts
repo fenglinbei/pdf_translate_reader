@@ -1,4 +1,6 @@
 import type { TokenUsage, TranslationRequest } from "../types/domain";
+import { PROJECT_CONFIG } from "../config/projectConfig";
+import { TRANSLATION_TIMEOUT_MESSAGE } from "./errors";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
@@ -14,25 +16,65 @@ export async function streamTranslation(
   handlers: TranslationStreamHandlers,
   signal?: AbortSignal,
 ) {
-  const response = await fetch(`${apiBaseUrl}/translate/stream`, {
-    body: JSON.stringify(request),
-    headers: {
-      Accept: "text/event-stream",
-      "Content-Type": "application/json",
+  const requestSignal = createTimeoutSignal(signal);
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/translate/stream`, {
+      body: JSON.stringify(request),
+      headers: {
+        Accept: "text/event-stream",
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+      signal: requestSignal.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(await readErrorMessage(response));
+    }
+
+    if (!response.body) {
+      throw new Error("Translation stream is missing.");
+    }
+
+    await readEventStream(response.body, handlers);
+  } catch (error) {
+    if (requestSignal.timedOut()) {
+      throw new Error(TRANSLATION_TIMEOUT_MESSAGE);
+    }
+
+    throw error;
+  } finally {
+    requestSignal.dispose();
+  }
+}
+
+function createTimeoutSignal(parentSignal?: AbortSignal) {
+  const abortController = new AbortController();
+  let timedOut = false;
+  const timeoutId = window.setTimeout(() => {
+    timedOut = true;
+    abortController.abort();
+  }, PROJECT_CONFIG.api.translationTimeoutMs);
+
+  function handleParentAbort() {
+    abortController.abort();
+  }
+
+  if (parentSignal?.aborted) {
+    abortController.abort();
+  } else {
+    parentSignal?.addEventListener("abort", handleParentAbort, { once: true });
+  }
+
+  return {
+    dispose: () => {
+      window.clearTimeout(timeoutId);
+      parentSignal?.removeEventListener("abort", handleParentAbort);
     },
-    method: "POST",
-    signal,
-  });
-
-  if (!response.ok) {
-    throw new Error(await readErrorMessage(response));
-  }
-
-  if (!response.body) {
-    throw new Error("Translation stream is missing.");
-  }
-
-  await readEventStream(response.body, handlers);
+    signal: abortController.signal,
+    timedOut: () => timedOut,
+  };
 }
 
 async function readEventStream(

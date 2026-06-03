@@ -1,4 +1,6 @@
 export type TranslationModel = "deepseek-v4-flash" | "deepseek-v4-pro";
+export type ReaderMode = "translate" | "select";
+export type SelectionMode = "continuous" | "cross";
 export type SourceLanguage = "en";
 export type TargetLanguage = "zh";
 
@@ -41,9 +43,24 @@ export type PdfLibraryEntry = {
   deletedAt?: number;
 };
 
+export type SelectionRegion = {
+  pageIndex: number;
+  pageHeight?: number;
+  pageWidth?: number;
+  selectedText: string;
+  targetSentence: string;
+  normalizedSentence: string;
+  rectsOnPage: DOMRectLike[];
+  textSpan: {
+    startGlobalChar: number;
+    endGlobalChar: number;
+  };
+};
+
 export type SentenceSelection = {
   pdfFingerprint: string;
   pageIndex: number;
+  anchorRegionIndex?: number;
   pageHeight?: number;
   pageWidth?: number;
   selectedText: string;
@@ -52,22 +69,31 @@ export type SentenceSelection = {
   localContextBefore: string[];
   localContextAfter: string[];
   rectsOnPage: DOMRectLike[];
+  regions?: SelectionRegion[];
   textSpan: {
     startGlobalChar: number;
     endGlobalChar: number;
   };
 };
 
+export type PaperContextTerm = {
+  source: string;
+  target: string;
+  confidence: "auto" | "user";
+  updatedAt: number;
+};
+
 export type PaperContext = {
   title?: string;
   abstract?: string;
-  terminology: Array<{
-    source: string;
-    target: string;
-    confidence: "auto" | "user";
-    updatedAt: number;
-  }>;
+  terminology: PaperContextTerm[];
   contextHash: string;
+};
+
+export type PaperContextRecord = PaperContext & {
+  pdfFingerprint: string;
+  updatedAt: number;
+  userEditedAt?: number;
 };
 
 export type TranslationRequest = {
@@ -114,6 +140,7 @@ export type TranslationPin = {
   id: string;
   pdfFingerprint: string;
   pageIndex: number;
+  anchorRegionIndex?: number;
   pageHeight?: number;
   pageWidth?: number;
   selectedText: string;
@@ -122,6 +149,7 @@ export type TranslationPin = {
   localContextBefore: string[];
   localContextAfter: string[];
   rectsOnPage: DOMRectLike[];
+  regions?: SelectionRegion[];
   translation: string;
   sourceLang: SourceLanguage;
   model: TranslationModel;

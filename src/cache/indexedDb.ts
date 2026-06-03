@@ -1,13 +1,15 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type {
   ApiCallLog,
+  PaperContextRecord,
   PdfLibraryEntry,
   TranslationCacheEntry,
   TranslationPin,
 } from "../types/domain";
+import type { StoredPinnedTranslationCard } from "../translation/floatingCardTypes";
 
 const DB_NAME = "pdf-translate-reader";
-const DB_VERSION = 2;
+const DB_VERSION = 4;
 
 export interface PdfTranslateReaderDatabase extends DBSchema {
   pdfLibrary: {
@@ -41,6 +43,21 @@ export interface PdfTranslateReaderDatabase extends DBSchema {
       "by-pdf": string;
       "by-started-at": number;
       "by-status": ApiCallLog["status"];
+    };
+  };
+  paperContexts: {
+    key: string;
+    value: PaperContextRecord;
+    indexes: {
+      "by-updated-at": number;
+    };
+  };
+  pinnedTranslationCards: {
+    key: string;
+    value: StoredPinnedTranslationCard;
+    indexes: {
+      "by-pdf": string;
+      "by-updated-at": number;
     };
   };
   settings: {
@@ -79,6 +96,17 @@ export function getAppDb() {
         store.createIndex("by-status", "status");
       }
 
+      if (!db.objectStoreNames.contains("paperContexts")) {
+        const store = db.createObjectStore("paperContexts", { keyPath: "pdfFingerprint" });
+        store.createIndex("by-updated-at", "updatedAt");
+      }
+
+      if (!db.objectStoreNames.contains("pinnedTranslationCards")) {
+        const store = db.createObjectStore("pinnedTranslationCards", { keyPath: "key" });
+        store.createIndex("by-pdf", "pdfFingerprint");
+        store.createIndex("by-updated-at", "updatedAt");
+      }
+
       if (!db.objectStoreNames.contains("settings")) {
         db.createObjectStore("settings");
       }
@@ -90,7 +118,15 @@ export function getAppDb() {
 
 export async function resetAppDb() {
   const db = await getAppDb();
-  const stores = ["pdfLibrary", "translationCache", "pins", "apiLogs", "settings"] as const;
+  const stores = [
+    "pdfLibrary",
+    "translationCache",
+    "pins",
+    "apiLogs",
+    "paperContexts",
+    "pinnedTranslationCards",
+    "settings",
+  ] as const;
   const transaction = db.transaction(stores, "readwrite");
 
   await Promise.all(stores.map((store) => transaction.objectStore(store).clear()));

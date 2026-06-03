@@ -8,6 +8,7 @@
     "dev:web": "vite --host 0.0.0.0",
     "dev:api": "node server/index.mjs",
     "build": "tsc --noEmit && vite build",
+    "deploy:linux:nginx": "bash scripts/deploy-linux-nginx.sh",
     "preview": "vite preview --host 0.0.0.0",
     "typecheck": "tsc --noEmit"
   },

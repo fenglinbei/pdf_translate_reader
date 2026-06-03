@@ -1,0 +1,45 @@
+import { getAppDb } from "../cache";
+import type { ApiCallLog, TokenUsage, TranslationRequest } from "../types/domain";
+
+export const API_LOGS_UPDATED_EVENT = "pdf-translate-reader:api-logs-updated";
+
+export type ApiCallLogWriteInput = {
+  errorMessage?: string;
+  request: TranslationRequest;
+  requestFinishedAt?: number;
+  requestStartedAt: number;
+  status: ApiCallLog["status"];
+  usage?: TokenUsage;
+};
+
+export async function putApiCallLog(input: ApiCallLogWriteInput) {
+  const db = await getAppDb();
+  const log: ApiCallLog = {
+    completionTokens: input.usage?.completionTokens,
+    contextWindowN: input.request.contextWindowN,
+    errorMessage: input.errorMessage,
+    id: createApiCallLogId(input.requestStartedAt),
+    longContextEnabled: input.request.longContextEnabled,
+    model: input.request.model,
+    pdfFingerprint: input.request.pdfFingerprint,
+    promptCacheHitTokens: input.usage?.promptCacheHitTokens,
+    promptCacheMissTokens: input.usage?.promptCacheMissTokens,
+    promptTokens: input.usage?.promptTokens,
+    promptVersion: input.request.promptVersion,
+    requestFinishedAt: input.requestFinishedAt,
+    requestStartedAt: input.requestStartedAt,
+    sourceLang: input.request.sourceLang,
+    status: input.status,
+    targetLang: input.request.targetLang,
+    totalTokens: input.usage?.totalTokens,
+  };
+
+  await db.put("apiLogs", log);
+  window.dispatchEvent(new CustomEvent(API_LOGS_UPDATED_EVENT));
+
+  return log;
+}
+
+function createApiCallLogId(startedAt: number) {
+  return `api-${startedAt}-${Math.random().toString(36).slice(2, 10)}`;
+}
