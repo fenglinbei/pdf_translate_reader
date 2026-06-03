@@ -1,4 +1,10 @@
 import { getAppDb } from "../cache";
+import {
+  deleteCloudPin,
+  deleteCloudPinsByDocument,
+  syncPinToCloud,
+} from "../cloud/documentStateRepository";
+import { runCloudSync } from "../cloud/syncStatus";
 import type {
   AnnotationColor,
   SentenceSelection,
@@ -16,6 +22,7 @@ export type PinAnnotationInput = {
 export type PinWriteInput = {
   annotation?: PinAnnotationInput;
   cacheKey?: string;
+  cloudDocumentId?: string;
   contextWindowN: number;
   longContextEnabled: boolean;
   model: TranslationModel;
@@ -66,6 +73,10 @@ export async function putPin(input: PinWriteInput) {
   const pin: TranslationPin = {
     anchorRegionIndex: input.selection.anchorRegionIndex,
     cacheKey: hasTranslationInput ? input.cacheKey : existing?.cacheKey ?? input.cacheKey,
+    cloudDocumentId:
+      input.cloudDocumentId ??
+      input.selection.cloudDocumentId ??
+      existing?.cloudDocumentId,
     color: input.annotation?.color ?? existing?.color,
     contextWindowN: input.contextWindowN,
     createdAt: existing?.createdAt ?? now,
@@ -101,6 +112,19 @@ export async function putPin(input: PinWriteInput) {
       .filter((existingPin) => existingPin.id !== id)
       .map((existingPin) => db.delete("pins", existingPin.id)),
   );
+  await runCloudSync(
+    () => Promise.all([
+      syncPinToCloud(pin),
+      ...existingPins
+        .filter((existingPin) => existingPin.id !== id)
+        .map((existingPin) => deleteCloudPin(existingPin.cloudDocumentId, existingPin.id)),
+    ]),
+    {
+      error: "Saved annotation locally, but cloud sync failed.",
+      started: "Syncing annotation.",
+      success: "Annotation synced.",
+    },
+  ).catch(() => undefined);
 
   return pin;
 }
@@ -134,6 +158,11 @@ export async function updatePinAnnotation(pinId: string, input: PinAnnotationUpd
       }),
     ),
   );
+  await runCloudSync(() => syncPinToCloud(updatedPin), {
+    error: "Saved annotation locally, but cloud sync failed.",
+    started: "Syncing annotation.",
+    success: "Annotation synced.",
+  }).catch(() => undefined);
 
   return updatedPin;
 }
@@ -170,6 +199,11 @@ export async function updatePinTranslation(pinId: string, input: PinTranslationU
       }),
     ),
   );
+  await runCloudSync(() => syncPinToCloud(updatedPin), {
+    error: "Saved annotation locally, but cloud sync failed.",
+    started: "Syncing annotation.",
+    success: "Annotation synced.",
+  }).catch(() => undefined);
 
   return updatedPin;
 }
@@ -200,6 +234,11 @@ export async function updatePinTranslationVisibility(pinId: string, translationV
       }),
     ),
   );
+  await runCloudSync(() => syncPinToCloud(updatedPin), {
+    error: "Saved annotation locally, but cloud sync failed.",
+    started: "Syncing annotation.",
+    success: "Annotation synced.",
+  }).catch(() => undefined);
 
   return updatedPin;
 }
@@ -214,9 +253,11 @@ export async function updatePinHighlight(pinId: string, highlighted: boolean) {
 
   const duplicatePins = (await db.getAllFromIndex("pins", "by-pdf", existing.pdfFingerprint))
     .filter((pin) => isSamePinTarget(pin, existing));
+  const now = Date.now();
   const updatedPin: TranslationPin = {
     ...existing,
     highlighted,
+    updatedAt: now,
   };
 
   await Promise.all(
@@ -224,9 +265,15 @@ export async function updatePinHighlight(pinId: string, highlighted: boolean) {
       db.put("pins", {
         ...pin,
         highlighted,
+        updatedAt: now,
       }),
     ),
   );
+  await runCloudSync(() => syncPinToCloud(updatedPin), {
+    error: "Saved annotation locally, but cloud sync failed.",
+    started: "Syncing annotation.",
+    success: "Annotation synced.",
+  }).catch(() => undefined);
 
   return updatedPin;
 }
@@ -244,13 +291,36 @@ export async function deletePin(pinId: string) {
     .filter((pin) => isSamePinTarget(pin, existing));
 
   await Promise.all(duplicatePins.map((pin) => db.delete("pins", pin.id)));
+  await runCloudSync(
+    () => Promise.all(
+      duplicatePins.map((pin) => deleteCloudPin(pin.cloudDocumentId, pin.id)),
+    ),
+    {
+      error: "Removed annotation locally, but cloud sync failed.",
+      started: "Syncing annotation removal.",
+      success: "Annotation removal synced.",
+    },
+  ).catch(() => undefined);
 }
 
 export async function deletePinsByPdf(pdfFingerprint: string) {
   const db = await getAppDb();
   const pins = await db.getAllFromIndex("pins", "by-pdf", pdfFingerprint);
+  const cloudDocumentIds = Array.from(
+    new Set(pins.map((pin) => pin.cloudDocumentId).filter(Boolean)),
+  );
 
   await Promise.all(pins.map((pin) => db.delete("pins", pin.id)));
+  await runCloudSync(
+    () => Promise.all(
+      cloudDocumentIds.map((cloudDocumentId) => deleteCloudPinsByDocument(cloudDocumentId)),
+    ),
+    {
+      error: "Cleared annotations locally, but cloud sync failed.",
+      started: "Syncing annotation clear.",
+      success: "Annotation clear synced.",
+    },
+  ).catch(() => undefined);
 }
 
 export function createTranslationPinId(input: {

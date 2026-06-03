@@ -3,6 +3,8 @@ import { getAppDb } from "./indexedDb";
 
 type ImportedPdfInput = PdfFingerprint & {
   blob: Blob;
+  cloudDocumentId?: string;
+  storagePath?: string;
 };
 
 export async function listPdfLibraryEntries() {
@@ -37,6 +39,8 @@ export async function saveImportedPdf(input: ImportedPdfInput) {
   const entry: PdfLibraryEntry = existing
     ? {
         ...existing,
+        cloudDocumentId: input.cloudDocumentId ?? existing.cloudDocumentId,
+        contentSha256: input.contentSha256 ?? existing.contentSha256,
         fileName: input.fileName,
         fileSize: input.fileSize,
         mimeType: "application/pdf",
@@ -44,9 +48,12 @@ export async function saveImportedPdf(input: ImportedPdfInput) {
         lastOpenedAt: now,
         openCount: existing.openCount + 1,
         pdfMetadata: input.pdfMetadata ?? existing.pdfMetadata,
+        storagePath: input.storagePath ?? existing.storagePath,
         deletedAt: undefined,
       }
     : {
+        cloudDocumentId: input.cloudDocumentId,
+        contentSha256: input.contentSha256,
         fingerprint: input.fingerprint,
         fileName: input.fileName,
         fileSize: input.fileSize,
@@ -56,6 +63,7 @@ export async function saveImportedPdf(input: ImportedPdfInput) {
         lastOpenedAt: now,
         openCount: 1,
         pdfMetadata: input.pdfMetadata,
+        storagePath: input.storagePath,
       };
 
   await db.put("pdfLibrary", entry);
@@ -108,10 +116,11 @@ export async function updatePdfReadingPosition(
 
 export async function deletePdfLocalData(fingerprint: string) {
   const db = await getAppDb();
-  const [pinKeys, apiLogKeys, pinnedTranslationCardKeys] = await Promise.all([
+  const [pinKeys, apiLogKeys, pinnedTranslationCardKeys, translationCacheKeys] = await Promise.all([
     db.getAllKeysFromIndex("pins", "by-pdf", fingerprint),
     db.getAllKeysFromIndex("apiLogs", "by-pdf", fingerprint),
     db.getAllKeysFromIndex("pinnedTranslationCards", "by-pdf", fingerprint),
+    db.getAllKeysFromIndex("translationCache", "by-pdf", fingerprint),
   ]);
 
   await Promise.all([
@@ -120,5 +129,6 @@ export async function deletePdfLocalData(fingerprint: string) {
     ...pinKeys.map((key) => db.delete("pins", key)),
     ...apiLogKeys.map((key) => db.delete("apiLogs", key)),
     ...pinnedTranslationCardKeys.map((key) => db.delete("pinnedTranslationCards", key)),
+    ...translationCacheKeys.map((key) => db.delete("translationCache", key)),
   ]);
 }

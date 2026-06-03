@@ -1,5 +1,6 @@
 import type { TokenUsage, TranslationRequest } from "../types/domain";
 import { PROJECT_CONFIG } from "../config/projectConfig";
+import { getSupabaseAccessToken } from "../auth/supabaseClient";
 import { TranslationNetworkError, TranslationTimeoutError } from "./errors";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api";
@@ -19,10 +20,17 @@ export async function streamTranslation(
   const requestSignal = createTimeoutSignal(signal);
 
   try {
+    const accessToken = await getSupabaseAccessToken();
+
+    if (!accessToken) {
+      throw new Error("Sign in before translating.");
+    }
+
     const response = await fetch(`${apiBaseUrl}/translate/stream`, {
       body: JSON.stringify(request),
       headers: {
         Accept: "text/event-stream",
+        Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
       method: "POST",

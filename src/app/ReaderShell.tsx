@@ -4,6 +4,7 @@ import {
   Check,
   Combine,
   Languages,
+  LogOut,
   MousePointer2,
   PanelLeftClose,
   PanelLeftOpen,
@@ -13,14 +14,23 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { deletePdfLocalData, type ReadingPositionUpdate } from "../cache/pdfLibraryRepository";
+import { useAuth } from "../auth/AuthProvider";
 import {
-  deletePdfLocalData,
-  listPdfLibraryEntries,
-  markPdfOpened,
-  saveImportedPdf,
-  updatePdfReadingPosition,
-  type ReadingPositionUpdate,
-} from "../cache/pdfLibraryRepository";
+  deleteCloudPdfDocument,
+  importPdfToCloud,
+  listCloudPdfLibraryEntries,
+  openCloudPdfDocument,
+  updateCloudReadingPosition,
+} from "../cloud/pdfCloudRepository";
+import { hydrateCloudDocumentState } from "../cloud/documentStateRepository";
+import {
+  CLOUD_SYNC_ERROR_EVENT,
+  CLOUD_SYNC_STATUS_EVENT,
+  type CloudSyncStatus,
+  getCloudSyncErrorMessage,
+  getCloudSyncStatusDetail,
+} from "../cloud/syncStatus";
 import { PROJECT_CONFIG } from "../config/projectConfig";
 import { PdfImportDropzone } from "../pdf/PdfImportDropzone";
 import { PdfLibrary } from "../pdf/PdfLibrary";
@@ -47,6 +57,7 @@ import {
 } from "../settings/settingsRepository";
 import type {
   AppSettings,
+  CloudPdfLibraryEntry,
   PaperContextRecord,
   PdfLibraryEntry,
   ReaderMode,
@@ -59,6 +70,7 @@ import type {
   TranslationCardPinInput,
   TranslationFavoriteAction,
   TranslationCardViewChange,
+  TranslationCardViewChangeOptions,
 } from "../translation/floatingCardTypes";
 import {
   ensurePaperContextForEntry,
@@ -82,6 +94,11 @@ type PaneResizeState = {
   startX: number;
 };
 type MobilePanel = "library" | "pins" | null;
+type VisibleCloudSyncStatus =
+  | Exclude<CloudSyncStatus, "idle">
+  | "checking"
+  | "cloud-missing"
+  | "offline";
 
 const LIBRARY_PANE_DEFAULT_WIDTH = 240;
 const LIBRARY_PANE_MAX_WIDTH = 380;
@@ -91,10 +108,43 @@ const PINS_PANE_MAX_WIDTH = 460;
 const PINS_PANE_MIN_WIDTH = 300;
 const TRANSLATION_CARD_BASE_Z_INDEX = 20;
 
+const CLOUD_SYNC_STATUS_LABELS: Record<VisibleCloudSyncStatus, string> = {
+  "cloud-missing": "Setup",
+  "local-only": "Local only",
+  checking: "Checking",
+  offline: "Offline",
+  synced: "Synced",
+  syncing: "Syncing",
+};
+
+function getVisibleCloudSyncMessage(
+  status: VisibleCloudSyncStatus,
+  latestSyncMessage: string,
+) {
+  switch (status) {
+    case "checking":
+      return "Checking cloud sync status.";
+    case "cloud-missing":
+      return "Supabase is not configured on the API.";
+    case "offline":
+      return "Cloud sync is unavailable while the API is offline.";
+    case "synced":
+      return latestSyncMessage || "Cloud sync is ready.";
+    case "syncing":
+      return latestSyncMessage || "Syncing changes to cloud.";
+    case "local-only":
+      return latestSyncMessage || "Saved locally, but cloud sync failed.";
+    default:
+      return "Cloud sync is ready.";
+  }
+}
+
 export function ReaderShell() {
+  const auth = useAuth();
   const health = useApiHealth();
   const apiStatus = health.status === "ok" ? "online" : health.status;
-  const [libraryEntries, setLibraryEntries] = useState<PdfLibraryEntry[]>([]);
+  const isSupabaseConfigured = health.status === "ok" ? health.data.supabase.configured : false;
+  const [libraryEntries, setLibraryEntries] = useState<CloudPdfLibraryEntry[]>([]);
   const [currentEntry, setCurrentEntry] = useState<PdfLibraryEntry>();
   const [isImporting, setIsImporting] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -117,6 +167,8 @@ export function ReaderShell() {
   );
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
   const [statusMessage, setStatusMessage] = useState<string>();
+  const [cloudSyncMessage, setCloudSyncMessage] = useState("Cloud sync is ready.");
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>("idle");
   const [damagedLibraryFingerprint, setDamagedLibraryFingerprint] = useState<string>();
   const locateRequestIdRef = useRef(0);
   const paneResizeStateRef = useRef<PaneResizeState>();
@@ -128,6 +180,18 @@ export function ReaderShell() {
   const currentFileName = currentEntry?.fileName;
   const currentMetadataTitle = currentEntry?.pdfMetadata?.title;
   const paperContextPageTextsRef = useRef(new Map<number, string>());
+  const visibleCloudSyncStatus: VisibleCloudSyncStatus =
+    health.status === "checking"
+      ? "checking"
+      : health.status === "offline"
+        ? "offline"
+        : isSupabaseConfigured
+          ? cloudSyncStatus === "idle" ? "synced" : cloudSyncStatus
+          : "cloud-missing";
+  const visibleCloudSyncMessage = getVisibleCloudSyncMessage(
+    visibleCloudSyncStatus,
+    cloudSyncMessage,
+  );
 
   const applyPinnedTranslationCards = useCallback((nextCards: PinnedTranslationCard[]) => {
     pinnedTranslationCardsRef.current = nextCards;
@@ -178,7 +242,7 @@ export function ReaderShell() {
   );
 
   const refreshLibrary = useCallback(async () => {
-    setLibraryEntries(await listPdfLibraryEntries());
+    setLibraryEntries(await listCloudPdfLibraryEntries());
   }, []);
 
   useEffect(() => {
@@ -186,6 +250,33 @@ export function ReaderShell() {
       setStatusMessage("Could not read the local PDF library.");
     });
   }, [refreshLibrary]);
+
+  useEffect(() => {
+    const handleCloudSyncError = (event: Event) => {
+      setStatusMessage(getCloudSyncErrorMessage(event));
+    };
+
+    window.addEventListener(CLOUD_SYNC_ERROR_EVENT, handleCloudSyncError);
+
+    return () => {
+      window.removeEventListener(CLOUD_SYNC_ERROR_EVENT, handleCloudSyncError);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleCloudSyncStatus = (event: Event) => {
+      const detail = getCloudSyncStatusDetail(event);
+
+      setCloudSyncStatus(detail.status);
+      setCloudSyncMessage(detail.message);
+    };
+
+    window.addEventListener(CLOUD_SYNC_STATUS_EVENT, handleCloudSyncStatus);
+
+    return () => {
+      window.removeEventListener(CLOUD_SYNC_STATUS_EVENT, handleCloudSyncStatus);
+    };
+  }, []);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 920px)");
@@ -329,28 +420,11 @@ export function ReaderShell() {
 
       try {
         const identity = await createPdfFingerprint(file);
-        const blob = file.slice(0, file.size, "application/pdf");
-        let entry: PdfLibraryEntry;
-
-        try {
-          entry = await saveImportedPdf({
-            ...identity,
-            blob,
+        const entry = await importPdfToCloud(file, identity);
+        if (entry.cloudDocumentId) {
+          await hydrateCloudDocumentState(entry.cloudDocumentId, entry.fingerprint).catch(() => {
+            setStatusMessage("Could not sync cloud document state.");
           });
-        } catch (error) {
-          const now = Date.now();
-
-          entry = {
-            ...identity,
-            blob,
-            importedAt: now,
-            lastOpenedAt: now,
-            mimeType: "application/pdf",
-            openCount: 1,
-          };
-          setStatusMessage(
-            getStorageErrorMessage(error, "Could not cache this PDF locally. Reading it temporarily."),
-          );
         }
 
         setCurrentEntry(entry);
@@ -369,25 +443,30 @@ export function ReaderShell() {
   );
 
   const handleOpenHistory = useCallback(
-    async (fingerprint: string) => {
+    async (entry: CloudPdfLibraryEntry) => {
       setStatusMessage(undefined);
       setDamagedLibraryFingerprint(undefined);
 
       try {
-        const entry = await markPdfOpened(fingerprint);
+        const openedEntry = await openCloudPdfDocument(entry.cloudDocumentId);
+        if (openedEntry.cloudDocumentId) {
+          await hydrateCloudDocumentState(openedEntry.cloudDocumentId, openedEntry.fingerprint).catch(() => {
+            setStatusMessage("Could not sync cloud document state.");
+          });
+        }
 
-        setCurrentEntry(entry);
+        setCurrentEntry(openedEntry);
         setSentenceSelection(undefined);
         setMobilePanel(null);
         applyPinnedTranslationCards([]);
         setPins([]);
         await refreshLibrary();
       } catch (error) {
-        setDamagedLibraryFingerprint(fingerprint);
+        setDamagedLibraryFingerprint(entry.fingerprint);
         setStatusMessage(
           error instanceof Error
-            ? `${error.message} Remove the broken history record and import the PDF again.`
-            : "Could not open this PDF. Remove the broken history record and import it again.",
+            ? `${error.message} Try opening it again or remove the cloud PDF record.`
+            : "Could not open this PDF. Try opening it again or remove the cloud PDF record.",
         );
       }
     },
@@ -408,26 +487,34 @@ export function ReaderShell() {
         return;
       }
 
-      void updatePdfReadingPosition(activeFingerprint, position).then((updatedEntry) => {
-        if (!updatedEntry) {
-          return;
-        }
+      setCurrentEntry((entry) =>
+        entry?.fingerprint === activeFingerprint
+          ? { ...entry, ...position }
+          : entry,
+      );
 
+      if (!currentEntry?.cloudDocumentId) {
+        return;
+      }
+
+      void updateCloudReadingPosition(currentEntry.cloudDocumentId, position).then((updatedEntry) => {
         setCurrentEntry((entry) =>
-          entry?.fingerprint === updatedEntry.fingerprint
-            ? { ...updatedEntry, blob: entry.blob }
+          entry?.cloudDocumentId === updatedEntry.cloudDocumentId
+            ? { ...entry, ...position, lastOpenedAt: updatedEntry.lastOpenedAt }
             : entry,
         );
         setLibraryEntries((entries) =>
           entries.map((entry) =>
-            entry.fingerprint === updatedEntry.fingerprint
-              ? { ...updatedEntry, blob: entry.blob }
+            entry.cloudDocumentId === updatedEntry.cloudDocumentId
+              ? { ...entry, ...updatedEntry }
               : entry,
           ),
         );
+      }).catch(() => {
+        setStatusMessage("Could not sync reading position.");
       });
     },
-    [activeFingerprint],
+    [activeFingerprint, currentEntry?.cloudDocumentId],
   );
 
   const handleCloseTranslationCard = useCallback((selection: SentenceSelection) => {
@@ -441,10 +528,10 @@ export function ReaderShell() {
     updatePinnedTranslationCards((currentCards) =>
       currentCards.filter((currentCard) => currentCard.key !== targetKey),
     );
-    void deletePinnedTranslationCard(targetKey).catch(() => {
+    void deletePinnedTranslationCard(targetKey, selection.cloudDocumentId ?? currentEntry?.cloudDocumentId).catch(() => {
       setStatusMessage("Could not remove pinned translation card.");
     });
-  }, [clearPinnedTranslationCardSaveTimer, updatePinnedTranslationCards]);
+  }, [clearPinnedTranslationCardSaveTimer, currentEntry?.cloudDocumentId, updatePinnedTranslationCards]);
 
   const handlePinTranslationCard = useCallback((input: TranslationCardPinInput) => {
     const targetKey = createPinTargetKey(input.selection);
@@ -455,7 +542,10 @@ export function ReaderShell() {
       updatePinnedTranslationCards((cards) =>
         cards.filter((currentCard) => currentCard.key !== targetKey),
       );
-      void deletePinnedTranslationCard(targetKey).catch(() => {
+      void deletePinnedTranslationCard(
+        targetKey,
+        input.selection.cloudDocumentId ?? currentEntry?.cloudDocumentId,
+      ).catch(() => {
         setStatusMessage("Could not remove pinned translation card.");
       });
       return;
@@ -468,6 +558,7 @@ export function ReaderShell() {
       ) + 1;
     const nextCard: PinnedTranslationCard = {
       ...input,
+      cloudDocumentId: input.cloudDocumentId ?? input.selection.cloudDocumentId ?? currentEntry?.cloudDocumentId,
       key: targetKey,
       zIndex: nextZIndex,
     };
@@ -477,6 +568,7 @@ export function ReaderShell() {
     persistPinnedTranslationCard(nextCard);
   }, [
     clearPinnedTranslationCardSaveTimer,
+    currentEntry?.cloudDocumentId,
     persistPinnedTranslationCard,
     updatePinnedTranslationCards,
   ]);
@@ -503,12 +595,16 @@ export function ReaderShell() {
     );
 
     if (updatedCard) {
-      persistPinnedTranslationCard(updatedCard);
+      clearPinnedTranslationCardSaveTimer(updatedCard.key);
     }
-  }, [persistPinnedTranslationCard, updatePinnedTranslationCards]);
+  }, [clearPinnedTranslationCardSaveTimer, updatePinnedTranslationCards]);
 
   const handleTranslationCardViewChange = useCallback(
-    (selection: SentenceSelection, viewChange: TranslationCardViewChange) => {
+    (
+      selection: SentenceSelection,
+      viewChange: TranslationCardViewChange,
+      options: TranslationCardViewChangeOptions = {},
+    ) => {
       let updatedCard: PinnedTranslationCard | undefined;
 
       updatePinnedTranslationCards((currentCards) =>
@@ -529,8 +625,8 @@ export function ReaderShell() {
         }),
       );
 
-      if (updatedCard) {
-        persistPinnedTranslationCard(updatedCard, { debounce: true });
+      if (updatedCard && options.committed) {
+        persistPinnedTranslationCard(updatedCard);
       }
     },
     [persistPinnedTranslationCard, updatePinnedTranslationCards],
@@ -699,11 +795,15 @@ export function ReaderShell() {
         return;
       }
 
-      const updatedRecord = await saveUserPaperContext(activeFingerprint, draft);
+      const updatedRecord = await saveUserPaperContext(
+        activeFingerprint,
+        draft,
+        currentEntry?.cloudDocumentId,
+      );
 
       setPaperContext(updatedRecord);
     },
-    [activeFingerprint],
+    [activeFingerprint, currentEntry?.cloudDocumentId],
   );
 
   const handlePageTextReadyForPaperContext = useCallback(
@@ -730,6 +830,7 @@ export function ReaderShell() {
         fileName: currentFileName,
         metadataTitle: currentMetadataTitle,
         pageTexts,
+        cloudDocumentId: currentEntry?.cloudDocumentId,
         pdfFingerprint: activeFingerprint,
       })
         .then((record) => {
@@ -744,7 +845,7 @@ export function ReaderShell() {
           setStatusMessage("Could not update paper context from PDF text.");
         });
     },
-    [activeFingerprint, currentFileName, currentMetadataTitle],
+    [activeFingerprint, currentEntry?.cloudDocumentId, currentFileName, currentMetadataTitle],
   );
 
   const handleClearCurrentPdfPins = useCallback(async () => {
@@ -768,15 +869,25 @@ export function ReaderShell() {
   }, []);
 
   const handleDeletePdfData = useCallback(
-    async (fingerprint: string) => {
-      await deletePdfLocalData(fingerprint);
+    async (target: CloudPdfLibraryEntry | PdfLibraryEntry | string) => {
+      const { cloudDocumentId, fingerprint } = resolvePdfDeleteTarget(
+        target,
+        currentEntry,
+        libraryEntries,
+      );
+
+      if (cloudDocumentId) {
+        await deleteCloudPdfDocument(cloudDocumentId);
+      } else if (fingerprint) {
+        await deletePdfLocalData(fingerprint);
+      }
 
       if (damagedLibraryFingerprint === fingerprint) {
         setDamagedLibraryFingerprint(undefined);
         setStatusMessage(undefined);
       }
 
-      if (activeFingerprint === fingerprint) {
+      if (activeFingerprint === fingerprint || currentEntry?.cloudDocumentId === cloudDocumentId) {
         for (const card of pinnedTranslationCardsRef.current) {
           clearPinnedTranslationCardSaveTimer(card.key);
         }
@@ -791,20 +902,22 @@ export function ReaderShell() {
     },
     [
       activeFingerprint,
+      currentEntry,
       damagedLibraryFingerprint,
       applyPinnedTranslationCards,
       clearPinnedTranslationCardSaveTimer,
+      libraryEntries,
       refreshLibrary,
     ],
   );
 
   const handleClearCurrentPdfData = useCallback(async () => {
-    if (!activeFingerprint) {
+    if (!currentEntry) {
       return;
     }
 
-    await handleDeletePdfData(activeFingerprint);
-  }, [activeFingerprint, handleDeletePdfData]);
+    await handleDeletePdfData(currentEntry);
+  }, [currentEntry, handleDeletePdfData]);
 
   const handleRemoveDamagedLibraryRecord = useCallback(() => {
     if (!damagedLibraryFingerprint) {
@@ -1032,6 +1145,26 @@ export function ReaderShell() {
           <span className={`api-health api-health--${apiStatus}`} title={`API ${apiStatus}`}>
             API
           </span>
+          <span
+            aria-live="polite"
+            className={`sync-health sync-health--${visibleCloudSyncStatus}`}
+            title={visibleCloudSyncMessage}
+          >
+            {CLOUD_SYNC_STATUS_LABELS[visibleCloudSyncStatus]}
+          </span>
+          <button
+            className="account-button"
+            onClick={() => {
+              void auth.signOut().catch(() => {
+                setStatusMessage("Could not sign out.");
+              });
+            }}
+            title="Sign out"
+            type="button"
+          >
+            <span>{auth.user?.email ?? "Account"}</span>
+            <LogOut aria-hidden="true" size={15} strokeWidth={2} />
+          </button>
           <div className="reader-mode-control" aria-label="Reader mode" role="group">
             <button
               aria-label="Translation mode"
@@ -1103,6 +1236,7 @@ export function ReaderShell() {
           onSettingsChange={handleSettingsChange}
           paperContext={paperContext}
           settings={settings}
+          supabaseConfigured={health.status === "ok" ? health.data.supabase.configured : undefined}
         />
       ) : null}
 
@@ -1322,6 +1456,45 @@ function isSamePinTarget(
   },
 ) {
   return createPinTargetKey(left) === createPinTargetKey(right);
+}
+
+function resolvePdfDeleteTarget(
+  target: CloudPdfLibraryEntry | PdfLibraryEntry | string | undefined,
+  currentEntry: PdfLibraryEntry | undefined,
+  libraryEntries: CloudPdfLibraryEntry[],
+) {
+  if (!target) {
+    return {};
+  }
+
+  if (typeof target !== "string") {
+    return {
+      cloudDocumentId: target.cloudDocumentId,
+      fingerprint: target.fingerprint,
+    };
+  }
+
+  const libraryEntry = libraryEntries.find((entry) =>
+    entry.cloudDocumentId === target || entry.fingerprint === target
+  );
+
+  if (libraryEntry) {
+    return {
+      cloudDocumentId: libraryEntry.cloudDocumentId,
+      fingerprint: libraryEntry.fingerprint,
+    };
+  }
+
+  if (currentEntry?.cloudDocumentId === target || currentEntry?.fingerprint === target) {
+    return {
+      cloudDocumentId: currentEntry.cloudDocumentId,
+      fingerprint: currentEntry.fingerprint,
+    };
+  }
+
+  return {
+    fingerprint: target,
+  };
 }
 
 function clamp(value: number, min: number, max: number) {

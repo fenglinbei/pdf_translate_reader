@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@supabase/supabase-js": "2.49.8",
     "dotenv": "16.4.7",
     "idb": "8.0.0",
     "lucide-react": "0.468.0",

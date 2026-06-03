@@ -9,7 +9,7 @@ import type {
 import type { StoredPinnedTranslationCard } from "../translation/floatingCardTypes";
 
 const DB_NAME = "pdf-translate-reader";
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 export interface PdfTranslateReaderDatabase extends DBSchema {
   pdfLibrary: {

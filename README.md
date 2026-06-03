@@ -16,6 +16,8 @@ Required environment:
 - Network access from the API proxy to `https://api.deepseek.com`, unless
   `DEEPSEEK_API_BASE_URL` points to another compatible endpoint.
 - `DEEPSEEK_API_KEY` configured in `.env.local` or the process environment.
+- A Supabase project with Auth, Postgres, and Storage configured from
+  `supabase/schema.sql`.
 - Linux one-command nginx deployment additionally requires nginx, systemd, and
   sudo access.
 
@@ -69,6 +71,8 @@ DEEPSEEK_API_KEY=your_key_here
 PORT=8787
 VITE_API_BASE_URL=/api
 VITE_API_PROXY_TARGET=http://localhost:8787
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
 Build:
@@ -112,7 +116,21 @@ DEEPSEEK_API_KEY=your_key_here
 PORT=8787
 VITE_API_BASE_URL=/api
 VITE_API_PROXY_TARGET=http://localhost:8787
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
+
+## Supabase setup
+
+Run `supabase/schema.sql` in the Supabase SQL editor before using the app. It
+creates the private `user-pdfs` Storage bucket, the `public.user_documents`
+table, document-state sync tables for annotations, translation cache, paper
+context, pinned translation cards, user settings, API logs, and RLS policies for
+per-user access.
+
+The browser uses `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for login and
+Storage access. The Node API proxy reads the same values from `.env.local`, or
+`SUPABASE_URL` and `SUPABASE_ANON_KEY` if those are set by the host.
 
 ### One-command nginx deployment
 

@@ -166,6 +166,7 @@ export function PinnedTranslationsPanel({
       const sourceLang = pin.sourceLang ?? DEFAULT_SOURCE_LANG;
       const targetLang = pin.targetLang ?? DEFAULT_TARGET_LANG;
       const request: TranslationRequest = {
+        cloudDocumentId: pin.cloudDocumentId,
         contextWindowN: pin.contextWindowN,
         localContextAfter: pin.localContextAfter ?? [],
         localContextBefore: pin.localContextBefore ?? [],
@@ -252,6 +253,7 @@ export function PinnedTranslationsPanel({
 
         await putTranslationCacheEntry({
           cacheKey,
+          cloudDocumentId: request.cloudDocumentId,
           contextWindowN: request.contextWindowN,
           longContextEnabled: request.longContextEnabled,
           model: request.model,

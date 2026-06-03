@@ -25,6 +25,7 @@ import type {
   TranslationCardPinInput,
   TranslationFavoriteAction,
   TranslationCardViewChange,
+  TranslationCardViewChangeOptions,
 } from "../translation/floatingCardTypes";
 import {
   createPageTextIndex,
@@ -71,6 +72,7 @@ type PdfViewerProps = {
   onTranslationCardViewChange: (
     selection: SentenceSelection,
     viewChange: TranslationCardViewChange,
+    options?: TranslationCardViewChangeOptions,
   ) => void;
   pinnedTranslationCards: PinnedTranslationCard[];
   paperContext?: PaperContext;
@@ -725,11 +727,12 @@ export function PdfViewer({
 
       return {
         ...selection,
+        cloudDocumentId: selection.cloudDocumentId ?? entry.cloudDocumentId,
         pageHeight: pageDescriptor ? pageDescriptor.height * displayScale : undefined,
         pageWidth: pageDescriptor ? pageDescriptor.width * displayScale : undefined,
       };
     },
-    [displayScale, pages],
+    [displayScale, entry.cloudDocumentId, pages],
   );
 
   const updateDraftSelection = useCallback(
@@ -766,7 +769,11 @@ export function PdfViewer({
   );
 
   const handleConfirmCrossSelection = useCallback(() => {
-    const selection = createCompositeCrossSelection(queuedCrossSelections, entry.fingerprint);
+    const selection = createCompositeCrossSelection(
+      queuedCrossSelections,
+      entry.fingerprint,
+      entry.cloudDocumentId,
+    );
 
     if (!selection) {
       return;
@@ -783,6 +790,7 @@ export function PdfViewer({
   }, [
     addPageMetricsToSelection,
     copySelectedText,
+    entry.cloudDocumentId,
     entry.fingerprint,
     onSentenceSelectionChange,
     queuedCrossSelections,
@@ -1407,6 +1415,7 @@ const PdfPageView = memo(function PdfPageView({
   onTranslationCardViewChange: (
     selection: SentenceSelection,
     viewChange: TranslationCardViewChange,
+    options?: TranslationCardViewChangeOptions,
   ) => void;
   pdfDocument: PdfDocumentProxy;
   pinnedTranslationCards: PinnedTranslationCard[];
@@ -1670,6 +1679,7 @@ function isSameSelectionTarget(
 function createCompositeCrossSelection(
   selections: SentenceSelection[],
   pdfFingerprint: string,
+  cloudDocumentId?: string,
 ): SentenceSelection | undefined {
   if (selections.length === 0) {
     return undefined;
@@ -1687,6 +1697,7 @@ function createCompositeCrossSelection(
 
   return {
     anchorRegionIndex: regions.length - 1,
+    cloudDocumentId: cloudDocumentId ?? firstSelection.cloudDocumentId,
     localContextAfter: anchorSelection.localContextAfter,
     localContextBefore: firstSelection.localContextBefore,
     normalizedSentence,

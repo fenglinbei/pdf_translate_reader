@@ -19,6 +19,7 @@ export type DOMRectLike = {
 };
 
 export type PdfFingerprint = {
+  contentSha256: string;
   fingerprint: string;
   fileName: string;
   fileSize: number;
@@ -32,6 +33,8 @@ export type PdfMetadata = {
 };
 
 export type PdfLibraryEntry = {
+  cloudDocumentId?: string;
+  contentSha256?: string;
   fingerprint: string;
   fileName: string;
   fileSize: number;
@@ -43,7 +46,15 @@ export type PdfLibraryEntry = {
   lastPageIndex?: number;
   lastScrollTop?: number;
   pdfMetadata?: PdfMetadata;
+  storagePath?: string;
   deletedAt?: number;
+};
+
+export type CloudPdfLibraryEntry = Omit<PdfLibraryEntry, "blob"> & {
+  cloudDocumentId: string;
+  contentSha256: string;
+  localCached?: boolean;
+  storagePath: string;
 };
 
 export type SelectionRegion = {
@@ -61,6 +72,7 @@ export type SelectionRegion = {
 };
 
 export type SentenceSelection = {
+  cloudDocumentId?: string;
   pdfFingerprint: string;
   pageIndex: number;
   anchorRegionIndex?: number;
@@ -94,12 +106,14 @@ export type PaperContext = {
 };
 
 export type PaperContextRecord = PaperContext & {
+  cloudDocumentId?: string;
   pdfFingerprint: string;
   updatedAt: number;
   userEditedAt?: number;
 };
 
 export type TranslationRequest = {
+  cloudDocumentId?: string;
   pdfFingerprint: string;
   sourceLang: SourceLanguage;
   targetLang: TargetLanguage;
@@ -124,6 +138,7 @@ export type TokenUsage = {
 
 export type TranslationCacheEntry = {
   cacheKey: string;
+  cloudDocumentId?: string;
   pdfFingerprint: string;
   normalizedSentence: string;
   sourceLang: SourceLanguage;
@@ -141,6 +156,7 @@ export type TranslationCacheEntry = {
 
 export type TranslationPin = {
   id: string;
+  cloudDocumentId?: string;
   pdfFingerprint: string;
   pageIndex: number;
   anchorRegionIndex?: number;
@@ -171,6 +187,7 @@ export type TranslationPin = {
 
 export type ApiCallLog = {
   id: string;
+  cloudDocumentId?: string;
   pdfFingerprint: string;
   model: TranslationModel;
   sourceLang: SourceLanguage;

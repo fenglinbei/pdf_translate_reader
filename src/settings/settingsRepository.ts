@@ -1,4 +1,7 @@
 import { getAppDb } from "../cache";
+import { listCloudApiCallLogs } from "../cloud/apiLogCloudRepository";
+import { getCloudSettings, putCloudSettings } from "../cloud/settingsCloudRepository";
+import { runCloudSync } from "../cloud/syncStatus";
 import { PROJECT_CONFIG } from "../config/projectConfig";
 import {
   DEFAULT_SOURCE_LANG,
@@ -36,6 +39,15 @@ export type ApiUsageSummary = {
 
 export async function getAppSettings() {
   const db = await getAppDb();
+  const cloudSettings = await getCloudSettings().catch(() => undefined);
+
+  if (cloudSettings) {
+    const normalizedCloudSettings = normalizeAppSettings(cloudSettings);
+
+    await db.put("settings", normalizedCloudSettings, APP_SETTINGS_KEY);
+    return normalizedCloudSettings;
+  }
+
   const storedSettings = await db.get("settings", APP_SETTINGS_KEY);
 
   return normalizeAppSettings(storedSettings);
@@ -50,14 +62,28 @@ export async function putAppSettings(input: Partial<AppSettings>) {
   });
 
   await db.put("settings", nextSettings, APP_SETTINGS_KEY);
+  await runCloudSync(() => putCloudSettings(nextSettings), {
+    error: "Saved settings locally, but cloud sync failed.",
+    started: "Syncing settings.",
+    success: "Settings synced.",
+  }).catch(() => undefined);
 
   return nextSettings;
 }
 
-export async function getApiUsageSummary(pdfFingerprint?: string): Promise<ApiUsageSummary> {
+export async function getApiUsageSummary(input: {
+  cloudDocumentId?: string;
+  pdfFingerprint?: string;
+} = {}): Promise<ApiUsageSummary> {
+  const cloudLogs = await listCloudApiCallLogs(input.cloudDocumentId).catch(() => undefined);
+
+  if (cloudLogs) {
+    return summarizeApiLogs(cloudLogs);
+  }
+
   const db = await getAppDb();
-  const logs = pdfFingerprint
-    ? await db.getAllFromIndex("apiLogs", "by-pdf", pdfFingerprint)
+  const logs = input.pdfFingerprint
+    ? await db.getAllFromIndex("apiLogs", "by-pdf", input.pdfFingerprint)
     : await db.getAll("apiLogs");
 
   return summarizeApiLogs(logs);

@@ -22,6 +22,7 @@ import type {
   TranslationCardPinInput,
   TranslationFavoriteAction,
   TranslationCardViewChange,
+  TranslationCardViewChangeOptions,
 } from "../translation/floatingCardTypes";
 import { TranslationPopover } from "../translation/TranslationPopover";
 import { getPopoverPlacement, getSelectionBounds, type PageGutters } from "./overlayPlacement";
@@ -60,6 +61,7 @@ type PageOverlayLayerProps = {
   onTranslationCardViewChange: (
     selection: SentenceSelection,
     viewChange: TranslationCardViewChange,
+    options?: TranslationCardViewChangeOptions,
   ) => void;
   pageHeight: number;
   pageIndex: number;
@@ -379,7 +381,9 @@ export function PageOverlayLayer({
                   pageWidth,
                 })
               }
-              onViewChange={(viewChange) => onTranslationCardViewChange(selection, viewChange)}
+              onViewChange={(viewChange, options) =>
+                onTranslationCardViewChange(selection, viewChange, options)
+              }
               pinSelection={{
                 ...activePopoverSelection,
               }}
@@ -465,8 +469,8 @@ export function PageOverlayLayer({
                         pageWidth,
                       })
                     }
-                    onViewChange={(viewChange) =>
-                      onTranslationCardViewChange(cardSelection, viewChange)
+                    onViewChange={(viewChange, options) =>
+                      onTranslationCardViewChange(cardSelection, viewChange, options)
                     }
                     pinSelection={hydratedCardSelection}
                     placement={card.placement}

@@ -8,6 +8,7 @@ type PdfInfoDictionary = {
 
 export async function createPdfFingerprint(file: File): Promise<PdfFingerprint> {
   const arrayBuffer = await file.arrayBuffer();
+  const contentSha256 = await hashArrayBuffer(arrayBuffer);
   const loadingTask = pdfjsLib.getDocument({
     data: new Uint8Array(arrayBuffer.slice(0)),
   });
@@ -17,10 +18,10 @@ export async function createPdfFingerprint(file: File): Promise<PdfFingerprint> 
     pdfDocument = await loadingTask.promise;
     const metadata = await readPdfMetadata(pdfDocument);
     const pdfFingerprint = pdfDocument.fingerprints.find((fingerprint) => fingerprint?.trim());
-    const fallbackFingerprint = pdfFingerprint ? undefined : await hashArrayBuffer(arrayBuffer);
 
     return {
-      fingerprint: pdfFingerprint ?? fallbackFingerprint ?? createMetadataFallbackFingerprint(file),
+      contentSha256,
+      fingerprint: pdfFingerprint ?? contentSha256 ?? createMetadataFallbackFingerprint(file),
       fileName: file.name,
       fileSize: file.size,
       modifiedAt: file.lastModified || undefined,
@@ -80,24 +81,12 @@ async function hashArrayBuffer(arrayBuffer: ArrayBuffer) {
   const digest = await globalThis.crypto?.subtle?.digest("SHA-256", arrayBuffer.slice(0));
 
   if (!digest) {
-    return fallbackHashArrayBuffer(arrayBuffer);
+    throw new Error("SHA-256 hashing is not available in this browser.");
   }
 
   const bytes = Array.from(new Uint8Array(digest));
 
   return `sha256-${bytes.map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
-}
-
-function fallbackHashArrayBuffer(arrayBuffer: ArrayBuffer) {
-  const bytes = new Uint8Array(arrayBuffer);
-  let hash = 0x811c9dc5;
-
-  for (const byte of bytes) {
-    hash ^= byte;
-    hash = Math.imul(hash, 0x01000193);
-  }
-
-  return `fnv1a32-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
 function createMetadataFallbackFingerprint(file: File) {

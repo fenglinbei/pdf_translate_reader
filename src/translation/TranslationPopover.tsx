@@ -22,6 +22,7 @@ import type {
   TranslationCardPlacement,
   TranslationFavoriteAction,
   TranslationCardViewChange,
+  TranslationCardViewChangeOptions,
 } from "./floatingCardTypes";
 import { putApiCallLog } from "./apiLogRepository";
 import { getTranslationErrorMessage } from "./errors";
@@ -61,7 +62,10 @@ type TranslationPopoverProps = {
     action: TranslationFavoriteAction,
   ) => Promise<void> | void;
   onTranslationComplete?: (payload: TranslationPinPayload) => void;
-  onViewChange?: (viewChange: TranslationCardViewChange) => void;
+  onViewChange?: (
+    viewChange: TranslationCardViewChange,
+    options?: TranslationCardViewChangeOptions,
+  ) => void;
   pinSelection?: SentenceSelection;
   placement: TranslationCardPlacement;
   paperContext?: PaperContext;
@@ -170,6 +174,7 @@ export function TranslationPopover({
     const contextWindowN = settings.contextWindowN;
 
     return {
+      cloudDocumentId: selection.cloudDocumentId,
       contextWindowN,
       localContextAfter: selection.localContextAfter.slice(0, contextWindowN),
       localContextBefore:
@@ -187,6 +192,7 @@ export function TranslationPopover({
   }, [
     selection.localContextAfter,
     selection.localContextBefore,
+    selection.cloudDocumentId,
     selection.pdfFingerprint,
     selection.targetSentence,
     paperContext,
@@ -376,6 +382,7 @@ export function TranslationPopover({
         if (streamedTranslation.length > 0) {
           await putTranslationCacheEntry({
             cacheKey,
+            cloudDocumentId: request.cloudDocumentId,
             contextWindowN: request.contextWindowN,
             longContextEnabled: request.longContextEnabled,
             model: request.model,
@@ -601,13 +608,32 @@ export function TranslationPopover({
 
     setDragOffset(nextDragOffset);
     onViewChange?.({ dragOffset: nextDragOffset });
+    event.preventDefault();
   }, [onViewChange]);
 
   const handleDragEnd = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    if (dragStateRef.current?.pointerId === event.pointerId) {
+    const dragState = dragStateRef.current;
+
+    if (dragState?.pointerId === event.pointerId) {
+      const nextDragOffset = {
+        x: dragState.baseX + event.clientX - dragState.startX,
+        y: dragState.baseY + event.clientY - dragState.startY,
+      };
+      const hasMoved =
+        nextDragOffset.x !== dragState.baseX ||
+        nextDragOffset.y !== dragState.baseY;
+
+      if (hasMoved) {
+        setDragOffset(nextDragOffset);
+        onViewChange?.({ dragOffset: nextDragOffset }, { committed: true });
+      }
       dragStateRef.current = undefined;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      event.preventDefault();
     }
-  }, []);
+  }, [onViewChange]);
 
   const handleResizeStart = useCallback((event: PointerEvent<HTMLButtonElement>) => {
     const rect = popoverRef.current?.getBoundingClientRect();
@@ -654,11 +680,36 @@ export function TranslationPopover({
   }, [onViewChange]);
 
   const handleResizeEnd = useCallback((event: PointerEvent<HTMLButtonElement>) => {
-    if (resizeStateRef.current?.pointerId === event.pointerId) {
+    const resizeState = resizeStateRef.current;
+
+    if (resizeState?.pointerId === event.pointerId) {
+      const nextPopoverSize = {
+        height: clamp(
+          resizeState.startHeight + event.clientY - resizeState.startY,
+          POPOVER_MIN_HEIGHT,
+          POPOVER_MAX_HEIGHT,
+        ),
+        width: clamp(
+          resizeState.startWidth + event.clientX - resizeState.startX,
+          POPOVER_MIN_WIDTH,
+          POPOVER_MAX_WIDTH,
+        ),
+      };
+      const hasResized =
+        event.clientX !== resizeState.startX ||
+        event.clientY !== resizeState.startY;
+
+      if (hasResized) {
+        setPopoverSize(nextPopoverSize);
+        onViewChange?.({ size: nextPopoverSize }, { committed: true });
+      }
       resizeStateRef.current = undefined;
-      event.currentTarget.releasePointerCapture(event.pointerId);
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      event.preventDefault();
     }
-  }, []);
+  }, [onViewChange]);
 
   const popoverStyle = useMemo(
     () => ({

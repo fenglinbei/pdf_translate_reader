@@ -3,6 +3,7 @@ import { config as loadDotenv } from "dotenv";
 import { writeJson } from "./http/json.mjs";
 import { handleHealth } from "./routes/health.mjs";
 import { handleTranslateStream } from "./routes/translate.mjs";
+import { requireAuthenticatedUser, SupabaseAuthError } from "./supabase/auth.mjs";
 
 loadDotenv({ path: ".env" });
 loadDotenv({ path: ".env.local", override: true });
@@ -26,6 +27,20 @@ const server = createServer(async (request, response) => {
   }
 
   if (request.method === "POST" && url.pathname === "/api/translate/stream") {
+    try {
+      await requireAuthenticatedUser(request);
+    } catch (error) {
+      const statusCode = error instanceof SupabaseAuthError ? error.statusCode : 500;
+
+      writeJson(response, statusCode, {
+        error: {
+          code: error instanceof SupabaseAuthError ? error.code : "auth_error",
+          message: error instanceof Error ? error.message : "Authentication failed.",
+        },
+      });
+      return;
+    }
+
     await handleTranslateStream(request, response);
     return;
   }

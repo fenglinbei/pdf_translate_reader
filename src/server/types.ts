@@ -4,4 +4,7 @@ export type ApiHealth = {
   deepseek: {
     apiKeyConfigured: boolean;
   };
+  supabase: {
+    configured: boolean;
+  };
 };

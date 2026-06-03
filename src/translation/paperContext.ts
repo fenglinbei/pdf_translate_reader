@@ -1,4 +1,9 @@
 import { getAppDb } from "../cache";
+import {
+  deleteCloudPaperContext,
+  syncPaperContextToCloud,
+} from "../cloud/documentStateRepository";
+import { runCloudSync } from "../cloud/syncStatus";
 import { PROJECT_CONFIG } from "../config/projectConfig";
 import type {
   PaperContext,
@@ -36,15 +41,19 @@ export async function ensurePaperContextForEntry(entry: PdfLibraryEntry) {
     abstract: undefined,
     terminology: [],
     title: cleanOptionalText(entry.pdfMetadata?.title),
+  }, {
+    cloudDocumentId: entry.cloudDocumentId,
   });
 }
 
 export async function updatePaperContextFromPageTexts({
+  cloudDocumentId,
   fileName,
   metadataTitle,
   pageTexts,
   pdfFingerprint,
 }: InferPaperContextInput & {
+  cloudDocumentId?: string;
   pdfFingerprint: string;
 }) {
   const existing = await getPaperContextRecord(pdfFingerprint);
@@ -70,6 +79,7 @@ export async function updatePaperContextFromPageTexts({
   }
 
   return putPaperContextRecord(pdfFingerprint, draft, {
+    cloudDocumentId,
     previousRecord: existing,
   });
 }
@@ -77,10 +87,12 @@ export async function updatePaperContextFromPageTexts({
 export async function saveUserPaperContext(
   pdfFingerprint: string,
   draft: PaperContextDraft,
+  cloudDocumentId?: string,
 ) {
   const existing = await getPaperContextRecord(pdfFingerprint);
 
   return putPaperContextRecord(pdfFingerprint, draft, {
+    cloudDocumentId: cloudDocumentId ?? existing?.cloudDocumentId,
     previousRecord: existing,
     userEdited: true,
   });
@@ -88,8 +100,14 @@ export async function saveUserPaperContext(
 
 export async function deletePaperContextByPdf(pdfFingerprint: string) {
   const db = await getAppDb();
+  const existing = await db.get("paperContexts", pdfFingerprint);
 
   await db.delete("paperContexts", pdfFingerprint);
+  await runCloudSync(() => deleteCloudPaperContext(existing?.cloudDocumentId), {
+    error: "Deleted paper context locally, but cloud sync failed.",
+    started: "Syncing paper context deletion.",
+    success: "Paper context deletion synced.",
+  }).catch(() => undefined);
 }
 
 export function normalizePaperContext(draft: PaperContextDraft): PaperContext {
@@ -136,6 +154,7 @@ async function putPaperContextRecord(
   pdfFingerprint: string,
   draft: PaperContextDraft,
   options: {
+    cloudDocumentId?: string;
     previousRecord?: PaperContextRecord;
     userEdited?: boolean;
   } = {},
@@ -145,6 +164,7 @@ async function putPaperContextRecord(
   const context = normalizePaperContext(draft);
   const record: PaperContextRecord = {
     ...context,
+    cloudDocumentId: options.cloudDocumentId ?? options.previousRecord?.cloudDocumentId,
     pdfFingerprint,
     updatedAt: now,
     userEditedAt: options.userEdited
@@ -153,6 +173,11 @@ async function putPaperContextRecord(
   };
 
   await db.put("paperContexts", record);
+  await runCloudSync(() => syncPaperContextToCloud(record), {
+    error: "Saved paper context locally, but cloud sync failed.",
+    started: "Syncing paper context.",
+    success: "Paper context synced.",
+  }).catch(() => undefined);
 
   return record;
 }

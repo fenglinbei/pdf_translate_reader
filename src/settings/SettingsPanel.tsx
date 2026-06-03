@@ -4,7 +4,12 @@ import {
   TRANSLATION_LANGUAGES,
   type TranslationLanguage,
 } from "../config/translationLanguages";
-import type { AppSettings, PaperContextRecord, PdfLibraryEntry } from "../types/domain";
+import type {
+  AppSettings,
+  CloudPdfLibraryEntry,
+  PaperContextRecord,
+  PdfLibraryEntry,
+} from "../types/domain";
 import { PaperContextEditor } from "./PaperContextEditor";
 import { API_LOGS_UPDATED_EVENT } from "../translation/apiLogRepository";
 import {
@@ -19,16 +24,17 @@ type SettingsPanelProps = {
   apiKeyConfigured?: boolean;
   apiStatus: "checking" | "offline" | "online";
   currentEntry?: PdfLibraryEntry;
-  libraryEntries: PdfLibraryEntry[];
+  libraryEntries: CloudPdfLibraryEntry[];
   onClearCurrentPdfData: () => Promise<void>;
   onClearCurrentPdfPins: () => Promise<void>;
   onClearTranslationCache: () => Promise<void>;
   onClose: () => void;
-  onDeletePdfData: (fingerprint: string) => Promise<void>;
+  onDeletePdfData: (entry: CloudPdfLibraryEntry) => Promise<void>;
   onPaperContextSave: (draft: PaperContextDraft) => Promise<void> | void;
   onSettingsChange: (settings: Partial<AppSettings>) => Promise<void> | void;
   paperContext?: PaperContextRecord;
   settings: AppSettings;
+  supabaseConfigured?: boolean;
 };
 
 type PendingAction =
@@ -68,18 +74,22 @@ export function SettingsPanel({
   onSettingsChange,
   paperContext,
   settings,
+  supabaseConfigured,
 }: SettingsPanelProps) {
   const [pendingAction, setPendingAction] = useState<PendingAction>();
   const [statusMessage, setStatusMessage] = useState<string>();
   const [usageSummary, setUsageSummary] = useState<ApiUsageSummary>(EMPTY_USAGE_SUMMARY);
 
   const refreshUsageSummary = useCallback(() => {
-    void getApiUsageSummary(currentEntry?.fingerprint)
+    void getApiUsageSummary({
+      cloudDocumentId: currentEntry?.cloudDocumentId,
+      pdfFingerprint: currentEntry?.fingerprint,
+    })
       .then(setUsageSummary)
       .catch(() => {
         setUsageSummary(EMPTY_USAGE_SUMMARY);
       });
-  }, [currentEntry?.fingerprint]);
+  }, [currentEntry?.cloudDocumentId, currentEntry?.fingerprint]);
 
   useEffect(() => {
     refreshUsageSummary();
@@ -289,6 +299,10 @@ export function SettingsPanel({
               label="API key"
               value={apiKeyConfigured === undefined ? "-" : apiKeyConfigured ? "configured" : "missing"}
             />
+            <Readout
+              label="Supabase"
+              value={supabaseConfigured === undefined ? "-" : supabaseConfigured ? "configured" : "missing"}
+            />
             <Readout label="Calls" value={String(usageSummary.totalCalls)} />
             <Readout label="Errors" value={String(usageSummary.errorCalls)} />
             <Readout label="Tokens" value={formatNumber(usageSummary.totalTokens)} />
@@ -313,8 +327,8 @@ export function SettingsPanel({
           </div>
         </section>
 
-        <section className="settings-section" aria-label="Local data management">
-          <div className="settings-section-heading">Local Data</div>
+        <section className="settings-section" aria-label="Library data management">
+          <div className="settings-section-heading">Library Data</div>
           <div className="settings-action-list">
             <ConfirmButton
               disabled={false}
@@ -363,7 +377,7 @@ export function SettingsPanel({
           <div className="settings-history-list">
             {libraryEntries.length > 0
               ? libraryEntries.map((entry) => {
-                  const actionId = `delete-pdf:${entry.fingerprint}` as const;
+                  const actionId = `delete-pdf:${entry.cloudDocumentId}` as const;
 
                   return (
                     <div className="settings-history-row" key={entry.fingerprint}>
@@ -380,7 +394,7 @@ export function SettingsPanel({
                             onClick={() =>
                               void runConfirmedAction(
                                 actionId,
-                                () => onDeletePdfData(entry.fingerprint),
+                                () => onDeletePdfData(entry),
                                 "PDF data removed.",
                               )
                             }
@@ -414,7 +428,7 @@ export function SettingsPanel({
                     </div>
                   );
                 })
-              : <div className="settings-empty-row">No PDFs in local history</div>}
+              : <div className="settings-empty-row">No PDFs in library</div>}
           </div>
         </section>
       </aside>

@@ -1,12 +1,12 @@
 import { ArrowDownAZ, Check, Clock3, FileText, Search, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { PdfLibraryEntry } from "../types/domain";
+import type { CloudPdfLibraryEntry } from "../types/domain";
 
 type PdfLibraryProps = {
   activeFingerprint?: string;
-  entries: PdfLibraryEntry[];
-  onDelete?: (fingerprint: string) => Promise<void> | void;
-  onOpen: (fingerprint: string) => void;
+  entries: CloudPdfLibraryEntry[];
+  onDelete?: (entry: CloudPdfLibraryEntry) => Promise<void> | void;
+  onOpen: (entry: CloudPdfLibraryEntry) => void;
   showControls?: boolean;
 };
 type PdfLibrarySortMode = "name" | "opened";
@@ -48,14 +48,14 @@ export function PdfLibrary({
     return <div className="library-empty">No PDFs imported yet.</div>;
   }
 
-  const handleConfirmDelete = async (fingerprint: string) => {
+  const handleConfirmDelete = async (entry: CloudPdfLibraryEntry) => {
     if (!onDelete) {
       return;
     }
 
-    setDeletingFingerprint(fingerprint);
+    setDeletingFingerprint(entry.fingerprint);
     try {
-      await onDelete(fingerprint);
+      await onDelete(entry);
       setConfirmingDeleteFingerprint(undefined);
     } finally {
       setDeletingFingerprint(undefined);
@@ -115,7 +115,7 @@ export function PdfLibrary({
                 <button
                   className="library-item-open-button"
                   disabled={isDeleting}
-                  onClick={() => onOpen(entry.fingerprint)}
+                  onClick={() => onOpen(entry)}
                   type="button"
                 >
                   <FileText aria-hidden="true" size={16} strokeWidth={2} />
@@ -134,7 +134,7 @@ export function PdfLibrary({
                           aria-label={`Confirm delete ${entry.fileName}`}
                           className="icon-button icon-button--small icon-button--success"
                           disabled={isDeleting}
-                          onClick={() => void handleConfirmDelete(entry.fingerprint)}
+                          onClick={() => void handleConfirmDelete(entry)}
                           title="Confirm delete"
                           type="button"
                         >
@@ -175,8 +175,8 @@ export function PdfLibrary({
 }
 
 function compareLibraryEntries(
-  left: PdfLibraryEntry,
-  right: PdfLibraryEntry,
+  left: CloudPdfLibraryEntry,
+  right: CloudPdfLibraryEntry,
   sortMode: PdfLibrarySortMode,
 ) {
   if (sortMode === "opened" && left.lastOpenedAt !== right.lastOpenedAt) {
@@ -192,11 +192,11 @@ function compareLibraryEntries(
   return left.fingerprint.localeCompare(right.fingerprint);
 }
 
-function getEntryDisplayName(entry: PdfLibraryEntry) {
+function getEntryDisplayName(entry: CloudPdfLibraryEntry) {
   return entry.pdfMetadata?.title || entry.fileName;
 }
 
-function getSearchText(entry: PdfLibraryEntry) {
+function getSearchText(entry: CloudPdfLibraryEntry) {
   return [
     entry.fileName,
     entry.pdfMetadata?.title,

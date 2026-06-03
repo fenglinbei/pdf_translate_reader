@@ -16,8 +16,12 @@ export type FloatingTranslationCardView = {
 };
 
 export type TranslationCardViewChange = Partial<FloatingTranslationCardView>;
+export type TranslationCardViewChangeOptions = {
+  committed?: boolean;
+};
 
 export type TranslationCardPinInput = {
+  cloudDocumentId?: string;
   placement: TranslationCardPlacement;
   selection: SentenceSelection;
   style: CSSProperties;
@@ -30,6 +34,7 @@ export type PinnedTranslationCard = TranslationCardPinInput & {
 };
 
 export type StoredPinnedTranslationCard = PinnedTranslationCard & {
+  cloudDocumentId?: string;
   createdAt: number;
   pdfFingerprint: string;
   updatedAt: number;

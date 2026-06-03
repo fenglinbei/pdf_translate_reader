@@ -1,4 +1,6 @@
 import { getAppDb } from "../cache";
+import { putCloudApiCallLog } from "../cloud/apiLogCloudRepository";
+import { runCloudSync } from "../cloud/syncStatus";
 import type { ApiCallLog, TokenUsage, TranslationRequest } from "../types/domain";
 
 export const API_LOGS_UPDATED_EVENT = "pdf-translate-reader:api-logs-updated";
@@ -15,6 +17,7 @@ export type ApiCallLogWriteInput = {
 export async function putApiCallLog(input: ApiCallLogWriteInput) {
   const db = await getAppDb();
   const log: ApiCallLog = {
+    cloudDocumentId: input.request.cloudDocumentId,
     completionTokens: input.usage?.completionTokens,
     contextWindowN: input.request.contextWindowN,
     errorMessage: input.errorMessage,
@@ -35,6 +38,11 @@ export async function putApiCallLog(input: ApiCallLogWriteInput) {
   };
 
   await db.put("apiLogs", log);
+  await runCloudSync(() => putCloudApiCallLog(log), {
+    error: "Saved API log locally, but cloud sync failed.",
+    started: "Syncing API log.",
+    success: "API log synced.",
+  }).catch(() => undefined);
   window.dispatchEvent(new CustomEvent(API_LOGS_UPDATED_EVENT));
 
   return log;
