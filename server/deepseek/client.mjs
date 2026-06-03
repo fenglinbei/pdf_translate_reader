@@ -10,32 +10,46 @@ export async function createDeepSeekChatStream({ messages, model, signal }) {
     throw new DeepSeekClientError(500, "deepseek_api_key_missing", "DEEPSEEK_API_KEY is not configured.");
   }
 
-  const response = await fetch(`${config.apiBaseUrl}/chat/completions`, {
-    body: JSON.stringify({
-      messages,
-      model,
-      stream: true,
-      stream_options: {
-        include_usage: true,
+  let response;
+
+  try {
+    response = await fetch(`${config.apiBaseUrl}/chat/completions`, {
+      body: JSON.stringify({
+        messages,
+        model,
+        stream: true,
+        stream_options: {
+          include_usage: true,
+        },
+        temperature: 0.2,
+        thinking: {
+          type: "disabled",
+        },
+      }),
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        "Content-Type": "application/json",
       },
-      temperature: 0.2,
-      thinking: {
-        type: "disabled",
-      },
-    }),
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    method: "POST",
-    signal,
-  });
+      method: "POST",
+      signal,
+    });
+  } catch (error) {
+    if (signal?.aborted) {
+      throw error;
+    }
+
+    throw new DeepSeekClientError(
+      502,
+      "deepseek_network_error",
+      "Network connection to DeepSeek failed.",
+    );
+  }
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
     throw new DeepSeekClientError(
       response.status,
-      "deepseek_api_error",
+      getDeepSeekErrorCode(response.status),
       parseDeepSeekErrorMessage(body) ?? `DeepSeek API returned ${response.status}.`,
     );
   }
@@ -45,6 +59,26 @@ export async function createDeepSeekChatStream({ messages, model, signal }) {
   }
 
   return response.body;
+}
+
+function getDeepSeekErrorCode(statusCode) {
+  if (statusCode === 401 || statusCode === 403) {
+    return "deepseek_auth_error";
+  }
+
+  if (statusCode === 408 || statusCode === 504) {
+    return "deepseek_timeout";
+  }
+
+  if (statusCode === 429) {
+    return "deepseek_rate_limited";
+  }
+
+  if (statusCode >= 500) {
+    return "deepseek_server_error";
+  }
+
+  return "deepseek_api_error";
 }
 
 export class DeepSeekClientError extends Error {

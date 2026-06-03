@@ -244,6 +244,48 @@ export function pointerHitRangeToWordSelection({
   });
 }
 
+export function pointerHitToSentenceSelection({
+  contextWindowSize = DEFAULT_CONTEXT_WINDOW_SIZE,
+  hit,
+  pageIndexes,
+  pdfFingerprint,
+}: {
+  contextWindowSize?: number;
+  hit: TextSpanPointerHit;
+  pageIndexes: Map<number, PageTextIndex>;
+  pdfFingerprint: string;
+}) {
+  const pageTextIndex = pageIndexes.get(hit.pageIndex);
+
+  if (!pageTextIndex || pageTextIndex.text.trim().length === 0) {
+    return undefined;
+  }
+
+  const normalizedOffset = clamp(
+    pageTextIndex.textMap.rawToNormalized[hit.rawOffset] ?? 0,
+    0,
+    pageTextIndex.text.length,
+  );
+  const targetSentence = findSentenceForRange(
+    pageTextIndex.sentences,
+    normalizedOffset,
+    normalizedOffset + 1,
+  );
+
+  if (!targetSentence) {
+    return undefined;
+  }
+
+  return createTextSelectionFromRange({
+    contextWindowSize,
+    normalizedEnd: targetSentence.end,
+    normalizedStart: targetSentence.start,
+    pageTextIndex,
+    pdfFingerprint,
+    targetSentences: [targetSentence],
+  });
+}
+
 export function getTextSpanElementFromTarget(target: EventTarget | null) {
   return target instanceof Element
     ? target.closest<HTMLElement>("[data-page-index][data-raw-start][data-raw-end]")

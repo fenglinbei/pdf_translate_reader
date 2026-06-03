@@ -1,4 +1,4 @@
-import { Check, Highlighter, Languages, LocateFixed, RefreshCw, X } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Highlighter, Languages, LocateFixed, RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   AnnotationColor,
@@ -67,6 +67,7 @@ export function PinnedTranslationsPanel({
 }: PinnedTranslationsPanelProps) {
   const abortControllersRef = useRef(new Map<string, AbortController>());
   const [annotationDraftsByPinId, setAnnotationDraftsByPinId] = useState<Record<string, AnnotationDraft>>({});
+  const [expandedSourcePinIds, setExpandedSourcePinIds] = useState<Set<string>>(() => new Set());
   const [savingAnnotationPinIds, setSavingAnnotationPinIds] = useState<Set<string>>(() => new Set());
   const [runtimeByPinId, setRuntimeByPinId] = useState<Record<string, PinRuntimeState>>({});
 
@@ -77,6 +78,38 @@ export function PinnedTranslationsPanel({
       }
       abortControllersRef.current.clear();
     };
+  }, []);
+
+  useEffect(() => {
+    setExpandedSourcePinIds((pinIds) => {
+      const visiblePinIds = new Set(pins.map((pin) => pin.id));
+      let hasRemovedPin = false;
+      const nextPinIds = new Set<string>();
+
+      for (const pinId of pinIds) {
+        if (visiblePinIds.has(pinId)) {
+          nextPinIds.add(pinId);
+        } else {
+          hasRemovedPin = true;
+        }
+      }
+
+      return hasRemovedPin ? nextPinIds : pinIds;
+    });
+  }, [pins]);
+
+  const handleToggleSourceExpansion = useCallback((pinId: string) => {
+    setExpandedSourcePinIds((pinIds) => {
+      const nextPinIds = new Set(pinIds);
+
+      if (nextPinIds.has(pinId)) {
+        nextPinIds.delete(pinId);
+      } else {
+        nextPinIds.add(pinId);
+      }
+
+      return nextPinIds;
+    });
   }, []);
 
   const updateAnnotationDraft = useCallback(
@@ -230,7 +263,7 @@ export function PinnedTranslationsPanel({
           targetLang,
           translation: streamedTranslation,
           usage: streamedUsage,
-        });
+        }).catch(() => undefined);
 
         const updatedPin = await updatePinTranslation(pin.id, {
           cacheKey,
@@ -329,6 +362,9 @@ export function PinnedTranslationsPanel({
         const savedAnnotationDraft = getAnnotationDraft(pin);
         const annotationDraft = annotationDraftsByPinId[pin.id] ?? savedAnnotationDraft;
         const isSavingAnnotation = savingAnnotationPinIds.has(pin.id);
+        const isSourceExpanded = expandedSourcePinIds.has(pin.id);
+        const sourceElementId = `pinned-translation-source-${pin.id}`;
+        const shouldShowSourceToggle = shouldOfferSourceToggle(pin.targetSentence);
         const hasAnnotationChanges =
           annotationDraft.note.trim() !== savedAnnotationDraft.note ||
           annotationDraft.color !== savedAnnotationDraft.color;
@@ -373,7 +409,35 @@ export function PinnedTranslationsPanel({
               </div>
             </div>
             <div className="pinned-translation-card-source-block">
-              <div className="pinned-translation-card-source">{pin.targetSentence}</div>
+              <div className="pinned-translation-card-source-row">
+                <div
+                  className={`pinned-translation-card-source ${
+                    shouldShowSourceToggle && !isSourceExpanded
+                      ? "pinned-translation-card-source--collapsed"
+                      : ""
+                  }`}
+                  id={sourceElementId}
+                >
+                  {pin.targetSentence}
+                </div>
+                {shouldShowSourceToggle ? (
+                  <button
+                    aria-controls={sourceElementId}
+                    aria-expanded={isSourceExpanded}
+                    aria-label={isSourceExpanded ? "Collapse original text" : "Expand original text"}
+                    className="icon-button icon-button--small pinned-translation-card-action pinned-translation-card-source-toggle"
+                    onClick={() => handleToggleSourceExpansion(pin.id)}
+                    title={isSourceExpanded ? "Collapse original" : "Expand original"}
+                    type="button"
+                  >
+                    {isSourceExpanded ? (
+                      <ChevronUp aria-hidden="true" size={16} strokeWidth={2} />
+                    ) : (
+                      <ChevronDown aria-hidden="true" size={16} strokeWidth={2} />
+                    )}
+                  </button>
+                ) : null}
+              </div>
               <div className="pinned-translation-card-source-actions">
                 <button
                   aria-label={shouldShowTranslation ? "Hide translation" : "Show translation"}
@@ -467,4 +531,14 @@ function getAnnotationDraft(pin: TranslationPin): AnnotationDraft {
 
 function getTranslationVisible(pin: TranslationPin) {
   return pin.translationVisible ?? pin.translation.trim().length > 0;
+}
+
+function shouldOfferSourceToggle(source: string) {
+  const trimmedSource = source.trim();
+
+  if (trimmedSource.length > 120) {
+    return true;
+  }
+
+  return (trimmedSource.match(/[.!?。！？]+/g)?.length ?? 0) > 2;
 }

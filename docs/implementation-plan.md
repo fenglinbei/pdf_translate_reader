@@ -9,7 +9,7 @@
 - 用户选中任意片段后，系统自动扩展到完整句子。
 - 使用前后 `N` 句作为局部上下文，默认 `N=2`，可调。
 - 默认启用长期上下文：标题、摘要、前文术语。
-- 调用 DeepSeek API 做英文到中文直译，默认模型为 `deepseek-v4-flash`，可切换 `deepseek-v4-pro`。
+- 调用 DeepSeek API 做多语言两两互译，覆盖简体中文、繁体中文、英文、日文、韩文、法文、德文、西班牙文，默认模型为 `deepseek-v4-flash`，可切换 `deepseek-v4-pro`。
 - 支持流式翻译。
 - 本地缓存已翻译句子，避免重复调用 API。
 - 翻译结果可以 pin 到原文旁边，滚动时跟随 PDF，手动关闭前不消失。
@@ -120,10 +120,12 @@ type SentenceSelection = {
 ### 2.4 Translation Request
 
 ```ts
+type TranslationLanguage = "zh" | "zh-Hant" | "en" | "ja" | "ko" | "fr" | "de" | "es";
+
 type TranslationRequest = {
   pdfFingerprint: string;
-  sourceLang: "en";
-  targetLang: "zh";
+  sourceLang: TranslationLanguage;
+  targetLang: TranslationLanguage;
   model: "deepseek-v4-flash" | "deepseek-v4-pro";
   targetSentence: string;
   localContextBefore: string[];
@@ -159,8 +161,8 @@ type TranslationCacheEntry = {
   cacheKey: string;
   pdfFingerprint: string;
   normalizedSentence: string;
-  sourceLang: "en";
-  targetLang: "zh";
+  sourceLang: TranslationLanguage;
+  targetLang: TranslationLanguage;
   model: "deepseek-v4-flash" | "deepseek-v4-pro";
   contextWindowN: number;
   longContextEnabled: boolean;
@@ -200,7 +202,8 @@ type TranslationPin = {
   rectsOnPage: DOMRectLike[];
   translation: string;
   model: "deepseek-v4-flash" | "deepseek-v4-pro";
-  targetLang: "zh";
+  sourceLang: TranslationLanguage;
+  targetLang: TranslationLanguage;
   contextWindowN: number;
   longContextEnabled: boolean;
   cacheKey?: string;
@@ -216,8 +219,8 @@ type ApiCallLog = {
   id: string;
   pdfFingerprint: string;
   model: "deepseek-v4-flash" | "deepseek-v4-pro";
-  sourceLang: "en";
-  targetLang: "zh";
+  sourceLang: TranslationLanguage;
+  targetLang: TranslationLanguage;
   requestStartedAt: number;
   requestFinishedAt?: number;
   status: "success" | "error" | "aborted";
@@ -242,7 +245,7 @@ type ApiCallLog = {
 ```text
 system:
 You are a professional academic translator...
-Only translate the target sentence into Simplified Chinese.
+Only translate the target sentence into the requested target language.
 Preserve formulas, citations, variables, method names, dataset names...
 
 user:
@@ -253,8 +256,8 @@ Terminology:
 - source => target
 
 [Translation policy]
-Source language: English
-Target language: Simplified Chinese
+Source language: <source language>
+Target language: <target language>
 Output only the translation.
 
 [Dynamic local context]
@@ -464,7 +467,7 @@ Following sentences:
 
 - 顶部或侧边只保留设置 icon。
 - 设置面板支持：
-  - 源语言和目标语言，默认英文到中文。
+  - 源语言和目标语言支持简体中文、繁体中文、英文、日文、韩文、法文、德文、西班牙文两两互转，默认英文到简体中文。
   - 默认模型，默认 `deepseek-v4-flash`。
   - 上下文窗口 N：`0 / 1 / 2 / 3 / 5`。
   - 拖动选词最大词数：默认 `128` words，最大 `512` words；上限来自项目配置，只限制词级拖选的 target text，不改变句子级上下文窗口。

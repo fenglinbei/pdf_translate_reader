@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import {
   Check,
   Combine,
@@ -81,6 +81,7 @@ type PaneResizeState = {
   startWidth: number;
   startX: number;
 };
+type MobilePanel = "library" | "pins" | null;
 
 const LIBRARY_PANE_DEFAULT_WIDTH = 240;
 const LIBRARY_PANE_MAX_WIDTH = 380;
@@ -99,9 +100,11 @@ export function ReaderShell() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLibraryPaneOpen, setIsLibraryPaneOpen] = useState(true);
   const [isPinsPaneOpen, setIsPinsPaneOpen] = useState(true);
+  const [isNarrowViewport, setIsNarrowViewport] = useState(false);
   const [libraryPaneWidth, setLibraryPaneWidth] = useState(LIBRARY_PANE_DEFAULT_WIDTH);
   const [isConfirmingClearPins, setIsConfirmingClearPins] = useState(false);
   const [locateRequest, setLocateRequest] = useState<PinLocateRequest>();
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const [pinsPaneWidth, setPinsPaneWidth] = useState(PINS_PANE_DEFAULT_WIDTH);
   const [paperContext, setPaperContext] = useState<PaperContextRecord>();
   const [pins, setPins] = useState<TranslationPin[]>([]);
@@ -114,6 +117,7 @@ export function ReaderShell() {
   );
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
   const [statusMessage, setStatusMessage] = useState<string>();
+  const [damagedLibraryFingerprint, setDamagedLibraryFingerprint] = useState<string>();
   const locateRequestIdRef = useRef(0);
   const paneResizeStateRef = useRef<PaneResizeState>();
   const pinsRef = useRef<TranslationPin[]>([]);
@@ -182,6 +186,44 @@ export function ReaderShell() {
       setStatusMessage("Could not read the local PDF library.");
     });
   }, [refreshLibrary]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 920px)");
+    const updateViewportState = () => {
+      setIsNarrowViewport(mediaQuery.matches);
+    };
+
+    updateViewportState();
+    mediaQuery.addEventListener("change", updateViewportState);
+
+    return () => {
+      mediaQuery.removeEventListener("change", updateViewportState);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isNarrowViewport) {
+      setMobilePanel(null);
+    }
+  }, [isNarrowViewport]);
+
+  useEffect(() => {
+    if (!mobilePanel) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMobilePanel(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [mobilePanel]);
 
   useEffect(() => {
     void getAppSettings()
@@ -283,6 +325,7 @@ export function ReaderShell() {
     async (file: File) => {
       setIsImporting(true);
       setStatusMessage(undefined);
+      setDamagedLibraryFingerprint(undefined);
 
       try {
         const identity = await createPdfFingerprint(file);
@@ -312,6 +355,7 @@ export function ReaderShell() {
 
         setCurrentEntry(entry);
         setSentenceSelection(undefined);
+        setMobilePanel(null);
         applyPinnedTranslationCards([]);
         setPins([]);
         await refreshLibrary();
@@ -327,20 +371,35 @@ export function ReaderShell() {
   const handleOpenHistory = useCallback(
     async (fingerprint: string) => {
       setStatusMessage(undefined);
+      setDamagedLibraryFingerprint(undefined);
 
       try {
         const entry = await markPdfOpened(fingerprint);
 
         setCurrentEntry(entry);
         setSentenceSelection(undefined);
+        setMobilePanel(null);
         applyPinnedTranslationCards([]);
         setPins([]);
         await refreshLibrary();
       } catch (error) {
-        setStatusMessage(error instanceof Error ? error.message : "Could not open this PDF.");
+        setDamagedLibraryFingerprint(fingerprint);
+        setStatusMessage(
+          error instanceof Error
+            ? `${error.message} Remove the broken history record and import the PDF again.`
+            : "Could not open this PDF. Remove the broken history record and import it again.",
+        );
       }
     },
     [applyPinnedTranslationCards, refreshLibrary],
+  );
+
+  const handleDocumentLoadError = useCallback(
+    (fingerprint: string, message: string) => {
+      setDamagedLibraryFingerprint(fingerprint);
+      setStatusMessage(message);
+    },
+    [],
   );
 
   const handleReadingPositionChange = useCallback(
@@ -712,6 +771,11 @@ export function ReaderShell() {
     async (fingerprint: string) => {
       await deletePdfLocalData(fingerprint);
 
+      if (damagedLibraryFingerprint === fingerprint) {
+        setDamagedLibraryFingerprint(undefined);
+        setStatusMessage(undefined);
+      }
+
       if (activeFingerprint === fingerprint) {
         for (const card of pinnedTranslationCardsRef.current) {
           clearPinnedTranslationCardSaveTimer(card.key);
@@ -727,6 +791,7 @@ export function ReaderShell() {
     },
     [
       activeFingerprint,
+      damagedLibraryFingerprint,
       applyPinnedTranslationCards,
       clearPinnedTranslationCardSaveTimer,
       refreshLibrary,
@@ -741,13 +806,42 @@ export function ReaderShell() {
     await handleDeletePdfData(activeFingerprint);
   }, [activeFingerprint, handleDeletePdfData]);
 
+  const handleRemoveDamagedLibraryRecord = useCallback(() => {
+    if (!damagedLibraryFingerprint) {
+      return;
+    }
+
+    void handleDeletePdfData(damagedLibraryFingerprint).catch(() => {
+      setStatusMessage("Could not remove the broken PDF history record.");
+    });
+  }, [damagedLibraryFingerprint, handleDeletePdfData]);
+
   const handleLocatePin = useCallback((pin: TranslationPin) => {
     locateRequestIdRef.current += 1;
     setLocateRequest({
       pin,
       requestId: locateRequestIdRef.current,
     });
+    setMobilePanel(null);
   }, []);
+
+  const handleLibraryPaneToggle = useCallback(() => {
+    if (isNarrowViewport) {
+      setMobilePanel((panel) => (panel === "library" ? null : "library"));
+      return;
+    }
+
+    setIsLibraryPaneOpen((isOpen) => !isOpen);
+  }, [isNarrowViewport]);
+
+  const handlePinsPaneToggle = useCallback(() => {
+    if (isNarrowViewport) {
+      setMobilePanel((panel) => (panel === "pins" ? null : "pins"));
+      return;
+    }
+
+    setIsPinsPaneOpen((isOpen) => !isOpen);
+  }, [isNarrowViewport]);
 
   const handlePaneResizeStart = useCallback(
     (pane: PaneResizeState["pane"], event: ReactPointerEvent<HTMLDivElement>) => {
@@ -805,6 +899,99 @@ export function ReaderShell() {
     "--library-pane-width": `${libraryPaneWidth}px`,
     "--pins-pane-width": `${pinsPaneWidth}px`,
   } as CSSProperties;
+  const isLibraryControlOpen = isNarrowViewport ? mobilePanel === "library" : isLibraryPaneOpen;
+  const isPinsControlOpen = isNarrowViewport ? mobilePanel === "pins" : isPinsPaneOpen;
+  const renderStatusMessage = () =>
+    statusMessage ? (
+      <div className="pane-status">
+        <span>{statusMessage}</span>
+        {damagedLibraryFingerprint ? (
+          <button
+            className="pane-status-action"
+            onClick={handleRemoveDamagedLibraryRecord}
+            type="button"
+          >
+            Remove
+          </button>
+        ) : null}
+      </div>
+    ) : null;
+  const renderLibraryPaneContent = (closeButton: ReactNode) => (
+    <>
+      <div className="library-pane-header">
+        <div className="pane-heading-row">
+          <div className="pane-heading">Library</div>
+          {closeButton}
+        </div>
+        <PdfImportDropzone isImporting={isImporting} onImport={handleImport} variant="compact" />
+      </div>
+      {renderStatusMessage()}
+      <PdfLibrary
+        activeFingerprint={activeFingerprint}
+        entries={libraryEntries}
+        onDelete={handleDeletePdfData}
+        onOpen={handleOpenHistory}
+        showControls
+      />
+    </>
+  );
+  const renderPinsPaneContent = (closeButton: ReactNode) => (
+    <>
+      <div className="pane-heading-row">
+        <div className="pane-heading">Annotations</div>
+        <div className="pins-clear-actions">
+          {closeButton}
+          {pins.length > 0 && isConfirmingClearPins ? (
+            <>
+              <button
+                aria-label="Confirm clear all annotations"
+                className="icon-button icon-button--small icon-button--success"
+                onClick={handleClearPins}
+                title="Confirm clear all annotations"
+                type="button"
+              >
+                <Check aria-hidden="true" size={16} strokeWidth={2} />
+              </button>
+              <button
+                aria-label="Cancel clear all annotations"
+                className="icon-button icon-button--small icon-button--danger"
+                onClick={() => setIsConfirmingClearPins(false)}
+                title="Cancel"
+                type="button"
+              >
+                <X aria-hidden="true" size={16} strokeWidth={2} />
+              </button>
+            </>
+          ) : null}
+          {pins.length > 0 && !isConfirmingClearPins ? (
+            <button
+              aria-label="Clear all annotations"
+              className="icon-button icon-button--small"
+              onClick={() => setIsConfirmingClearPins(true)}
+              title="Clear all annotations"
+              type="button"
+            >
+              <Trash2 aria-hidden="true" size={16} strokeWidth={2} />
+            </button>
+          ) : null}
+        </div>
+      </div>
+      {pins.length > 0 ? (
+        <div className="pins-pane-summary">
+          {pins.length} saved annotation{pins.length === 1 ? "" : "s"}
+        </div>
+      ) : null}
+      <PinnedTranslationsPanel
+        onAnnotationChange={handlePinAnnotation}
+        onHighlightPin={handlePinHighlight}
+        onLocatePin={handleLocatePin}
+        onPinUpdated={handlePinUpdated}
+        onUnpin={handleUnpin}
+        paperContext={paperContext}
+        pins={pins}
+      />
+    </>
+  );
 
   return (
     <div className="app-shell">
@@ -815,28 +1002,28 @@ export function ReaderShell() {
         </div>
         <div className="topbar-actions">
           <button
-            aria-label={isLibraryPaneOpen ? "Close library pane" : "Open library pane"}
-            aria-pressed={isLibraryPaneOpen}
+            aria-label={isLibraryControlOpen ? "Close library pane" : "Open library pane"}
+            aria-pressed={isLibraryControlOpen}
             className="icon-button"
-            onClick={() => setIsLibraryPaneOpen((isOpen) => !isOpen)}
-            title={isLibraryPaneOpen ? "Close library" : "Open library"}
+            onClick={handleLibraryPaneToggle}
+            title={isLibraryControlOpen ? "Close library" : "Open library"}
             type="button"
           >
-            {isLibraryPaneOpen ? (
+            {isLibraryControlOpen ? (
               <PanelLeftClose aria-hidden="true" size={17} strokeWidth={2} />
             ) : (
               <PanelLeftOpen aria-hidden="true" size={17} strokeWidth={2} />
             )}
           </button>
           <button
-            aria-label={isPinsPaneOpen ? "Close annotations pane" : "Open annotations pane"}
-            aria-pressed={isPinsPaneOpen}
+            aria-label={isPinsControlOpen ? "Close annotations pane" : "Open annotations pane"}
+            aria-pressed={isPinsControlOpen}
             className="icon-button"
-            onClick={() => setIsPinsPaneOpen((isOpen) => !isOpen)}
-            title={isPinsPaneOpen ? "Close annotations" : "Open annotations"}
+            onClick={handlePinsPaneToggle}
+            title={isPinsControlOpen ? "Close annotations" : "Open annotations"}
             type="button"
           >
-            {isPinsPaneOpen ? (
+            {isPinsControlOpen ? (
               <PanelRightClose aria-hidden="true" size={17} strokeWidth={2} />
             ) : (
               <PanelRightOpen aria-hidden="true" size={17} strokeWidth={2} />
@@ -925,29 +1112,17 @@ export function ReaderShell() {
           aria-hidden={!isLibraryPaneOpen}
           aria-label="PDF library"
         >
-          <div className="library-pane-header">
-            <div className="pane-heading-row">
-              <div className="pane-heading">Library</div>
-              <button
-                aria-label="Close library pane"
-                className="icon-button icon-button--small"
-                onClick={() => setIsLibraryPaneOpen(false)}
-                title="Close library"
-                type="button"
-              >
-                <PanelLeftClose aria-hidden="true" size={16} strokeWidth={2} />
-              </button>
-            </div>
-            <PdfImportDropzone isImporting={isImporting} onImport={handleImport} variant="compact" />
-          </div>
-          {statusMessage ? <div className="pane-status">{statusMessage}</div> : null}
-          <PdfLibrary
-            activeFingerprint={activeFingerprint}
-            entries={libraryEntries}
-            onDelete={handleDeletePdfData}
-            onOpen={handleOpenHistory}
-            showControls
-          />
+          {renderLibraryPaneContent(
+            <button
+              aria-label="Close library pane"
+              className="icon-button icon-button--small"
+              onClick={() => setIsLibraryPaneOpen(false)}
+              title="Close library"
+              type="button"
+            >
+              <PanelLeftClose aria-hidden="true" size={16} strokeWidth={2} />
+            </button>,
+          )}
         </aside>
         <div
           aria-label="Resize library pane"
@@ -977,6 +1152,8 @@ export function ReaderShell() {
               onPinTranslationCard={handlePinTranslationCard}
               onPinnedTranslationRefresh={handlePinnedTranslationRefresh}
               onPinTranslation={handlePinTranslation}
+              onDocumentLoadError={handleDocumentLoadError}
+              onRemoveLocalRecord={handleDeletePdfData}
               onPageTextReadyForPaperContext={handlePageTextReadyForPaperContext}
               onReadingPositionChange={handleReadingPositionChange}
               onSentenceSelectionChange={handleSentenceSelectionChange}
@@ -991,6 +1168,7 @@ export function ReaderShell() {
           ) : (
             <div className="empty-reader">
               <PdfImportDropzone isImporting={isImporting} onImport={handleImport} />
+              {renderStatusMessage()}
               <div className="empty-page-frame" aria-label="No document open">
                 <div className="empty-page-line empty-page-line--wide" />
                 <div className="empty-page-line" />
@@ -1002,6 +1180,7 @@ export function ReaderShell() {
                   <PdfLibrary
                     activeFingerprint={activeFingerprint}
                     entries={libraryEntries}
+                    onDelete={handleDeletePdfData}
                     onOpen={handleOpenHistory}
                   />
                 </div>
@@ -1026,69 +1205,56 @@ export function ReaderShell() {
           aria-hidden={!isPinsPaneOpen}
           aria-label="Annotations"
         >
-          <div className="pane-heading-row">
-            <div className="pane-heading">Annotations</div>
-            <div className="pins-clear-actions">
-              <button
-                aria-label="Close annotations pane"
-                className="icon-button icon-button--small"
-                onClick={() => setIsPinsPaneOpen(false)}
-                title="Close annotations"
-                type="button"
-              >
-                <PanelRightClose aria-hidden="true" size={16} strokeWidth={2} />
-              </button>
-              {pins.length > 0 && isConfirmingClearPins ? (
-                <>
-                  <button
-                    aria-label="Confirm clear all annotations"
-                    className="icon-button icon-button--small icon-button--success"
-                    onClick={handleClearPins}
-                    title="Confirm clear all annotations"
-                    type="button"
-                  >
-                    <Check aria-hidden="true" size={16} strokeWidth={2} />
-                  </button>
-                  <button
-                    aria-label="Cancel clear all annotations"
-                    className="icon-button icon-button--small icon-button--danger"
-                    onClick={() => setIsConfirmingClearPins(false)}
-                    title="Cancel"
-                    type="button"
-                  >
-                    <X aria-hidden="true" size={16} strokeWidth={2} />
-                  </button>
-                </>
-              ) : null}
-              {pins.length > 0 && !isConfirmingClearPins ? (
-                <button
-                  aria-label="Clear all annotations"
-                  className="icon-button icon-button--small"
-                  onClick={() => setIsConfirmingClearPins(true)}
-                  title="Clear all annotations"
-                  type="button"
-                >
-                  <Trash2 aria-hidden="true" size={16} strokeWidth={2} />
-                </button>
-              ) : null}
-            </div>
-          </div>
-          {pins.length > 0 ? (
-            <div className="pins-pane-summary">
-              {pins.length} saved annotation{pins.length === 1 ? "" : "s"}
-            </div>
-          ) : null}
-          <PinnedTranslationsPanel
-            onAnnotationChange={handlePinAnnotation}
-            onHighlightPin={handlePinHighlight}
-            onLocatePin={handleLocatePin}
-            onPinUpdated={handlePinUpdated}
-            onUnpin={handleUnpin}
-            paperContext={paperContext}
-            pins={pins}
-          />
+          {renderPinsPaneContent(
+            <button
+              aria-label="Close annotations pane"
+              className="icon-button icon-button--small"
+              onClick={() => setIsPinsPaneOpen(false)}
+              title="Close annotations"
+              type="button"
+            >
+              <PanelRightClose aria-hidden="true" size={16} strokeWidth={2} />
+            </button>,
+          )}
         </aside>
       </main>
+      {mobilePanel ? (
+        <div
+          className="mobile-panel-backdrop"
+          onClick={() => setMobilePanel(null)}
+          role="presentation"
+        >
+          <aside
+            aria-label={mobilePanel === "library" ? "PDF library" : "Annotations"}
+            className={`mobile-panel mobile-panel--${mobilePanel}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {mobilePanel === "library"
+              ? renderLibraryPaneContent(
+                  <button
+                    aria-label="Close library pane"
+                    className="icon-button icon-button--small"
+                    onClick={() => setMobilePanel(null)}
+                    title="Close library"
+                    type="button"
+                  >
+                    <PanelLeftClose aria-hidden="true" size={16} strokeWidth={2} />
+                  </button>,
+                )
+              : renderPinsPaneContent(
+                  <button
+                    aria-label="Close annotations pane"
+                    className="icon-button icon-button--small"
+                    onClick={() => setMobilePanel(null)}
+                    title="Close annotations"
+                    type="button"
+                  >
+                    <PanelRightClose aria-hidden="true" size={16} strokeWidth={2} />
+                  </button>,
+                )}
+          </aside>
+        </div>
+      ) : null}
     </div>
   );
 }

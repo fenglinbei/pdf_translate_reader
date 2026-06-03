@@ -3,6 +3,7 @@ import type {
   CSSProperties,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
+  TouchEvent as ReactTouchEvent,
 } from "react";
 import { Check, Minus, Plus, RotateCcw, X } from "lucide-react";
 import { pdfjsLib } from "./pdfjs";
@@ -38,6 +39,7 @@ import {
 import {
   CROSS_PAGE_SELECTION_MESSAGE,
   OCR_UNSUPPORTED_MESSAGE,
+  getTextOrderWarning,
   hasUsableTextLayerText,
   isCrossPageSelection,
 } from "../selection/edgeCases";
@@ -55,8 +57,10 @@ type PdfViewerProps = {
     selection: SentenceSelection,
     annotation: PinAnnotationInput,
   ) => Promise<void>;
+  onDocumentLoadError?: (fingerprint: string, message: string) => void;
   onPinTranslationCard: (input: TranslationCardPinInput) => void;
   onPinnedTranslationRefresh: (input: PinWriteInput) => void;
+  onRemoveLocalRecord?: (fingerprint: string) => Promise<void> | void;
   onPinTranslation: (
     input: PinWriteInput,
     action: TranslationFavoriteAction,
@@ -123,6 +127,17 @@ type PanDragState = {
   startX: number;
   startY: number;
 };
+type PinchZoomState = {
+  startDistance: number;
+  startZoom: number;
+};
+type TouchPointCollection = {
+  [index: number]: {
+    clientX: number;
+    clientY: number;
+  };
+  length: number;
+};
 type ZoomAnchor = {
   offsetX: number;
   offsetY: number;
@@ -134,9 +149,13 @@ type ZoomAnchor = {
 const MAX_RENDER_SCALE = 1.35;
 const MAX_PDF_RENDER_SCALE = 2;
 const MAX_CANVAS_OUTPUT_SCALE = 1.5;
+const MOBILE_MAX_CANVAS_OUTPUT_SCALE = 1.25;
+const MOBILE_MAX_RENDER_SCALE = 1.2;
 const MIN_RENDER_SCALE = 0.7;
 const PDF_PAGE_GAP_PX = 18;
 const PDF_PAGE_LIST_PADDING_PX = 24;
+const MOBILE_PDF_PAGE_GAP_PX = 12;
+const MOBILE_PDF_PAGE_LIST_PADDING_PX = 10;
 const PAGE_RENDER_OVERSCAN = 1;
 const POINTER_DRAG_THRESHOLD_PX = 8;
 const REAL_ZOOM_COMMIT_DELAY_MS = 180;
@@ -152,9 +171,11 @@ export function PdfViewer({
   onActivateTranslationCard,
   onCloseTranslationCard,
   onCreateAnnotation,
+  onDocumentLoadError,
   onPageTextReadyForPaperContext,
   onPinTranslationCard,
   onPinnedTranslationRefresh,
+  onRemoveLocalRecord,
   onPinTranslation,
   onReadingPositionChange,
   onSentenceSelectionChange,
@@ -173,8 +194,10 @@ export function PdfViewer({
   const saveTimerRef = useRef<number>();
   const selectionNoticeTimerRef = useRef<number>();
   const pendingPositionRef = useRef<ReadingPositionUpdate>();
+  const pinchZoomRef = useRef<PinchZoomState>();
   const restoredFingerprintRef = useRef<string>();
   const spanDragRef = useRef<SpanDragState>();
+  const queuedCrossSelectionsRef = useRef<SentenceSelection[]>([]);
   const draftSelectionRef = useRef<SentenceSelection>();
   const realZoomCommitTimerRef = useRef<number>();
   const textContentCacheRef = useRef(new Map<number, CachedPageText>());
@@ -189,13 +212,30 @@ export function PdfViewer({
   const [queuedCrossSelections, setQueuedCrossSelections] = useState<SentenceSelection[]>([]);
   const [copyNotice, setCopyNotice] = useState<string>();
   const [copiedSelection, setCopiedSelection] = useState<SentenceSelection>();
+  const [confirmedMobileReaderMode, setConfirmedMobileReaderMode] = useState<ReaderMode>();
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [locatedPinId, setLocatedPinId] = useState<string>();
   const [errorMessage, setErrorMessage] = useState<string>();
   const [selectionNotice, setSelectionNotice] = useState<string>();
+  const [mobilePendingSelection, setMobilePendingSelection] = useState<SentenceSelection>();
   const [renderPageIndexes, setRenderPageIndexes] = useState<Set<number>>(() => new Set());
   const [renderZoom, setRenderZoom] = useState(1);
   const [userZoom, setUserZoom] = useState(1);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 700px), (pointer: coarse) and (max-width: 920px)");
+    const updateViewportState = () => {
+      setIsMobileViewport(mediaQuery.matches);
+    };
+
+    updateViewportState();
+    mediaQuery.addEventListener("change", updateViewportState);
+
+    return () => {
+      mediaQuery.removeEventListener("change", updateViewportState);
+    };
+  }, []);
 
   useEffect(() => {
     const scrollElement = scrollRef.current;
@@ -205,7 +245,11 @@ export function PdfViewer({
     }
 
     const resizeObserver = new ResizeObserver(([entry]) => {
-      setAvailableWidth(Math.max(320, entry.contentRect.width - 48));
+      const horizontalPadding = isMobileViewport
+        ? MOBILE_PDF_PAGE_LIST_PADDING_PX * 2
+        : PDF_PAGE_LIST_PADDING_PX * 2;
+
+      setAvailableWidth(Math.max(260, entry.contentRect.width - horizontalPadding));
       setHasMeasuredAvailableWidth(true);
     });
 
@@ -214,7 +258,7 @@ export function PdfViewer({
     return () => {
       resizeObserver.disconnect();
     };
-  }, []);
+  }, [isMobileViewport]);
 
   useEffect(() => {
     let cancelled = false;
@@ -266,7 +310,10 @@ export function PdfViewer({
 
         setLoadState("error");
         const detail = error instanceof Error && error.message.trim() ? ` ${error.message}` : "";
-        setErrorMessage(`Unable to open this local PDF record. Remove it from PDF History and import it again.${detail}`);
+        const message = `Unable to open this local PDF record. Remove it from PDF History and import it again.${detail}`;
+
+        setErrorMessage(message);
+        onDocumentLoadError?.(entry.fingerprint, message);
       }
     }
 
@@ -280,11 +327,11 @@ export function PdfViewer({
         void loadingTask.destroy().catch(() => undefined);
       }
     };
-  }, [entry.blob, entry.fingerprint, onSentenceSelectionChange]);
+  }, [entry.blob, entry.fingerprint, onDocumentLoadError, onSentenceSelectionChange]);
 
   const liveFitScale = useMemo(
-    () => getFitScale(pages, availableWidth),
-    [availableWidth, pages],
+    () => getFitScale(pages, availableWidth, isMobileViewport ? MOBILE_MAX_RENDER_SCALE : MAX_RENDER_SCALE),
+    [availableWidth, isMobileViewport, pages],
   );
 
   useEffect(() => {
@@ -292,8 +339,18 @@ export function PdfViewer({
       return;
     }
 
-    setBaseScale(getFitScale(pages, availableWidth));
-  }, [availableWidth, baseScale, hasMeasuredAvailableWidth, pages]);
+    setBaseScale(getFitScale(
+      pages,
+      availableWidth,
+      isMobileViewport ? MOBILE_MAX_RENDER_SCALE : MAX_RENDER_SCALE,
+    ));
+  }, [availableWidth, baseScale, hasMeasuredAvailableWidth, isMobileViewport, pages]);
+
+  useEffect(() => {
+    setBaseScale(undefined);
+    setRenderZoom(1);
+    setUserZoom(1);
+  }, [isMobileViewport]);
 
   const fitScale = baseScale ?? liveFitScale;
   const displayScale = useMemo(() => fitScale * userZoom, [fitScale, userZoom]);
@@ -303,7 +360,18 @@ export function PdfViewer({
     [committedDisplayScale],
   );
   const displayScaleRatio = pdfRenderScale > 0 ? displayScale / pdfRenderScale : 1;
-  const pageLayout = useMemo(() => createPageLayout(pages, displayScale), [displayScale, pages]);
+  const pageGap = isMobileViewport ? MOBILE_PDF_PAGE_GAP_PX : PDF_PAGE_GAP_PX;
+  const pageListPadding = isMobileViewport
+    ? MOBILE_PDF_PAGE_LIST_PADDING_PX
+    : PDF_PAGE_LIST_PADDING_PX;
+  const renderPageOverscan = isMobileViewport ? 0 : PAGE_RENDER_OVERSCAN;
+  const canvasOutputScaleCap = isMobileViewport
+    ? MOBILE_MAX_CANVAS_OUTPUT_SCALE
+    : MAX_CANVAS_OUTPUT_SCALE;
+  const pageLayout = useMemo(
+    () => createPageLayout(pages, displayScale, pageListPadding, pageGap),
+    [displayScale, pageGap, pageListPadding, pages],
+  );
   const pageListStyle = useMemo<PdfPageListStyle>(
     () =>
       ({
@@ -342,8 +410,14 @@ export function PdfViewer({
   }, [flushReadingPosition]);
 
   useEffect(() => {
+    queuedCrossSelectionsRef.current = queuedCrossSelections;
+  }, [queuedCrossSelections]);
+
+  useEffect(() => {
     spanDragRef.current = undefined;
     draftSelectionRef.current = undefined;
+    setMobilePendingSelection(undefined);
+    setConfirmedMobileReaderMode(undefined);
     setCopyNotice(undefined);
     setCopiedSelection(undefined);
     setDraftSelection(undefined);
@@ -353,14 +427,23 @@ export function PdfViewer({
   useEffect(() => {
     spanDragRef.current = undefined;
     draftSelectionRef.current = undefined;
+    setMobilePendingSelection(undefined);
+    setConfirmedMobileReaderMode(undefined);
     setCopyNotice(undefined);
     setCopiedSelection(undefined);
     setDraftSelection(undefined);
     if (selectionMode !== "cross") {
+      queuedCrossSelectionsRef.current = [];
       setQueuedCrossSelections([]);
     }
     window.getSelection()?.removeAllRanges();
   }, [selectionMode]);
+
+  useEffect(() => {
+    if (!activeSelection) {
+      setConfirmedMobileReaderMode(undefined);
+    }
+  }, [activeSelection]);
 
   useEffect(() => {
     return () => {
@@ -414,6 +497,7 @@ export function PdfViewer({
 
     updateRenderedPageWindowFromLayout({
       pageLayout,
+      overscan: renderPageOverscan,
       setRenderPageIndexes,
       viewportHeight: scrollElement.clientHeight,
       viewportTop: scrollElement.scrollTop,
@@ -426,7 +510,7 @@ export function PdfViewer({
       ),
       lastScrollTop: scrollElement.scrollTop,
     });
-  }, [pageLayout, queueReadingPosition]);
+  }, [pageLayout, queueReadingPosition, renderPageOverscan]);
 
   useEffect(() => {
     const scrollElement = scrollRef.current;
@@ -438,12 +522,13 @@ export function PdfViewer({
     window.requestAnimationFrame(() => {
       updateRenderedPageWindowFromLayout({
         pageLayout,
+        overscan: renderPageOverscan,
         setRenderPageIndexes,
         viewportHeight: scrollElement.clientHeight,
         viewportTop: scrollElement.scrollTop,
       });
     });
-  }, [pageLayout, pages.length]);
+  }, [pageLayout, pages.length, renderPageOverscan]);
 
   const handleZoom = useCallback(
     (direction: 1 | -1, anchor?: { clientX: number; clientY: number }) => {
@@ -483,6 +568,78 @@ export function PdfViewer({
     },
     [],
   );
+
+  const applyZoom = useCallback((nextZoomInput: number, anchor: { clientX: number; clientY: number }) => {
+    const scrollElement = scrollRef.current;
+
+    if (!scrollElement) {
+      return;
+    }
+
+    setUserZoom((currentZoom) => {
+      const nextZoom = roundPreciseZoom(clamp(nextZoomInput, USER_ZOOM_MIN, USER_ZOOM_MAX));
+
+      if (Math.abs(nextZoom - currentZoom) < 0.005) {
+        return currentZoom;
+      }
+
+      const scrollRect = scrollElement.getBoundingClientRect();
+      const offsetX = anchor.clientX - scrollRect.left;
+      const offsetY = anchor.clientY - scrollRect.top;
+
+      zoomAnchorRef.current = {
+        offsetX,
+        offsetY,
+        scaleRatio: nextZoom / currentZoom,
+        scrollLeft: scrollElement.scrollLeft,
+        scrollTop: scrollElement.scrollTop,
+      };
+      window.clearTimeout(realZoomCommitTimerRef.current);
+      realZoomCommitTimerRef.current = window.setTimeout(() => {
+        setRenderZoom(nextZoom);
+      }, REAL_ZOOM_COMMIT_DELAY_MS);
+
+      return nextZoom;
+    });
+  }, []);
+
+  const handleTouchStart = useCallback((event: ReactTouchEvent<HTMLDivElement>) => {
+    const metrics = getTouchPairMetrics(event.touches);
+
+    if (!metrics) {
+      return;
+    }
+
+    pinchZoomRef.current = {
+      startDistance: metrics.distance,
+      startZoom: userZoom,
+    };
+    event.preventDefault();
+  }, [userZoom]);
+
+  const handleTouchMove = useCallback(
+    (event: ReactTouchEvent<HTMLDivElement>) => {
+      const pinchState = pinchZoomRef.current;
+      const metrics = getTouchPairMetrics(event.touches);
+
+      if (!pinchState || !metrics || pinchState.startDistance <= 0) {
+        return;
+      }
+
+      applyZoom(pinchState.startZoom * (metrics.distance / pinchState.startDistance), {
+        clientX: metrics.centerX,
+        clientY: metrics.centerY,
+      });
+      event.preventDefault();
+    },
+    [applyZoom],
+  );
+
+  const handleTouchEnd = useCallback((event: ReactTouchEvent<HTMLDivElement>) => {
+    if (event.touches.length < 2) {
+      pinchZoomRef.current = undefined;
+    }
+  }, []);
 
   const handleWheel = useCallback(
     (event: WheelEvent) => {
@@ -534,6 +691,17 @@ export function PdfViewer({
     }, 2200);
   }, []);
 
+  const showTextOrderWarningIfNeeded = useCallback(
+    (selection: SentenceSelection) => {
+      const warning = getTextOrderWarning(pageIndexesRef.current.get(selection.pageIndex), selection);
+
+      if (warning) {
+        showSelectionNotice(warning);
+      }
+    },
+    [showSelectionNotice],
+  );
+
   const copySelectedText = useCallback(async (selection: SentenceSelection) => {
     setCopiedSelection(selection);
 
@@ -576,11 +744,25 @@ export function PdfViewer({
 
   const addCrossSelectionPart = useCallback(
     (selection: SentenceSelection) => {
-      setQueuedCrossSelections((currentSelections) => [...currentSelections, selection]);
+      const currentSelections = queuedCrossSelectionsRef.current;
+      const existingIndex = currentSelections.findIndex((currentSelection) =>
+        isSameSelectionTarget(currentSelection, selection),
+      );
+
+      if (existingIndex >= 0) {
+        onSentenceSelectionChange(undefined);
+        showSelectionNotice(`Region ${existingIndex + 1} already selected.`);
+        return;
+      }
+
+      const nextSelections = [...currentSelections, selection];
+
+      queuedCrossSelectionsRef.current = nextSelections;
+      setQueuedCrossSelections(nextSelections);
       onSentenceSelectionChange(undefined);
-      showSelectionNotice(`Added region ${queuedCrossSelections.length + 1}.`);
+      showSelectionNotice(`Added region ${nextSelections.length}.`);
     },
-    [onSentenceSelectionChange, queuedCrossSelections.length, showSelectionNotice],
+    [onSentenceSelectionChange, showSelectionNotice],
   );
 
   const handleConfirmCrossSelection = useCallback(() => {
@@ -590,6 +772,7 @@ export function PdfViewer({
       return;
     }
 
+    queuedCrossSelectionsRef.current = [];
     setQueuedCrossSelections([]);
     if (readerMode === "select") {
       onSentenceSelectionChange(addPageMetricsToSelection(selection));
@@ -607,15 +790,47 @@ export function PdfViewer({
   ]);
 
   const handleUndoCrossSelection = useCallback(() => {
-    setQueuedCrossSelections((currentSelections) => currentSelections.slice(0, -1));
+    setQueuedCrossSelections((currentSelections) => {
+      const nextSelections = currentSelections.slice(0, -1);
+
+      queuedCrossSelectionsRef.current = nextSelections;
+      return nextSelections;
+    });
   }, []);
 
   const handleClearCrossSelection = useCallback(() => {
+    queuedCrossSelectionsRef.current = [];
     setQueuedCrossSelections([]);
     onSentenceSelectionChange(undefined);
   }, [onSentenceSelectionChange]);
 
   const handleTextPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "touch") {
+      const pointerHit = getTextSpanPointerHit(event.target, event.clientX, event.clientY);
+      const shouldStartExplicitMobileSelection =
+        isMobileViewport && (readerMode === "select" || selectionMode === "cross");
+
+      if (!pointerHit || !shouldStartExplicitMobileSelection) {
+        return;
+      }
+
+      draftSelectionRef.current = undefined;
+      setDraftSelection(undefined);
+      setMobilePendingSelection(undefined);
+      setConfirmedMobileReaderMode(undefined);
+      spanDragRef.current = {
+        latestHit: pointerHit,
+        pointerId: event.pointerId,
+        startHit: pointerHit,
+        startX: event.clientX,
+        startY: event.clientY,
+      };
+      window.getSelection()?.removeAllRanges();
+      capturePointer(event.currentTarget, event.pointerId);
+      event.preventDefault();
+      return;
+    }
+
     if (event.button === 1) {
       const scrollElement = scrollRef.current;
 
@@ -632,7 +847,7 @@ export function PdfViewer({
       };
       setIsPanning(true);
       window.getSelection()?.removeAllRanges();
-      event.currentTarget.setPointerCapture(event.pointerId);
+      capturePointer(event.currentTarget, event.pointerId);
       event.preventDefault();
       return;
     }
@@ -657,9 +872,14 @@ export function PdfViewer({
       startY: event.clientY,
     };
     window.getSelection()?.removeAllRanges();
-    event.currentTarget.setPointerCapture(event.pointerId);
+    capturePointer(event.currentTarget, event.pointerId);
     event.preventDefault();
-  }, []);
+  }, [
+    entry.fingerprint,
+    isMobileViewport,
+    readerMode,
+    selectionMode,
+  ]);
 
   const handleTextPointerMove = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -695,18 +915,18 @@ export function PdfViewer({
         dragState.latestHit.pageIndex === dragState.startHit.pageIndex &&
         dragState.latestHit.rawOffset !== dragState.startHit.rawOffset;
 
-      updateDraftSelection(
-        isRangeDrag
-          ? pointerHitRangeToWordSelection({
-              contextWindowSize: settings.contextWindowN,
-              endHit: dragState.latestHit,
-              maxWordCount: settings.maxDraggedWords,
-              pageIndexes: pageIndexesRef.current,
-              pdfFingerprint: entry.fingerprint,
-              startHit: dragState.startHit,
-            })
-          : undefined,
-      );
+      const nextDraftSelection = isRangeDrag
+        ? pointerHitRangeToWordSelection({
+            contextWindowSize: settings.contextWindowN,
+            endHit: dragState.latestHit,
+            maxWordCount: settings.maxDraggedWords,
+            pageIndexes: pageIndexesRef.current,
+            pdfFingerprint: entry.fingerprint,
+            startHit: dragState.startHit,
+          })
+        : undefined;
+
+      updateDraftSelection(nextDraftSelection);
 
       event.preventDefault();
     },
@@ -724,7 +944,7 @@ export function PdfViewer({
       if (panDragRef.current?.pointerId === event.pointerId) {
         panDragRef.current = undefined;
         setIsPanning(false);
-        event.currentTarget.releasePointerCapture(event.pointerId);
+        releasePointerCaptureIfHeld(event.currentTarget, event.pointerId);
         event.preventDefault();
         return;
       }
@@ -748,6 +968,10 @@ export function PdfViewer({
         movedDistance >= POINTER_DRAG_THRESHOLD_PX &&
         endHit.pageIndex === dragState.startHit.pageIndex &&
         endHit.rawOffset !== dragState.startHit.rawOffset;
+      const shouldDeferMobileSelection =
+        event.pointerType === "touch" &&
+        isMobileViewport &&
+        (readerMode === "select" || selectionMode === "cross");
       const wordSelection = isRangeDrag
         ? draftSelectionRef.current ??
           (pointerHitRangeToWordSelection({
@@ -761,33 +985,48 @@ export function PdfViewer({
         : undefined;
 
       spanDragRef.current = undefined;
-      draftSelectionRef.current = undefined;
-      setDraftSelection(undefined);
       window.getSelection()?.removeAllRanges();
-      event.currentTarget.releasePointerCapture(event.pointerId);
+      releasePointerCaptureIfHeld(event.currentTarget, event.pointerId);
       event.preventDefault();
 
       if (wordSelection) {
         const selectionWithMetrics = addPageMetricsToSelection(wordSelection);
 
+        showTextOrderWarningIfNeeded(selectionWithMetrics);
+
+        if (shouldDeferMobileSelection) {
+          draftSelectionRef.current = selectionWithMetrics;
+          setDraftSelection(selectionWithMetrics);
+          setMobilePendingSelection(selectionWithMetrics);
+          return;
+        }
+
+        draftSelectionRef.current = undefined;
+        setDraftSelection(undefined);
         if (selectionMode === "cross") {
           addCrossSelectionPart(selectionWithMetrics);
         } else {
           onSentenceSelectionChange(selectionWithMetrics);
         }
+        return;
       }
+
+      draftSelectionRef.current = undefined;
+      setDraftSelection(undefined);
+      setMobilePendingSelection(undefined);
     },
     [
       addPageMetricsToSelection,
       addCrossSelectionPart,
       entry.fingerprint,
+      isMobileViewport,
       onSentenceSelectionChange,
-      copySelectedText,
       readerMode,
       selectionMode,
       settings.contextWindowN,
       settings.maxDraggedWords,
       showSelectionNotice,
+      showTextOrderWarningIfNeeded,
     ],
   );
 
@@ -801,6 +1040,7 @@ export function PdfViewer({
       spanDragRef.current = undefined;
       draftSelectionRef.current = undefined;
       setDraftSelection(undefined);
+      setMobilePendingSelection(undefined);
     }
   }, []);
 
@@ -872,10 +1112,51 @@ export function PdfViewer({
     [onCreateAnnotation, onSentenceSelectionChange, showSelectionNotice],
   );
 
+  const clearMobilePendingSelection = useCallback(() => {
+    draftSelectionRef.current = undefined;
+    setDraftSelection(undefined);
+    setMobilePendingSelection(undefined);
+    setConfirmedMobileReaderMode(undefined);
+    onSentenceSelectionChange(undefined);
+    window.getSelection()?.removeAllRanges();
+  }, [onSentenceSelectionChange]);
+
+  const handleMobilePendingTranslate = useCallback(() => {
+    if (!mobilePendingSelection) {
+      return;
+    }
+
+    draftSelectionRef.current = undefined;
+    setDraftSelection(undefined);
+    setMobilePendingSelection(undefined);
+    setConfirmedMobileReaderMode("translate");
+    onSentenceSelectionChange(mobilePendingSelection);
+  }, [mobilePendingSelection, onSentenceSelectionChange]);
+
+  const handleMobilePendingCopy = useCallback(() => {
+    if (!mobilePendingSelection) {
+      return;
+    }
+
+    void copySelectedText(mobilePendingSelection);
+    clearMobilePendingSelection();
+  }, [clearMobilePendingSelection, copySelectedText, mobilePendingSelection]);
+
+  const handleMobilePendingAddCrossSelection = useCallback(() => {
+    if (!mobilePendingSelection) {
+      return;
+    }
+
+    addCrossSelectionPart(mobilePendingSelection);
+    draftSelectionRef.current = undefined;
+    setDraftSelection(undefined);
+    setMobilePendingSelection(undefined);
+  }, [addCrossSelectionPart, mobilePendingSelection]);
+
   return (
     <div className="pdf-viewer-shell">
-      <div className="pdf-viewer-header">
-        <div>
+      <div className={`pdf-viewer-header ${selectionMode === "cross" ? "pdf-viewer-header--cross" : ""}`}>
+        <div className="pdf-viewer-heading">
           <div className="pdf-viewer-title">{entry.pdfMetadata?.title || entry.fileName}</div>
           <div className="pdf-viewer-subtitle">
             {pages.length > 0 ? `${pages.length} pages` : "Loading PDF"}
@@ -919,33 +1200,39 @@ export function PdfViewer({
               </button>
             </div>
           ) : null}
-          <button
-            aria-label="Zoom out"
-            className="icon-button icon-button--small"
-            disabled={userZoom <= USER_ZOOM_MIN}
-            onClick={() => handleZoom(-1)}
-            title="Zoom out"
-            type="button"
-          >
-            <Minus aria-hidden="true" size={16} strokeWidth={2} />
-          </button>
-          <span className="pdf-zoom-value">{Math.round(userZoom * 100)}%</span>
-          <button
-            aria-label="Zoom in"
-            className="icon-button icon-button--small"
-            disabled={userZoom >= USER_ZOOM_MAX}
-            onClick={() => handleZoom(1)}
-            title="Zoom in"
-            type="button"
-          >
-            <Plus aria-hidden="true" size={16} strokeWidth={2} />
-          </button>
+          <div className="pdf-zoom-toolbar" aria-label="PDF zoom controls">
+            <button
+              aria-label="Zoom out"
+              className="icon-button icon-button--small"
+              disabled={userZoom <= USER_ZOOM_MIN}
+              onClick={() => handleZoom(-1)}
+              title="Zoom out"
+              type="button"
+            >
+              <Minus aria-hidden="true" size={16} strokeWidth={2} />
+            </button>
+            <span className="pdf-zoom-value">{Math.round(userZoom * 100)}%</span>
+            <button
+              aria-label="Zoom in"
+              className="icon-button icon-button--small"
+              disabled={userZoom >= USER_ZOOM_MAX}
+              onClick={() => handleZoom(1)}
+              title="Zoom in"
+              type="button"
+            >
+              <Plus aria-hidden="true" size={16} strokeWidth={2} />
+            </button>
+          </div>
         </div>
       </div>
       {selectionNotice ? <div className="reader-message reader-message--inline">{selectionNotice}</div> : null}
       <div
         className={`pdf-scroll-region ${isPanning ? "pdf-scroll-region--panning" : ""} ${
           draftSelection ? "pdf-scroll-region--selecting" : ""
+        } ${
+          isMobileViewport && (readerMode === "select" || selectionMode === "cross")
+            ? "pdf-scroll-region--selection-armed"
+            : ""
         }`}
         onAuxClick={handleAuxClick}
         onPointerCancel={handleTextPointerCancel}
@@ -953,10 +1240,27 @@ export function PdfViewer({
         onPointerMove={handleTextPointerMove}
         onPointerUp={handleTextPointerUp}
         onScroll={handleScroll}
+        onTouchCancel={handleTouchEnd}
+        onTouchEnd={handleTouchEnd}
+        onTouchMove={handleTouchMove}
+        onTouchStart={handleTouchStart}
         ref={scrollRef}
       >
         {loadState === "error" ? (
-          <div className="reader-message">{errorMessage}</div>
+          <div className="reader-message reader-message--actionable">
+            <span>{errorMessage}</span>
+            {onRemoveLocalRecord ? (
+              <button
+                className="reader-message-action"
+                onClick={() => {
+                  void Promise.resolve(onRemoveLocalRecord(entry.fingerprint)).catch(() => undefined);
+                }}
+                type="button"
+              >
+                Remove record
+              </button>
+            ) : null}
+          </div>
         ) : (
           <div className="pdf-page-list" style={pageListStyle}>
             {pdfDocument && pages.length > 0
@@ -964,6 +1268,7 @@ export function PdfViewer({
                   <PdfPageView
                     activeTranslationCardZIndex={activeTranslationCardZIndex}
                     activeSelection={activeSelection}
+                    canvasOutputScaleCap={canvasOutputScaleCap}
                     descriptor={page}
                     draftSelection={draftSelection}
                     key={`${entry.fingerprint}-${page.pageNumber}`}
@@ -984,7 +1289,7 @@ export function PdfViewer({
                     paperContext={paperContext}
                     pins={pins}
                     queuedCrossSelections={queuedCrossSelections}
-                    readerMode={readerMode}
+                    readerMode={confirmedMobileReaderMode ?? readerMode}
                     renderScale={renderPageIndexes.has(page.pageNumber - 1) ? pdfRenderScale : 0}
                     shouldRender={renderPageIndexes.has(page.pageNumber - 1)}
                     textContentCacheRef={textContentCacheRef}
@@ -998,6 +1303,48 @@ export function PdfViewer({
           </div>
         )}
       </div>
+      {mobilePendingSelection ? (
+        <div className="mobile-selection-confirm-bar" role="group" aria-label="Selection actions">
+          <div className="mobile-selection-confirm-summary">
+            {countWords(mobilePendingSelection.targetSentence)} words selected
+          </div>
+          <div className="mobile-selection-confirm-actions">
+            {selectionMode === "cross" ? (
+              <button
+                className="mobile-selection-confirm-button mobile-selection-confirm-button--primary"
+                onClick={handleMobilePendingAddCrossSelection}
+                type="button"
+              >
+                Add
+              </button>
+            ) : (
+              <>
+                <button
+                  className="mobile-selection-confirm-button mobile-selection-confirm-button--primary"
+                  onClick={handleMobilePendingTranslate}
+                  type="button"
+                >
+                  Translate
+                </button>
+                <button
+                  className="mobile-selection-confirm-button"
+                  onClick={handleMobilePendingCopy}
+                  type="button"
+                >
+                  Copy
+                </button>
+              </>
+            )}
+            <button
+              className="mobile-selection-confirm-button mobile-selection-confirm-button--ghost"
+              onClick={clearMobilePendingSelection}
+              type="button"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1005,6 +1352,7 @@ export function PdfViewer({
 const PdfPageView = memo(function PdfPageView({
   activeTranslationCardZIndex,
   activeSelection,
+  canvasOutputScaleCap,
   descriptor,
   draftSelection,
   locatedPinId,
@@ -1035,6 +1383,7 @@ const PdfPageView = memo(function PdfPageView({
 }: {
   activeTranslationCardZIndex: number;
   activeSelection?: SentenceSelection;
+  canvasOutputScaleCap: number;
   descriptor: PageDescriptor;
   draftSelection?: SentenceSelection;
   locatedPinId?: string;
@@ -1118,7 +1467,7 @@ const PdfPageView = memo(function PdfPageView({
         const canvas = canvasRef.current;
         const pageElement = pageRef.current;
         const textLayerElement = textLayerRef.current;
-        const outputScale = Math.min(window.devicePixelRatio || 1, MAX_CANVAS_OUTPUT_SCALE);
+        const outputScale = Math.min(window.devicePixelRatio || 1, canvasOutputScaleCap);
 
         if (!canvas || !pageElement || !textLayerElement) {
           return;
@@ -1211,6 +1560,7 @@ const PdfPageView = memo(function PdfPageView({
     };
   }, [
     descriptor.pageNumber,
+    canvasOutputScaleCap,
     onPageTextReadyForPaperContext,
     onTextIndexClear,
     onTextIndexReady,
@@ -1399,24 +1749,29 @@ async function loadPageDescriptors(pdfDocument: PdfDocumentProxy) {
   return descriptors;
 }
 
-function getFitScale(pages: PageDescriptor[], availableWidth: number) {
+function getFitScale(pages: PageDescriptor[], availableWidth: number, maxRenderScale: number) {
   const widestPage = pages.reduce((width, page) => Math.max(width, page.width), 612);
   const nextScale = availableWidth / widestPage;
 
-  return Math.min(MAX_RENDER_SCALE, Math.max(MIN_RENDER_SCALE, nextScale));
+  return Math.min(maxRenderScale, Math.max(MIN_RENDER_SCALE, nextScale));
 }
 
-function createPageLayout(pages: PageDescriptor[], scale: number): PageLayout {
+function createPageLayout(
+  pages: PageDescriptor[],
+  scale: number,
+  pageListPadding: number,
+  pageGap: number,
+): PageLayout {
   const heights: number[] = [];
   const tops: number[] = [];
-  let top = PDF_PAGE_LIST_PADDING_PX;
+  let top = pageListPadding;
 
   for (const page of pages) {
     const height = page.height * scale;
 
     heights.push(height);
     tops.push(top);
-    top += height + PDF_PAGE_GAP_PX;
+    top += height + pageGap;
   }
 
   return { heights, tops };
@@ -1424,10 +1779,12 @@ function createPageLayout(pages: PageDescriptor[], scale: number): PageLayout {
 
 function updateRenderedPageWindowFromLayout({
   pageLayout,
+  overscan,
   setRenderPageIndexes,
   viewportHeight,
   viewportTop,
 }: {
+  overscan: number;
   pageLayout: PageLayout;
   setRenderPageIndexes: (updater: (currentIndexes: Set<number>) => Set<number>) => void;
   viewportHeight: number;
@@ -1441,8 +1798,8 @@ function updateRenderedPageWindowFromLayout({
   const maxPageIndex = pageLayout.tops.length - 1;
   const firstVisibleIndex = findFirstPageEndingAfter(pageLayout, viewportTop);
   const lastVisibleIndex = findLastPageStartingBefore(pageLayout, viewportBottom);
-  const startIndex = clamp(firstVisibleIndex - PAGE_RENDER_OVERSCAN, 0, maxPageIndex);
-  const endIndex = clamp(lastVisibleIndex + PAGE_RENDER_OVERSCAN, 0, maxPageIndex);
+  const startIndex = clamp(firstVisibleIndex - overscan, 0, maxPageIndex);
+  const endIndex = clamp(lastVisibleIndex + overscan, 0, maxPageIndex);
   const nextIndexes = new Set<number>();
 
   for (let pageIndex = startIndex; pageIndex <= endIndex; pageIndex += 1) {
@@ -1509,8 +1866,51 @@ function roundZoom(value: number) {
   return Math.round(value * 10) / 10;
 }
 
+function roundPreciseZoom(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function getTouchPairMetrics(touches: TouchPointCollection) {
+  if (touches.length < 2) {
+    return undefined;
+  }
+
+  const firstTouch = touches[0];
+  const secondTouch = touches[1];
+  const deltaX = secondTouch.clientX - firstTouch.clientX;
+  const deltaY = secondTouch.clientY - firstTouch.clientY;
+
+  return {
+    centerX: (firstTouch.clientX + secondTouch.clientX) / 2,
+    centerY: (firstTouch.clientY + secondTouch.clientY) / 2,
+    distance: Math.hypot(deltaX, deltaY),
+  };
+}
+
+function countWords(text: string) {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+function capturePointer(element: HTMLElement, pointerId: number) {
+  try {
+    element.setPointerCapture(pointerId);
+  } catch {
+    // The pointer may already be released when a long-press timer fires on mobile.
+  }
+}
+
+function releasePointerCaptureIfHeld(element: HTMLElement, pointerId: number) {
+  try {
+    if (element.hasPointerCapture(pointerId)) {
+      element.releasePointerCapture(pointerId);
+    }
+  } catch {
+    // Some mobile browsers can drop capture during native gesture cancellation.
+  }
 }
 
 function areSetsEqual(left: Set<number>, right: Set<number>) {

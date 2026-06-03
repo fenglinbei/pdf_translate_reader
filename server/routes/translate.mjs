@@ -4,6 +4,7 @@ import {
   DEEPSEEK_MODELS,
   DeepSeekClientError,
 } from "../deepseek/client.mjs";
+import { normalizeTranslationLanguagePair } from "../deepseek/languages.mjs";
 import { buildTranslationMessages, TRANSLATION_PROMPT_VERSION } from "../deepseek/prompt.mjs";
 import { writeJson } from "../http/json.mjs";
 
@@ -14,7 +15,7 @@ export async function handleTranslateStream(request, response) {
 
   try {
     requestBody = await readJsonBody(request);
-    validateTranslationRequest(requestBody);
+    requestBody = normalizeTranslationRequest(requestBody);
   } catch (error) {
     writeJson(response, 400, {
       error: {
@@ -121,7 +122,7 @@ function processDeepSeekSseLine(line, response) {
   }
 }
 
-function validateTranslationRequest(body) {
+function normalizeTranslationRequest(body) {
   if (!body || typeof body !== "object") {
     throw new Error("Request body must be an object.");
   }
@@ -130,13 +131,20 @@ function validateTranslationRequest(body) {
     throw new Error("targetSentence is required.");
   }
 
-  if (body.sourceLang !== "en" || body.targetLang !== "zh") {
-    throw new Error("Only English to Simplified Chinese translation is supported.");
-  }
+  const { sourceLang, targetLang } = normalizeTranslationLanguagePair(
+    body.sourceLang,
+    body.targetLang,
+  );
 
   if (body.model && !DEEPSEEK_MODELS.has(body.model)) {
     throw new Error(`Unsupported model: ${body.model}`);
   }
+
+  return {
+    ...body,
+    sourceLang,
+    targetLang,
+  };
 }
 
 function normalizeModel(model) {

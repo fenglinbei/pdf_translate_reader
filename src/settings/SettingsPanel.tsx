@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Check, Trash2, X } from "lucide-react";
+import {
+  TRANSLATION_LANGUAGES,
+  type TranslationLanguage,
+} from "../config/translationLanguages";
 import type { AppSettings, PaperContextRecord, PdfLibraryEntry } from "../types/domain";
 import { PaperContextEditor } from "./PaperContextEditor";
 import { API_LOGS_UPDATED_EVENT } from "../translation/apiLogRepository";
@@ -122,6 +126,26 @@ export function SettingsPanel({
     [pendingAction, refreshUsageSummary],
   );
 
+  const handleSourceLanguageChange = useCallback(
+    (sourceLang: TranslationLanguage) => {
+      void updateSettings({
+        sourceLang,
+        targetLang: sourceLang === settings.targetLang ? settings.sourceLang : settings.targetLang,
+      });
+    },
+    [settings.sourceLang, settings.targetLang, updateSettings],
+  );
+
+  const handleTargetLanguageChange = useCallback(
+    (targetLang: TranslationLanguage) => {
+      void updateSettings({
+        sourceLang: targetLang === settings.sourceLang ? settings.targetLang : settings.sourceLang,
+        targetLang,
+      });
+    },
+    [settings.sourceLang, settings.targetLang, updateSettings],
+  );
+
   return (
     <div
       className="settings-backdrop"
@@ -150,14 +174,32 @@ export function SettingsPanel({
           <div className="settings-field-grid">
             <label className="settings-field">
               <span>Source</span>
-              <select disabled value={settings.sourceLang}>
-                <option value="en">English</option>
+              <select
+                value={settings.sourceLang}
+                onChange={(event) =>
+                  handleSourceLanguageChange(event.currentTarget.value as TranslationLanguage)
+                }
+              >
+                {TRANSLATION_LANGUAGES.map((language) => (
+                  <option key={language.code} value={language.code}>
+                    {language.label}
+                  </option>
+                ))}
               </select>
             </label>
             <label className="settings-field">
               <span>Target</span>
-              <select disabled value={settings.targetLang}>
-                <option value="zh">Simplified Chinese</option>
+              <select
+                value={settings.targetLang}
+                onChange={(event) =>
+                  handleTargetLanguageChange(event.currentTarget.value as TranslationLanguage)
+                }
+              >
+                {TRANSLATION_LANGUAGES.map((language) => (
+                  <option key={language.code} value={language.code}>
+                    {language.label}
+                  </option>
+                ))}
               </select>
             </label>
           </div>

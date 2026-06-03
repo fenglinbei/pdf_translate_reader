@@ -1,6 +1,6 @@
 import type { TokenUsage, TranslationRequest } from "../types/domain";
 import { PROJECT_CONFIG } from "../config/projectConfig";
-import { TRANSLATION_TIMEOUT_MESSAGE } from "./errors";
+import { TranslationNetworkError, TranslationTimeoutError } from "./errors";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
@@ -40,13 +40,21 @@ export async function streamTranslation(
     await readEventStream(response.body, handlers);
   } catch (error) {
     if (requestSignal.timedOut()) {
-      throw new Error(TRANSLATION_TIMEOUT_MESSAGE);
+      throw new TranslationTimeoutError();
+    }
+
+    if (isNetworkFetchError(error)) {
+      throw new TranslationNetworkError();
     }
 
     throw error;
   } finally {
     requestSignal.dispose();
   }
+}
+
+function isNetworkFetchError(error: unknown) {
+  return error instanceof TypeError && error.message.toLocaleLowerCase().includes("fetch");
 }
 
 function createTimeoutSignal(parentSignal?: AbortSignal) {
@@ -104,7 +112,7 @@ async function readEventStream(
     } else if (eventName === "finish" && typeof payload.finishReason === "string") {
       handlers.onFinish?.(payload.finishReason);
     } else if (eventName === "error") {
-      throw new Error(payload.message ?? "Translation failed.");
+      throw new Error(getStreamErrorMessage(payload));
     }
 
     eventName = "message";
@@ -146,9 +154,44 @@ async function readEventStream(
   dispatchEvent();
 }
 
+function getStreamErrorMessage(payload: unknown) {
+  if (!payload || typeof payload !== "object") {
+    return "Translation failed.";
+  }
+
+  const errorPayload = payload as { code?: unknown; message?: unknown };
+
+  if (errorPayload.code === "deepseek_rate_limited") {
+    return "DeepSeek rate limit or quota was reached. Wait a moment, then try again.";
+  }
+
+  if (errorPayload.code === "deepseek_auth_error" || errorPayload.code === "deepseek_api_key_missing") {
+    return "DeepSeek API key is missing or invalid. Check the local API configuration.";
+  }
+
+  if (errorPayload.code === "deepseek_network_error") {
+    return "Network connection failed. Check the API proxy and internet connection.";
+  }
+
+  return typeof errorPayload.message === "string" ? errorPayload.message : "Translation failed.";
+}
+
 async function readErrorMessage(response: Response) {
   try {
     const payload = await response.json();
+    const errorCode = typeof payload?.error?.code === "string" ? payload.error.code : undefined;
+
+    if (errorCode === "deepseek_rate_limited") {
+      return "DeepSeek rate limit or quota was reached. Wait a moment, then try again.";
+    }
+
+    if (errorCode === "deepseek_auth_error" || errorCode === "deepseek_api_key_missing") {
+      return "DeepSeek API key is missing or invalid. Check the local API configuration.";
+    }
+
+    if (errorCode === "deepseek_network_error") {
+      return "Network connection failed. Check the API proxy and internet connection.";
+    }
 
     if (typeof payload?.error?.message === "string") {
       return payload.error.message;

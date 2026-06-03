@@ -50,13 +50,24 @@ export function normalizePageText(rawText: string): NormalizedPageText {
 
     if (isWhitespace(rawText[rawIndex])) {
       const whitespaceStart = rawIndex;
+      let sawLineBreak = false;
 
       while (rawIndex < rawText.length && isWhitespace(rawText[rawIndex])) {
+        sawLineBreak ||= isLineBreak(rawText[rawIndex]);
         rawToNormalized[rawIndex] = output.length;
         rawIndex += 1;
       }
 
-      if (output.length > 0 && rawIndex < rawText.length && output[output.length - 1] !== " ") {
+      if (
+        output.length > 0 &&
+        rawIndex < rawText.length &&
+        output[output.length - 1] !== " " &&
+        shouldPreserveWhitespace({
+          nextCharacter: rawText[rawIndex],
+          previousCharacter: output[output.length - 1],
+          sawLineBreak,
+        })
+      ) {
         output.push(" ");
         normalizedToRaw.push(whitespaceStart);
       }
@@ -191,6 +202,33 @@ function shouldRemoveHyphenatedBreak(text: string, index: number) {
   return sawLineBreak && cursor < text.length && isAsciiLetter(text[cursor]);
 }
 
+function shouldPreserveWhitespace({
+  nextCharacter,
+  previousCharacter,
+  sawLineBreak,
+}: {
+  nextCharacter: string;
+  previousCharacter: string;
+  sawLineBreak: boolean;
+}) {
+  if (!sawLineBreak) {
+    return true;
+  }
+
+  return !isCjkLineBreakBoundary(previousCharacter, nextCharacter);
+}
+
+function isCjkLineBreakBoundary(previousCharacter: string, nextCharacter: string) {
+  return (
+    isCjkNoSpaceCharacter(previousCharacter) ||
+    isCjkNoSpaceCharacter(nextCharacter)
+  );
+}
+
+function isCjkNoSpaceCharacter(character: string) {
+  return /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\u3000-\u303F\uFF00-\uFFEF]/u.test(character);
+}
+
 function isLikelyAbbreviation(text: string, terminatorIndex: number) {
   if (text[terminatorIndex] !== ".") {
     return false;
@@ -238,6 +276,10 @@ function isSentenceTerminator(character: string) {
 
 function isWhitespace(character: string) {
   return /\s/.test(character);
+}
+
+function isLineBreak(character: string) {
+  return character === "\n" || character === "\r";
 }
 
 function looksLikeSentenceStart(character: string) {

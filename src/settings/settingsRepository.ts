@@ -1,5 +1,10 @@
 import { getAppDb } from "../cache";
 import { PROJECT_CONFIG } from "../config/projectConfig";
+import {
+  DEFAULT_SOURCE_LANG,
+  DEFAULT_TARGET_LANG,
+  normalizeTranslationLanguagePair,
+} from "../config/translationLanguages";
 import type { ApiCallLog, AppSettings, TranslationModel } from "../types/domain";
 
 const APP_SETTINGS_KEY = "app";
@@ -11,8 +16,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   defaultModel: "deepseek-v4-flash",
   longContextEnabled: true,
   maxDraggedWords: PROJECT_CONFIG.selection.defaultMaxDraggedWords,
-  sourceLang: "en",
-  targetLang: "zh",
+  sourceLang: DEFAULT_SOURCE_LANG,
+  targetLang: DEFAULT_TARGET_LANG,
 };
 
 export type ApiUsageSummary = {
@@ -72,6 +77,10 @@ export function normalizeAppSettings(input: unknown): AppSettings {
     MIN_DRAGGED_WORDS_LIMIT,
     MAX_DRAGGED_WORDS_LIMIT,
   );
+  const { sourceLang, targetLang } = normalizeTranslationLanguagePair(
+    value.sourceLang,
+    value.targetLang,
+  );
 
   return {
     contextWindowN,
@@ -81,8 +90,8 @@ export function normalizeAppSettings(input: unknown): AppSettings {
         ? value.longContextEnabled
         : DEFAULT_APP_SETTINGS.longContextEnabled,
     maxDraggedWords,
-    sourceLang: "en",
-    targetLang: "zh",
+    sourceLang,
+    targetLang,
   };
 }
 

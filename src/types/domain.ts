@@ -1,8 +1,10 @@
+import type { TranslationLanguage } from "../config/translationLanguages";
+
 export type TranslationModel = "deepseek-v4-flash" | "deepseek-v4-pro";
 export type ReaderMode = "translate" | "select";
 export type SelectionMode = "continuous" | "cross";
-export type SourceLanguage = "en";
-export type TargetLanguage = "zh";
+export type SourceLanguage = TranslationLanguage;
+export type TargetLanguage = TranslationLanguage;
 export type AnnotationColor = "yellow" | "blue" | "green" | "red";
 
 export type DOMRectLike = {

@@ -1,6 +1,7 @@
 import { Bookmark, Check, Pin, RefreshCw, StickyNote, X } from "lucide-react";
 import type { CSSProperties, KeyboardEvent, MouseEvent, PointerEvent, TouchEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type {
   AnnotationColor,
   AppSettings,
@@ -135,6 +136,7 @@ export function TranslationPopover({
   zIndex,
 }: TranslationPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController>();
   const activeRequestRef = useRef<TranslationRequest>();
   const onFavoriteRef = useRef(onFavorite);
@@ -150,11 +152,13 @@ export function TranslationPopover({
   const [status, setStatus] = useState<TranslationStatus>("idle");
   const [translation, setTranslation] = useState("");
   const [errorMessage, setErrorMessage] = useState<string>();
+  const [cacheWarning, setCacheWarning] = useState<string>();
   const [usage, setUsage] = useState<TokenUsage>();
   const [translationSource, setTranslationSource] = useState<TranslationSource>();
   const [activeCacheKey, setActiveCacheKey] = useState<string>();
   const [favoriteStatus, setFavoriteStatus] = useState<FavoriteStatus>("idle");
   const [dragOffset, setDragOffset] = useState<DragOffset>({ x: 0, y: 0 });
+  const [isMobileSheet, setIsMobileSheet] = useState(false);
   const [popoverSize, setPopoverSize] = useState<PopoverSize>();
   const dragStateRef = useRef<DragState>();
   const resizeStateRef = useRef<ResizeState>();
@@ -236,6 +240,20 @@ export function TranslationPopover({
     payloadSelectionRef.current = pinSelection ?? selection;
   }, [onFavorite, onTranslationComplete, pinSelection, selection]);
 
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 700px), (pointer: coarse) and (max-width: 920px)");
+    const updateViewportState = () => {
+      setIsMobileSheet(mediaQuery.matches);
+    };
+
+    updateViewportState();
+    mediaQuery.addEventListener("change", updateViewportState);
+
+    return () => {
+      mediaQuery.removeEventListener("change", updateViewportState);
+    };
+  }, []);
+
   const saveFavoritePayload = useCallback(
     async (
       payload: TranslationPinPayload,
@@ -279,6 +297,7 @@ export function TranslationPopover({
       setStatus("loading");
       setTranslation("");
       setErrorMessage(undefined);
+      setCacheWarning(undefined);
       setUsage(undefined);
       setTranslationSource(undefined);
       setActiveCacheKey(cacheKey);
@@ -368,7 +387,9 @@ export function TranslationPopover({
             targetLang: request.targetLang,
             translation: streamedTranslation,
             usage: streamedUsage,
-          }).catch(() => undefined);
+          }).catch(() => {
+            setCacheWarning("Could not save this translation to local cache.");
+          });
           onTranslationCompleteRef.current?.(createPinPayload(streamedTranslation, cacheKey, request));
           if (favoriteAfterTranslationRef.current) {
             favoriteAfterTranslationRef.current = false;
@@ -444,6 +465,12 @@ export function TranslationPopover({
       abortControllerRef.current?.abort();
     };
   }, [selectionKey, startTranslation]);
+
+  useEffect(() => {
+    if (isAnnotationEditorOpen) {
+      contentRef.current?.scrollTo({ top: 0 });
+    }
+  }, [isAnnotationEditorOpen]);
 
   const stopEvent = useCallback((event: MouseEvent | PointerEvent | TouchEvent) => {
     event.stopPropagation();
@@ -635,8 +662,8 @@ export function TranslationPopover({
 
   const popoverStyle = useMemo(
     () => ({
-      ...style,
-      ...(popoverSize
+      ...(isMobileSheet ? undefined : style),
+      ...(popoverSize && !isMobileSheet
         ? {
             height: popoverSize.height,
             maxWidth: POPOVER_MAX_WIDTH,
@@ -644,15 +671,17 @@ export function TranslationPopover({
             width: popoverSize.width,
           }
         : undefined),
-      transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)`,
-      ...(typeof zIndex === "number" ? { zIndex } : undefined),
+      transform: isMobileSheet ? undefined : `translate(${dragOffset.x}px, ${dragOffset.y}px)`,
+      ...(typeof zIndex === "number" ? { zIndex: isMobileSheet ? Math.max(zIndex, 60) : zIndex } : undefined),
     }),
-    [dragOffset.x, dragOffset.y, popoverSize, style, zIndex],
+    [dragOffset.x, dragOffset.y, isMobileSheet, popoverSize, style, zIndex],
   );
 
-  return (
+  const popover = (
     <div
-      className={`translation-popover translation-popover--${placement}`}
+      className={`translation-popover translation-popover--${placement} ${
+        isMobileSheet ? "translation-popover--mobile-sheet" : ""
+      }`}
       onFocusCapture={onActivate}
       onMouseDown={stopEvent}
       onMouseUp={stopEvent}
@@ -663,24 +692,26 @@ export function TranslationPopover({
       onTouchEnd={stopEvent}
       style={popoverStyle}
     >
-      <button
-        aria-label="Resize translation box"
-        className="translation-popover-resize-hook"
-        onPointerCancel={handleResizeEnd}
-        onPointerDown={handleResizeStart}
-        onPointerMove={handleResizeMove}
-        onPointerUp={handleResizeEnd}
-        title="Resize"
-        type="button"
-      />
+      {!isMobileSheet ? (
+        <button
+          aria-label="Resize translation box"
+          className="translation-popover-resize-hook"
+          onPointerCancel={handleResizeEnd}
+          onPointerDown={handleResizeStart}
+          onPointerMove={handleResizeMove}
+          onPointerUp={handleResizeEnd}
+          title="Resize"
+          type="button"
+        />
+      ) : null}
       <div
         aria-hidden="true"
         className="translation-popover-drag-handle"
-        onPointerCancel={handleDragEnd}
-        onPointerDown={handleDragStart}
-        onPointerMove={handleDragMove}
-        onPointerUp={handleDragEnd}
-        title="Drag to move"
+        onPointerCancel={isMobileSheet ? undefined : handleDragEnd}
+        onPointerDown={isMobileSheet ? undefined : handleDragStart}
+        onPointerMove={isMobileSheet ? undefined : handleDragMove}
+        onPointerUp={isMobileSheet ? undefined : handleDragEnd}
+        title={isMobileSheet ? undefined : "Drag to move"}
       />
       <div className="translation-popover-toolbar translation-popover-toolbar--actions-only">
         <div className="translation-popover-actions">
@@ -754,14 +785,7 @@ export function TranslationPopover({
         </div>
       </div>
 
-      <div className="translation-popover-content">
-          <div className="translation-popover-section">
-            <div className="translation-popover-label">Translation</div>
-            <div className={`translation-popover-output translation-popover-output--${status}`}>
-              {status === "error" ? errorMessage : translation || "Translating..."}
-            </div>
-          </div>
-
+      <div className="translation-popover-content" ref={contentRef}>
         {isAnnotationEditorOpen ? (
           <div className="translation-popover-section">
             <div className="translation-popover-annotation-toolbar">
@@ -813,24 +837,39 @@ export function TranslationPopover({
         ) : null}
 
         <div className="translation-popover-section">
+          <div className="translation-popover-label">Translation</div>
+          <div className={`translation-popover-output translation-popover-output--${status}`}>
+            {status === "error" ? errorMessage : translation || "Translating..."}
+          </div>
+        </div>
+
+        <div className="translation-popover-section">
           <div className="translation-popover-label">Original</div>
           <div className="translation-popover-source">{selection.targetSentence}</div>
         </div>
 
-        {usage || translationSource === "cache" ? (
+        {usage || translationSource === "cache" || cacheWarning ? (
           <div className="translation-popover-meta">
             {translationSource === "cache" ? <span>Local cache</span> : null}
-            {translationSource === "cache" && usage ? " · " : null}
+            {translationSource === "cache" && (usage || cacheWarning) ? " · " : null}
             {usage ? (
               <span>
                 Tokens {usage.totalTokens ?? "-"} · Cache hit {usage.promptCacheHitTokens ?? 0}
               </span>
             ) : null}
+            {usage && cacheWarning ? " · " : null}
+            {cacheWarning ? <span>{cacheWarning}</span> : null}
           </div>
         ) : null}
       </div>
     </div>
   );
+
+  if (isMobileSheet && typeof document !== "undefined") {
+    return createPortal(popover, document.body);
+  }
+
+  return popover;
 }
 
 function clamp(value: number, min: number, max: number) {
