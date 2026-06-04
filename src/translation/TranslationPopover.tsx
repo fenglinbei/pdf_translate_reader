@@ -1,4 +1,4 @@
-import { Bookmark, Check, Pin, RefreshCw, StickyNote, X } from "lucide-react";
+import { Bookmark, Check, ChevronDown, Pin, RefreshCw, StickyNote, X } from "lucide-react";
 import type { CSSProperties, KeyboardEvent, MouseEvent, PointerEvent, TouchEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -57,6 +57,7 @@ type TranslationPopoverProps = {
   ) => Promise<void> | void;
   onCardPin?: (view: FloatingTranslationCardView) => void;
   onClose: () => void;
+  onCollapse?: () => void;
   onFavorite?: (
     payload: TranslationPinPayload,
     action: TranslationFavoriteAction,
@@ -107,6 +108,8 @@ const POPOVER_MIN_WIDTH = 260;
 const POPOVER_MAX_WIDTH = 560;
 const POPOVER_MIN_HEIGHT = 220;
 const POPOVER_MAX_HEIGHT = 560;
+const MOBILE_SHEET_MIN_HEIGHT = 220;
+const MOBILE_SHEET_MAX_HEIGHT = 720;
 const DEFAULT_ANNOTATION_COLOR: AnnotationColor = "yellow";
 const ANNOTATION_COLORS: Array<{
   label: string;
@@ -127,6 +130,7 @@ export function TranslationPopover({
   onAnnotationSave,
   onCardPin,
   onClose,
+  onCollapse,
   onFavorite,
   onTranslationComplete,
   onViewChange,
@@ -163,6 +167,7 @@ export function TranslationPopover({
   const [favoriteStatus, setFavoriteStatus] = useState<FavoriteStatus>("idle");
   const [dragOffset, setDragOffset] = useState<DragOffset>({ x: 0, y: 0 });
   const [isMobileSheet, setIsMobileSheet] = useState(false);
+  const [mobileSheetHeight, setMobileSheetHeight] = useState<number>();
   const [popoverSize, setPopoverSize] = useState<PopoverSize>();
   const dragStateRef = useRef<DragState>();
   const resizeStateRef = useRef<ResizeState>();
@@ -711,6 +716,67 @@ export function TranslationPopover({
     }
   }, [onViewChange]);
 
+  const handleMobileSheetResizeStart = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if (!isMobileSheet) {
+      return;
+    }
+
+    const rect = popoverRef.current?.getBoundingClientRect();
+
+    if (!rect) {
+      return;
+    }
+
+    resizeStateRef.current = {
+      pointerId: event.pointerId,
+      startHeight: rect.height,
+      startWidth: rect.width,
+      startX: event.clientX,
+      startY: event.clientY,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.stopPropagation();
+    event.preventDefault();
+  }, [isMobileSheet]);
+
+  const handleMobileSheetResizeMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    const resizeState = resizeStateRef.current;
+
+    if (!isMobileSheet || !resizeState || resizeState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    setMobileSheetHeight(
+      clamp(
+        resizeState.startHeight + resizeState.startY - event.clientY,
+        MOBILE_SHEET_MIN_HEIGHT,
+        getMobileSheetMaxHeight(),
+      ),
+    );
+    event.preventDefault();
+  }, [isMobileSheet]);
+
+  const handleMobileSheetResizeEnd = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    const resizeState = resizeStateRef.current;
+
+    if (!isMobileSheet || resizeState?.pointerId !== event.pointerId) {
+      return;
+    }
+
+    setMobileSheetHeight(
+      clamp(
+        resizeState.startHeight + resizeState.startY - event.clientY,
+        MOBILE_SHEET_MIN_HEIGHT,
+        getMobileSheetMaxHeight(),
+      ),
+    );
+    resizeStateRef.current = undefined;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    event.preventDefault();
+  }, [isMobileSheet]);
+
   const popoverStyle = useMemo(
     () => ({
       ...(isMobileSheet ? undefined : style),
@@ -722,10 +788,11 @@ export function TranslationPopover({
             width: popoverSize.width,
           }
         : undefined),
+      ...(isMobileSheet && mobileSheetHeight ? { height: mobileSheetHeight } : undefined),
       transform: isMobileSheet ? undefined : `translate(${dragOffset.x}px, ${dragOffset.y}px)`,
       ...(typeof zIndex === "number" ? { zIndex: isMobileSheet ? Math.max(zIndex, 60) : zIndex } : undefined),
     }),
-    [dragOffset.x, dragOffset.y, isMobileSheet, popoverSize, style, zIndex],
+    [dragOffset.x, dragOffset.y, isMobileSheet, mobileSheetHeight, popoverSize, style, zIndex],
   );
 
   const popover = (
@@ -758,11 +825,11 @@ export function TranslationPopover({
       <div
         aria-hidden="true"
         className="translation-popover-drag-handle"
-        onPointerCancel={isMobileSheet ? undefined : handleDragEnd}
-        onPointerDown={isMobileSheet ? undefined : handleDragStart}
-        onPointerMove={isMobileSheet ? undefined : handleDragMove}
-        onPointerUp={isMobileSheet ? undefined : handleDragEnd}
-        title={isMobileSheet ? undefined : "Drag to move"}
+        onPointerCancel={isMobileSheet ? handleMobileSheetResizeEnd : handleDragEnd}
+        onPointerDown={isMobileSheet ? handleMobileSheetResizeStart : handleDragStart}
+        onPointerMove={isMobileSheet ? handleMobileSheetResizeMove : handleDragMove}
+        onPointerUp={isMobileSheet ? handleMobileSheetResizeEnd : handleDragEnd}
+        title={isMobileSheet ? "Drag to resize" : "Drag to move"}
       />
       <div className="translation-popover-toolbar translation-popover-toolbar--actions-only">
         <div className="translation-popover-actions">
@@ -825,6 +892,17 @@ export function TranslationPopover({
           >
             <RefreshCw aria-hidden="true" size={16} strokeWidth={2} />
           </button>
+          {isMobileSheet && onCollapse ? (
+            <button
+              aria-label="Collapse translation card"
+              className="icon-button icon-button--small pinned-translation-card-action translation-popover-action"
+              onClick={onCollapse}
+              title="Collapse"
+              type="button"
+            >
+              <ChevronDown aria-hidden="true" size={16} strokeWidth={2} />
+            </button>
+          ) : null}
           <button
             className="icon-button icon-button--small pinned-translation-card-action translation-popover-action"
             onClick={onClose}
@@ -925,4 +1003,12 @@ export function TranslationPopover({
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function getMobileSheetMaxHeight() {
+  if (typeof window === "undefined") {
+    return MOBILE_SHEET_MAX_HEIGHT;
+  }
+
+  return Math.min(MOBILE_SHEET_MAX_HEIGHT, Math.max(MOBILE_SHEET_MIN_HEIGHT, window.innerHeight - 24));
 }

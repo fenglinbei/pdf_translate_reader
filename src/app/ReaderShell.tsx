@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import {
+  Activity,
   Check,
   Combine,
   Languages,
@@ -47,7 +48,10 @@ import {
   type PinAnnotationInput,
   type PinWriteInput,
 } from "../pins/pinRepository";
-import { PinnedTranslationsPanel } from "../pins/PinnedTranslationsPanel";
+import {
+  PinnedTranslationsPanel,
+  type PinPanelFocusRequest,
+} from "../pins/PinnedTranslationsPanel";
 import { SettingsButton } from "../settings/SettingsButton";
 import { SettingsPanel } from "../settings/SettingsPanel";
 import {
@@ -153,6 +157,7 @@ export function ReaderShell() {
   const [isNarrowViewport, setIsNarrowViewport] = useState(false);
   const [libraryPaneWidth, setLibraryPaneWidth] = useState(LIBRARY_PANE_DEFAULT_WIDTH);
   const [isConfirmingClearPins, setIsConfirmingClearPins] = useState(false);
+  const [pinPanelFocusRequest, setPinPanelFocusRequest] = useState<PinPanelFocusRequest>();
   const [locateRequest, setLocateRequest] = useState<PinLocateRequest>();
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const [pinsPaneWidth, setPinsPaneWidth] = useState(PINS_PANE_DEFAULT_WIDTH);
@@ -172,6 +177,7 @@ export function ReaderShell() {
   const [damagedLibraryFingerprint, setDamagedLibraryFingerprint] = useState<string>();
   const locateRequestIdRef = useRef(0);
   const paneResizeStateRef = useRef<PaneResizeState>();
+  const pinPanelFocusRequestIdRef = useRef(0);
   const pinsRef = useRef<TranslationPin[]>([]);
   const pinnedTranslationCardSaveTimersRef = useRef(new Map<string, number>());
   const pinnedTranslationCardsRef = useRef<PinnedTranslationCard[]>([]);
@@ -192,6 +198,7 @@ export function ReaderShell() {
     visibleCloudSyncStatus,
     cloudSyncMessage,
   );
+  const mobileStatusLabel = `API ${apiStatus}. ${visibleCloudSyncMessage}`;
 
   const applyPinnedTranslationCards = useCallback((nextCards: PinnedTranslationCard[]) => {
     pinnedTranslationCardsRef.current = nextCards;
@@ -938,6 +945,20 @@ export function ReaderShell() {
     setMobilePanel(null);
   }, []);
 
+  const handleRevealPinCard = useCallback((pin: TranslationPin) => {
+    pinPanelFocusRequestIdRef.current += 1;
+    setPinPanelFocusRequest({
+      pinId: pin.id,
+      requestId: pinPanelFocusRequestIdRef.current,
+    });
+
+    if (isNarrowViewport) {
+      setMobilePanel("pins");
+    } else {
+      setIsPinsPaneOpen(true);
+    }
+  }, [isNarrowViewport]);
+
   const handleLibraryPaneToggle = useCallback(() => {
     if (isNarrowViewport) {
       setMobilePanel((panel) => (panel === "library" ? null : "library"));
@@ -1089,12 +1110,8 @@ export function ReaderShell() {
           ) : null}
         </div>
       </div>
-      {pins.length > 0 ? (
-        <div className="pins-pane-summary">
-          {pins.length} saved annotation{pins.length === 1 ? "" : "s"}
-        </div>
-      ) : null}
       <PinnedTranslationsPanel
+        focusRequest={pinPanelFocusRequest}
         onAnnotationChange={handlePinAnnotation}
         onHighlightPin={handlePinHighlight}
         onLocatePin={handleLocatePin}
@@ -1103,6 +1120,38 @@ export function ReaderShell() {
         paperContext={paperContext}
         pins={pins}
       />
+    </>
+  );
+  const renderSidebarToggleButtons = () => (
+    <>
+      <button
+        aria-label={isLibraryControlOpen ? "Close library pane" : "Open library pane"}
+        aria-pressed={isLibraryControlOpen}
+        className="icon-button"
+        onClick={handleLibraryPaneToggle}
+        title={isLibraryControlOpen ? "Close library" : "Open library"}
+        type="button"
+      >
+        {isLibraryControlOpen ? (
+          <PanelLeftClose aria-hidden="true" size={17} strokeWidth={2} />
+        ) : (
+          <PanelLeftOpen aria-hidden="true" size={17} strokeWidth={2} />
+        )}
+      </button>
+      <button
+        aria-label={isPinsControlOpen ? "Close annotations pane" : "Open annotations pane"}
+        aria-pressed={isPinsControlOpen}
+        className="icon-button"
+        onClick={handlePinsPaneToggle}
+        title={isPinsControlOpen ? "Close annotations" : "Open annotations"}
+        type="button"
+      >
+        {isPinsControlOpen ? (
+          <PanelRightClose aria-hidden="true" size={17} strokeWidth={2} />
+        ) : (
+          <PanelRightOpen aria-hidden="true" size={17} strokeWidth={2} />
+        )}
+      </button>
     </>
   );
 
@@ -1114,34 +1163,7 @@ export function ReaderShell() {
           <span className="brand-text">PDF Translate Reader</span>
         </div>
         <div className="topbar-actions">
-          <button
-            aria-label={isLibraryControlOpen ? "Close library pane" : "Open library pane"}
-            aria-pressed={isLibraryControlOpen}
-            className="icon-button"
-            onClick={handleLibraryPaneToggle}
-            title={isLibraryControlOpen ? "Close library" : "Open library"}
-            type="button"
-          >
-            {isLibraryControlOpen ? (
-              <PanelLeftClose aria-hidden="true" size={17} strokeWidth={2} />
-            ) : (
-              <PanelLeftOpen aria-hidden="true" size={17} strokeWidth={2} />
-            )}
-          </button>
-          <button
-            aria-label={isPinsControlOpen ? "Close annotations pane" : "Open annotations pane"}
-            aria-pressed={isPinsControlOpen}
-            className="icon-button"
-            onClick={handlePinsPaneToggle}
-            title={isPinsControlOpen ? "Close annotations" : "Open annotations"}
-            type="button"
-          >
-            {isPinsControlOpen ? (
-              <PanelRightClose aria-hidden="true" size={17} strokeWidth={2} />
-            ) : (
-              <PanelRightOpen aria-hidden="true" size={17} strokeWidth={2} />
-            )}
-          </button>
+          {currentEntry ? null : renderSidebarToggleButtons()}
           <span className={`api-health api-health--${apiStatus}`} title={`API ${apiStatus}`}>
             API
           </span>
@@ -1152,6 +1174,23 @@ export function ReaderShell() {
           >
             {CLOUD_SYNC_STATUS_LABELS[visibleCloudSyncStatus]}
           </span>
+          <button
+            aria-label={`Open settings. ${mobileStatusLabel}`}
+            className="mobile-status-button"
+            onClick={() => setIsSettingsOpen(true)}
+            title={mobileStatusLabel}
+            type="button"
+          >
+            <Activity aria-hidden="true" size={15} strokeWidth={2} />
+            <span
+              aria-hidden="true"
+              className={`mobile-status-dot mobile-status-dot--api-${apiStatus}`}
+            />
+            <span
+              aria-hidden="true"
+              className={`mobile-status-dot mobile-status-dot--sync-${visibleCloudSyncStatus}`}
+            />
+          </button>
           <button
             className="account-button"
             onClick={() => {
@@ -1167,54 +1206,52 @@ export function ReaderShell() {
           </button>
           <div className="reader-mode-control" aria-label="Reader mode" role="group">
             <button
-              aria-label="Translation mode"
-              aria-pressed={readerMode === "translate"}
-              className={`mode-toggle-button ${readerMode === "translate" ? "mode-toggle-button--active" : ""}`}
-              onClick={() => handleReaderModeChange("translate")}
-              title="Translation mode"
+              aria-label={
+                readerMode === "translate"
+                  ? "Translation mode. Switch to text selection copy mode"
+                  : "Text selection copy mode. Switch to translation mode"
+              }
+              className={`mode-toggle-button mode-toggle-button--single ${
+                readerMode === "translate" ? "mode-toggle-button--active" : "mode-toggle-button--select"
+              }`}
+              onClick={() => handleReaderModeChange(readerMode === "translate" ? "select" : "translate")}
+              title={
+                readerMode === "translate"
+                  ? "Translation mode. Tap to switch to Select"
+                  : "Select mode. Tap to switch to Translate"
+              }
               type="button"
             >
-              <Languages aria-hidden="true" size={16} strokeWidth={2} />
-              <span>Translate</span>
-            </button>
-            <button
-              aria-label="Text selection copy mode"
-              aria-pressed={readerMode === "select"}
-              className={`mode-toggle-button ${readerMode === "select" ? "mode-toggle-button--select" : ""}`}
-              onClick={() => handleReaderModeChange("select")}
-              title="Text selection copy mode"
-              type="button"
-            >
-              <TextSelect aria-hidden="true" size={16} strokeWidth={2} />
-              <span>Select</span>
+              {readerMode === "translate" ? (
+                <Languages aria-hidden="true" size={16} strokeWidth={2} />
+              ) : (
+                <TextSelect aria-hidden="true" size={16} strokeWidth={2} />
+              )}
             </button>
           </div>
           <div className="reader-mode-control" aria-label="Selection mode" role="group">
             <button
-              aria-label="Continuous drag selection"
-              aria-pressed={selectionMode === "continuous"}
-              className={`mode-toggle-button ${
-                selectionMode === "continuous" ? "mode-toggle-button--active" : ""
+              aria-label={
+                selectionMode === "continuous"
+                  ? "Continuous drag selection. Switch to cross-region selection"
+                  : "Cross-region selection. Switch to continuous drag selection"
+              }
+              className={`mode-toggle-button mode-toggle-button--single ${
+                selectionMode === "continuous" ? "mode-toggle-button--active" : "mode-toggle-button--cross"
               }`}
-              onClick={() => handleSelectionModeChange("continuous")}
-              title="Continuous drag selection"
+              onClick={() => handleSelectionModeChange(selectionMode === "continuous" ? "cross" : "continuous")}
+              title={
+                selectionMode === "continuous"
+                  ? "Drag selection. Tap to switch to Cross"
+                  : "Cross selection. Tap to switch to Drag"
+              }
               type="button"
             >
-              <MousePointer2 aria-hidden="true" size={16} strokeWidth={2} />
-              <span>Drag</span>
-            </button>
-            <button
-              aria-label="Cross-region selection"
-              aria-pressed={selectionMode === "cross"}
-              className={`mode-toggle-button ${
-                selectionMode === "cross" ? "mode-toggle-button--cross" : ""
-              }`}
-              onClick={() => handleSelectionModeChange("cross")}
-              title="Cross-region selection"
-              type="button"
-            >
-              <Combine aria-hidden="true" size={16} strokeWidth={2} />
-              <span>Cross</span>
+              {selectionMode === "continuous" ? (
+                <MousePointer2 aria-hidden="true" size={16} strokeWidth={2} />
+              ) : (
+                <Combine aria-hidden="true" size={16} strokeWidth={2} />
+              )}
             </button>
           </div>
           <SettingsButton isOpen={isSettingsOpen} onClick={() => setIsSettingsOpen(true)} />
@@ -1279,6 +1316,11 @@ export function ReaderShell() {
               activeTranslationCardZIndex={activeTranslationCardZIndex}
               activeSelection={sentenceSelection}
               entry={currentEntry}
+              headerControls={
+                <div className="pdf-sidebar-toolbar" aria-label="Reader side panels">
+                  {renderSidebarToggleButtons()}
+                </div>
+              }
               locateRequest={locateRequest}
               onActivateTranslationCard={handleActivateTranslationCard}
               onCreateAnnotation={handleCreateAnnotation}
@@ -1286,6 +1328,7 @@ export function ReaderShell() {
               onPinTranslationCard={handlePinTranslationCard}
               onPinnedTranslationRefresh={handlePinnedTranslationRefresh}
               onPinTranslation={handlePinTranslation}
+              onRevealPinCard={handleRevealPinCard}
               onDocumentLoadError={handleDocumentLoadError}
               onRemoveLocalRecord={handleDeletePdfData}
               onPageTextReadyForPaperContext={handlePageTextReadyForPaperContext}

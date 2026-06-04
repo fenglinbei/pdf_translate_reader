@@ -1,4 +1,4 @@
-import { Check, Copy, StickyNote, X } from "lucide-react";
+import { Bookmark, Check, Copy, Languages, Pin, StickyNote, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type {
   CSSProperties,
@@ -39,12 +39,16 @@ const ANNOTATION_COLORS: Array<{
 ];
 
 type PageOverlayLayerProps = {
+  activeMobilePinnedCardKey?: string;
   activeTranslationCardZIndex: number;
+  collapsedMobileSelectionKey?: string;
   copyNotice?: string;
   copySelection?: SentenceSelection;
   draftSelection?: SentenceSelection;
+  isMobileViewport: boolean;
   locatedPinId?: string;
   onActivateTranslationCard: (selection: SentenceSelection) => void;
+  onCollapseMobileTranslationCard: (selection: SentenceSelection, isPinned: boolean) => void;
   onCloseTranslationCard: (selection: SentenceSelection) => void;
   onClearSelection: () => void;
   onCopySelection: (selection: SentenceSelection) => void;
@@ -58,6 +62,9 @@ type PageOverlayLayerProps = {
     input: PinWriteInput,
     action: TranslationFavoriteAction,
   ) => Promise<void>;
+  onRevealPinCard: (pin: TranslationPin) => void;
+  onOpenCollapsedMobileTranslationCard: () => void;
+  onOpenMobilePinnedCard: (cardKey: string, selection: SentenceSelection) => void;
   onTranslationCardViewChange: (
     selection: SentenceSelection,
     viewChange: TranslationCardViewChange,
@@ -76,12 +83,16 @@ type PageOverlayLayerProps = {
 };
 
 export function PageOverlayLayer({
+  activeMobilePinnedCardKey,
   activeTranslationCardZIndex,
+  collapsedMobileSelectionKey,
   copyNotice,
   copySelection,
   draftSelection,
+  isMobileViewport,
   locatedPinId,
   onActivateTranslationCard,
+  onCollapseMobileTranslationCard,
   onCloseTranslationCard,
   onClearSelection,
   onCopySelection,
@@ -89,6 +100,9 @@ export function PageOverlayLayer({
   onPinTranslationCard,
   onPinnedTranslationRefresh,
   onPinTranslation,
+  onRevealPinCard,
+  onOpenCollapsedMobileTranslationCard,
+  onOpenMobilePinnedCard,
   onTranslationCardViewChange,
   pageHeight,
   pageIndex,
@@ -131,8 +145,13 @@ export function PageOverlayLayer({
   const annotationPins = pins.filter(
     (pin) =>
       hasSelectionOnPage(pin, pageIndex) &&
-      (pin.highlighted || Boolean(pin.note) || Boolean(pin.color)),
+      (hasAnnotation(pin) || Boolean(pin.highlighted)),
   );
+  const markerTargets = getPinMarkerTargets({
+    pageIndex,
+    pinnedTranslationCards,
+    pins,
+  });
   const selectionPin = selection
     ? pins.find((pin) => isSamePinTarget(pin, selection))
     : undefined;
@@ -140,6 +159,12 @@ export function PageOverlayLayer({
   const activePinnedCard = selection
     ? pinnedTranslationCards.find((card) => isSamePinTarget(card.selection, selection))
     : undefined;
+  const isActiveSelectionMobileCollapsed =
+    Boolean(
+      isMobileViewport &&
+      selection &&
+      collapsedMobileSelectionKey === createPinTargetKey(selection),
+    );
   const selectionRects = selectionRectSources.flatMap((source) =>
     scaleStoredRects(source, pageWidth, pageHeight),
   );
@@ -204,6 +229,7 @@ export function PageOverlayLayer({
     queuedSelectionRects.length === 0 &&
     pinnedTranslationCardsOnPage.length === 0 &&
     annotationPins.length === 0 &&
+    markerTargets.length === 0 &&
     !locatedPin
   ) {
     return <div className="pdf-page-overlay" ref={overlayRef} />;
@@ -254,6 +280,49 @@ export function PageOverlayLayer({
             />
           ))
         : null}
+      {markerTargets.map((marker) => {
+        const markerRects = getSelectionRectsOnPage(marker.rectSource, pageIndex, pageWidth, pageHeight);
+
+        return markerRects.length > 0 ? (
+          <button
+            aria-label={getPinMarkerLabel(marker)}
+            className={`pin-card-marker pin-card-marker--${marker.kind} ${
+              marker.kind === "annotation" ? `pin-card-marker--${marker.color}` : ""
+            } ${
+              marker.pin && locatedPinId === marker.pin.id ? "pin-card-marker--located" : ""
+            }`}
+            key={marker.key}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (marker.pin) {
+                onRevealPinCard(marker.pin);
+                return;
+              }
+
+              if (marker.card) {
+                if (isMobileViewport) {
+                  onOpenMobilePinnedCard(marker.card.key, marker.card.selection);
+                } else {
+                  onActivateTranslationCard(marker.card.selection);
+                }
+              }
+            }}
+            onMouseDown={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+            style={getPinMarkerStyle(markerRects, pageWidth, pageHeight)}
+            title={getPinMarkerTitle(marker)}
+            type="button"
+          >
+            {marker.kind === "annotation" ? (
+              <StickyNote aria-hidden="true" size={15} strokeWidth={2.2} />
+            ) : marker.kind === "favorite" ? (
+              <Bookmark aria-hidden="true" size={15} strokeWidth={2.2} />
+            ) : (
+              <Pin aria-hidden="true" size={15} strokeWidth={2.2} />
+            )}
+          </button>
+        ) : null;
+      })}
       {queuedSelectionRects.map((rect, index) => (
         <div
           aria-hidden="true"
@@ -324,7 +393,19 @@ export function PageOverlayLayer({
             />
           ))
         : null}
-      {selection && activePopoverSelection && popoverPlacement && !hasDraftSelection
+      {selection && hasSelection && !hasDraftSelection && isActiveSelectionMobileCollapsed ? (
+        <button
+          aria-label="Open collapsed translation"
+          className="pinned-card-chip pinned-card-chip--transient"
+          onClick={onOpenCollapsedMobileTranslationCard}
+          style={getPinnedCardChipStyle(selectionRects, pageWidth, pageHeight)}
+          title="Open translation"
+          type="button"
+        >
+          <Languages aria-hidden="true" size={13} strokeWidth={2.2} />
+        </button>
+      ) : null}
+      {selection && activePopoverSelection && popoverPlacement && !hasDraftSelection && !isActiveSelectionMobileCollapsed
         ? readerMode === "select" ? (
             <SelectActionPopover
               key={selectionKey}
@@ -362,6 +443,11 @@ export function PageOverlayLayer({
                   style: activePinnedCard?.style ?? popoverPlacement.style,
                   view,
                 })
+              }
+              onCollapse={
+                isMobileViewport
+                  ? () => onCollapseMobileTranslationCard(selection, Boolean(activePinnedCard))
+                  : undefined
               }
               onClose={() => onCloseTranslationCard(selection)}
               onFavorite={(payload, action) =>
@@ -407,15 +493,19 @@ export function PageOverlayLayer({
               pageWidth,
               pageHeight,
             );
+            const isMobileCardOpen = isMobileViewport && activeMobilePinnedCardKey === card.key;
             const shouldShowCardPopover =
-              cardSelection.pageIndex === pageIndex && cardSelection.rectsOnPage.length > 0;
+              cardSelection.pageIndex === pageIndex &&
+              cardSelection.rectsOnPage.length > 0 &&
+              !hasDraftSelection &&
+              (!isMobileViewport || isMobileCardOpen);
 
             return (
               <div key={card.key}>
                 {cardRects.map((rect, index) => (
                   <div
                     aria-hidden="true"
-                    className="selection-highlight"
+                    className="selection-highlight selection-highlight--pinned"
                     key={`${Math.round(rect.left)}-${Math.round(rect.top)}-pinned-card-${index}`}
                     style={{
                       height: rect.height,
@@ -425,6 +515,19 @@ export function PageOverlayLayer({
                     }}
                   />
                 ))}
+                {isMobileViewport && cardRects.length > 0 ? (
+                  <button
+                    aria-label="Open pinned translation"
+                    aria-pressed={isMobileCardOpen}
+                    className={`pinned-card-chip ${isMobileCardOpen ? "pinned-card-chip--active" : ""}`}
+                    onClick={() => onOpenMobilePinnedCard(card.key, cardSelection)}
+                    style={getPinnedCardChipStyle(cardRects, pageWidth, pageHeight)}
+                    title="Open pinned translation"
+                    type="button"
+                  >
+                    <Pin aria-hidden="true" size={13} strokeWidth={2.2} />
+                  </button>
+                ) : null}
                 {shouldShowCardPopover ? (
                   <TranslationPopover
                     annotationColor={cardPin?.color}
@@ -450,6 +553,11 @@ export function PageOverlayLayer({
                         style: card.style,
                         view,
                       })
+                    }
+                    onCollapse={
+                      isMobileViewport
+                        ? () => onCollapseMobileTranslationCard(cardSelection, true)
+                        : undefined
                     }
                     onClose={() => onCloseTranslationCard(cardSelection)}
                     onFavorite={(payload, action) =>
@@ -519,12 +627,14 @@ function SelectActionPopover({
   }
 
   async function handleSave() {
+    const trimmedNote = note.trim();
+
     setStatus("saving");
 
     try {
       await onCreateAnnotation({
         color,
-        note,
+        note: trimmedNote,
       });
     } catch {
       setStatus("error");
@@ -631,6 +741,17 @@ type SelectionRectSource = {
   pageWidth?: number;
   rectsOnPage: DOMRectLike[];
   regions?: SelectionRegion[];
+};
+
+type PinMarkerKind = "annotation" | "favorite" | "pin";
+
+type PinMarkerTarget = {
+  card?: PinnedTranslationCard;
+  color?: AnnotationColor;
+  key: string;
+  kind: PinMarkerKind;
+  pin?: TranslationPin;
+  rectSource: SelectionRectSource;
 };
 
 function getSelectionRectSourcesOnPage(input: SelectionRectSource, pageIndex: number) {
@@ -740,6 +861,148 @@ function getDraftBadgeStyle(rects: DOMRectLike[], pageWidth: number) {
     left: clamp(bounds.left, 8, Math.max(8, pageWidth - estimatedBadgeWidth)),
     top,
   };
+}
+
+function getPinnedCardChipStyle(
+  rects: DOMRectLike[],
+  pageWidth: number,
+  pageHeight: number,
+): CSSProperties | undefined {
+  if (rects.length === 0) {
+    return undefined;
+  }
+
+  const bounds = getSelectionBounds(rects);
+  const chipSize = 26;
+
+  return {
+    left: clamp(bounds.right + 4, 8, Math.max(8, pageWidth - chipSize - 8)),
+    top: clamp(bounds.top - 2, 8, Math.max(8, pageHeight - chipSize - 8)),
+  };
+}
+
+function getPinMarkerStyle(
+  rects: DOMRectLike[],
+  pageWidth: number,
+  pageHeight: number,
+): CSSProperties | undefined {
+  if (rects.length === 0) {
+    return undefined;
+  }
+
+  const bounds = getSelectionBounds(rects);
+  const markerSize = 28;
+
+  return {
+    left: clamp(bounds.right + 5, 6, Math.max(6, pageWidth - markerSize - 6)),
+    top: clamp(bounds.top - 3, 6, Math.max(6, pageHeight - markerSize - 6)),
+  };
+}
+
+function getPinMarkerTargets({
+  pageIndex,
+  pinnedTranslationCards,
+  pins,
+}: {
+  pageIndex: number;
+  pinnedTranslationCards: PinnedTranslationCard[];
+  pins: TranslationPin[];
+}) {
+  const markersByTarget = new Map<string, PinMarkerTarget>();
+
+  for (const card of pinnedTranslationCards) {
+    if (!hasSelectionOnPage(card.selection, pageIndex)) {
+      continue;
+    }
+
+    const targetKey = createPinTargetKey(card.selection);
+
+    markersByTarget.set(targetKey, {
+      card,
+      key: `${targetKey}:marker`,
+      kind: "pin",
+      rectSource: card.selection,
+    });
+  }
+
+  for (const pin of pins) {
+    if (!hasSelectionOnPage(pin, pageIndex)) {
+      continue;
+    }
+
+    const targetKey = createPinTargetKey(pin);
+    const existingMarker = markersByTarget.get(targetKey);
+    const hasAnnotationPayload = hasAnnotation(pin);
+
+    markersByTarget.set(targetKey, {
+      card: existingMarker?.card,
+      color: hasAnnotationPayload ? getAnnotationColor(pin) : undefined,
+      key: `${targetKey}:marker`,
+      kind: hasAnnotationPayload ? "annotation" : "favorite",
+      pin,
+      rectSource: pin,
+    });
+  }
+
+  return Array.from(markersByTarget.values()).sort(comparePinMarkers);
+}
+
+function comparePinMarkers(left: PinMarkerTarget, right: PinMarkerTarget) {
+  const leftPriority = getPinMarkerPriority(left.kind);
+  const rightPriority = getPinMarkerPriority(right.kind);
+
+  if (leftPriority !== rightPriority) {
+    return leftPriority - rightPriority;
+  }
+
+  const leftPageIndex = left.rectSource.pageIndex;
+  const rightPageIndex = right.rectSource.pageIndex;
+
+  if (leftPageIndex !== rightPageIndex) {
+    return leftPageIndex - rightPageIndex;
+  }
+
+  return left.key.localeCompare(right.key);
+}
+
+function getPinMarkerPriority(kind: PinMarkerKind) {
+  switch (kind) {
+    case "annotation":
+      return 0;
+    case "favorite":
+      return 1;
+    case "pin":
+    default:
+      return 2;
+  }
+}
+
+function getPinMarkerLabel(marker: PinMarkerTarget) {
+  switch (marker.kind) {
+    case "annotation":
+      return `Show annotation card for page ${marker.rectSource.pageIndex + 1}`;
+    case "favorite":
+      return `Show saved card for page ${marker.rectSource.pageIndex + 1}`;
+    case "pin":
+    default:
+      return `Show pinned translation for page ${marker.rectSource.pageIndex + 1}`;
+  }
+}
+
+function getPinMarkerTitle(marker: PinMarkerTarget) {
+  switch (marker.kind) {
+    case "annotation":
+      return "Show annotation card";
+    case "favorite":
+      return "Show saved card";
+    case "pin":
+    default:
+      return "Show pinned translation";
+  }
+}
+
+function hasAnnotation(pin: TranslationPin) {
+  return Boolean(pin.color) || Boolean(pin.note?.trim());
 }
 
 function countWords(text: string) {

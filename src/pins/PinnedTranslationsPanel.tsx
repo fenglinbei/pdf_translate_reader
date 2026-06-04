@@ -1,5 +1,21 @@
-import { Check, ChevronDown, ChevronUp, Highlighter, Languages, LocateFixed, RefreshCw, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ArrowDownAZ,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Clock3,
+  Highlighter,
+  Languages,
+  ListOrdered,
+  LocateFixed,
+  PencilLine,
+  RefreshCw,
+  Search,
+  StickyNote,
+  Trash2,
+  X,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AnnotationColor,
   PaperContext,
@@ -23,6 +39,7 @@ import { putApiCallLog } from "../translation/apiLogRepository";
 import { getTranslationErrorMessage } from "../translation/errors";
 
 type PinnedTranslationsPanelProps = {
+  focusRequest?: PinPanelFocusRequest;
   onAnnotationChange: (
     pin: TranslationPin,
     annotation: PinAnnotationInput,
@@ -34,6 +51,13 @@ type PinnedTranslationsPanelProps = {
   paperContext?: PaperContext;
   pins: TranslationPin[];
 };
+
+export type PinPanelFocusRequest = {
+  pinId: string;
+  requestId: number;
+};
+
+type PinSortMode = "updated" | "content" | "alpha";
 
 type PinRuntimeState = {
   draftTranslation: string;
@@ -57,6 +81,7 @@ const ANNOTATION_COLORS: Array<{
 ];
 
 export function PinnedTranslationsPanel({
+  focusRequest,
   onAnnotationChange,
   onHighlightPin,
   onLocatePin,
@@ -66,9 +91,15 @@ export function PinnedTranslationsPanel({
   pins,
 }: PinnedTranslationsPanelProps) {
   const abortControllersRef = useRef(new Map<string, AbortController>());
+  const cardRefs = useRef(new Map<string, HTMLElement>());
+  const focusAnimationTimerRef = useRef<number>();
   const [annotationDraftsByPinId, setAnnotationDraftsByPinId] = useState<Record<string, AnnotationDraft>>({});
+  const [editingAnnotationPinIds, setEditingAnnotationPinIds] = useState<Set<string>>(() => new Set());
+  const [emphasizedPinId, setEmphasizedPinId] = useState<string>();
   const [expandedSourcePinIds, setExpandedSourcePinIds] = useState<Set<string>>(() => new Set());
   const [savingAnnotationPinIds, setSavingAnnotationPinIds] = useState<Set<string>>(() => new Set());
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortMode, setSortMode] = useState<PinSortMode>("updated");
   const [runtimeByPinId, setRuntimeByPinId] = useState<Record<string, PinRuntimeState>>({});
 
   useEffect(() => {
@@ -77,6 +108,7 @@ export function PinnedTranslationsPanel({
         abortController.abort();
       }
       abortControllersRef.current.clear();
+      window.clearTimeout(focusAnimationTimerRef.current);
     };
   }, []);
 
@@ -96,10 +128,93 @@ export function PinnedTranslationsPanel({
 
       return hasRemovedPin ? nextPinIds : pinIds;
     });
+    setEditingAnnotationPinIds((pinIds) => {
+      const visiblePinIds = new Set(pins.map((pin) => pin.id));
+      let hasRemovedPin = false;
+      const nextPinIds = new Set<string>();
+
+      for (const pinId of pinIds) {
+        if (visiblePinIds.has(pinId)) {
+          nextPinIds.add(pinId);
+        } else {
+          hasRemovedPin = true;
+        }
+      }
+
+      return hasRemovedPin ? nextPinIds : pinIds;
+    });
   }, [pins]);
+
+  useEffect(() => {
+    if (!focusRequest) {
+      return undefined;
+    }
+
+    setSearchQuery("");
+    setEmphasizedPinId(undefined);
+
+    const frame = window.requestAnimationFrame(() => {
+      const card = cardRefs.current.get(focusRequest.pinId);
+
+      card?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+      window.requestAnimationFrame(() => {
+        setEmphasizedPinId(focusRequest.pinId);
+        window.clearTimeout(focusAnimationTimerRef.current);
+        focusAnimationTimerRef.current = window.setTimeout(() => {
+          setEmphasizedPinId((pinId) =>
+            pinId === focusRequest.pinId ? undefined : pinId,
+          );
+        }, 1500);
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [focusRequest]);
+
+  const visiblePins = useMemo(
+    () => {
+      const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
+      const filteredPins = normalizedQuery
+        ? pins.filter((pin) =>
+            getPinSearchText(pin).toLocaleLowerCase().includes(normalizedQuery),
+          )
+        : pins;
+
+      return filteredPins.slice().sort((left, right) => comparePinsBySortMode(left, right, sortMode));
+    },
+    [pins, searchQuery, sortMode],
+  );
+
+  const setPinCardRef = useCallback((pinId: string, node: HTMLElement | null) => {
+    if (node) {
+      cardRefs.current.set(pinId, node);
+      return;
+    }
+
+    cardRefs.current.delete(pinId);
+  }, []);
 
   const handleToggleSourceExpansion = useCallback((pinId: string) => {
     setExpandedSourcePinIds((pinIds) => {
+      const nextPinIds = new Set(pinIds);
+
+      if (nextPinIds.has(pinId)) {
+        nextPinIds.delete(pinId);
+      } else {
+        nextPinIds.add(pinId);
+      }
+
+      return nextPinIds;
+    });
+  }, []);
+
+  const handleToggleAnnotationEditor = useCallback((pinId: string) => {
+    setEditingAnnotationPinIds((pinIds) => {
       const nextPinIds = new Set(pinIds);
 
       if (nextPinIds.has(pinId)) {
@@ -129,20 +244,31 @@ export function PinnedTranslationsPanel({
   const handleSaveAnnotation = useCallback(
     async (pin: TranslationPin) => {
       const draft = annotationDraftsByPinId[pin.id] ?? getAnnotationDraft(pin);
+      const note = draft.note.trim();
 
       setSavingAnnotationPinIds((pinIds) => new Set(pinIds).add(pin.id));
       try {
         await onAnnotationChange(pin, {
           color: draft.color,
-          note: draft.note,
+          note,
         });
         setAnnotationDraftsByPinId((drafts) => ({
           ...drafts,
           [pin.id]: {
             color: draft.color,
-            note: draft.note.trim(),
+            note,
           },
         }));
+        setEditingAnnotationPinIds((pinIds) => {
+          if (!pinIds.has(pin.id)) {
+            return pinIds;
+          }
+
+          const nextPinIds = new Set(pinIds);
+
+          nextPinIds.delete(pin.id);
+          return nextPinIds;
+        });
       } catch {
         return;
       } finally {
@@ -155,6 +281,47 @@ export function PinnedTranslationsPanel({
       }
     },
     [annotationDraftsByPinId, onAnnotationChange],
+  );
+
+  const handleDeleteAnnotationNote = useCallback(
+    async (pin: TranslationPin) => {
+      const savedAnnotationDraft = getAnnotationDraft(pin);
+
+      setSavingAnnotationPinIds((pinIds) => new Set(pinIds).add(pin.id));
+      try {
+        await onAnnotationChange(pin, {
+          color: savedAnnotationDraft.color,
+          note: "",
+        });
+        setAnnotationDraftsByPinId((drafts) => ({
+          ...drafts,
+          [pin.id]: {
+            color: savedAnnotationDraft.color,
+            note: "",
+          },
+        }));
+        setEditingAnnotationPinIds((pinIds) => {
+          if (!pinIds.has(pin.id)) {
+            return pinIds;
+          }
+
+          const nextPinIds = new Set(pinIds);
+
+          nextPinIds.delete(pin.id);
+          return nextPinIds;
+        });
+      } catch {
+        return;
+      } finally {
+        setSavingAnnotationPinIds((pinIds) => {
+          const nextPinIds = new Set(pinIds);
+
+          nextPinIds.delete(pin.id);
+          return nextPinIds;
+        });
+      }
+    },
+    [onAnnotationChange],
   );
 
   const handleRetranslate = useCallback(
@@ -351,171 +518,300 @@ export function PinnedTranslationsPanel({
     return <div className="pins-pane-empty">No annotations yet</div>;
   }
 
-  return (
-    <div className="pins-list">
-      {pins.map((pin) => {
-        const runtimeState = runtimeByPinId[pin.id];
-        const isRetranslating =
-          runtimeState?.status === "loading" || runtimeState?.status === "streaming";
-        const hasTranslation = pin.translation.trim().length > 0;
-        const isTranslationVisible = getTranslationVisible(pin);
-        const shouldShowTranslation = isRetranslating || (hasTranslation && isTranslationVisible);
-        const isHighlighted = Boolean(pin.highlighted);
-        const savedAnnotationDraft = getAnnotationDraft(pin);
-        const annotationDraft = annotationDraftsByPinId[pin.id] ?? savedAnnotationDraft;
-        const isSavingAnnotation = savingAnnotationPinIds.has(pin.id);
-        const isSourceExpanded = expandedSourcePinIds.has(pin.id);
-        const sourceElementId = `pinned-translation-source-${pin.id}`;
-        const shouldShowSourceToggle = shouldOfferSourceToggle(pin.targetSentence);
-        const hasAnnotationChanges =
-          annotationDraft.note.trim() !== savedAnnotationDraft.note ||
-          annotationDraft.color !== savedAnnotationDraft.color;
+  const nextSortMode = getNextPinSortMode(sortMode);
 
-        return (
-          <article className="pinned-translation-card" key={pin.id}>
-            <div className="pinned-translation-card-toolbar">
-              {shouldShowTranslation ? (
-                <span className="pinned-translation-card-model">{getModelLabel(pin.model)}</span>
-              ) : null}
-              <span className="pinned-translation-card-page">Page {pin.pageIndex + 1}</span>
-              <div className="pinned-translation-card-actions">
-                <button
-                  aria-label={isHighlighted ? "Stop highlighting original" : "Keep original highlighted"}
-                  className={`icon-button icon-button--small pinned-translation-card-action ${
-                    isHighlighted ? "icon-button--success" : ""
-                  }`}
-                  onClick={() => onHighlightPin(pin, !isHighlighted)}
-                  title={isHighlighted ? "Stop highlighting original" : "Keep original highlighted"}
-                  type="button"
-                >
-                  <Highlighter aria-hidden="true" size={16} strokeWidth={2} />
-                </button>
-                <button
-                  aria-label="Locate original"
-                  className="icon-button icon-button--small pinned-translation-card-action"
-                  onClick={() => onLocatePin(pin)}
-                  title="Locate original"
-                  type="button"
-                >
-                  <LocateFixed aria-hidden="true" size={16} strokeWidth={2} />
-                </button>
-                <button
-                  aria-label="Remove annotation"
-                  className="icon-button icon-button--small pinned-translation-card-action"
-                  onClick={() => onUnpin(pin)}
-                  title="Remove annotation"
-                  type="button"
-                >
-                  <X aria-hidden="true" size={16} strokeWidth={2} />
-                </button>
-              </div>
-            </div>
-            <div className="pinned-translation-card-source-block">
-              <div className="pinned-translation-card-source-row">
-                <div
-                  className={`pinned-translation-card-source ${
-                    shouldShowSourceToggle && !isSourceExpanded
-                      ? "pinned-translation-card-source--collapsed"
-                      : ""
-                  }`}
-                  id={sourceElementId}
-                >
-                  {pin.targetSentence}
-                </div>
-                {shouldShowSourceToggle ? (
+  return (
+    <div className="pins-panel">
+      <div className="pins-panel-controls">
+        <div className="pins-search-shell">
+          <div className="pins-search-inline">
+            <Search aria-hidden="true" size={15} strokeWidth={2} />
+            <input
+              aria-label="Search annotations"
+              className="pins-search-input"
+              onChange={(event) => setSearchQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setSearchQuery("");
+                }
+              }}
+              placeholder="Search annotations"
+              type="search"
+              value={searchQuery}
+            />
+            {searchQuery ? (
+              <button
+                aria-label="Clear annotation search"
+                className="icon-button icon-button--small pinned-translation-card-action"
+                onClick={() => setSearchQuery("")}
+                title="Clear search"
+                type="button"
+              >
+                <X aria-hidden="true" size={16} strokeWidth={2} />
+              </button>
+            ) : null}
+          </div>
+        </div>
+        <button
+          aria-label={`Switch to ${getPinSortLabel(nextSortMode)} sorting`}
+          className="icon-button icon-button--small pins-sort-button"
+          onClick={() => setSortMode(nextSortMode)}
+          title={`Sorted by ${getPinSortLabel(sortMode)}`}
+          type="button"
+        >
+          {sortMode === "updated" ? (
+            <Clock3 aria-hidden="true" size={16} strokeWidth={2} />
+          ) : sortMode === "content" ? (
+            <ListOrdered aria-hidden="true" size={16} strokeWidth={2} />
+          ) : (
+            <ArrowDownAZ aria-hidden="true" size={16} strokeWidth={2} />
+          )}
+        </button>
+      </div>
+      {visiblePins.length === 0 ? (
+        <div className="pins-pane-empty pins-pane-empty--filtered">No matching annotations</div>
+      ) : null}
+      <div className="pins-list">
+        {visiblePins.map((pin) => {
+          const runtimeState = runtimeByPinId[pin.id];
+          const isRetranslating =
+            runtimeState?.status === "loading" || runtimeState?.status === "streaming";
+          const hasTranslation = pin.translation.trim().length > 0;
+          const isTranslationVisible = getTranslationVisible(pin);
+          const shouldShowTranslation = isRetranslating || (hasTranslation && isTranslationVisible);
+          const isHighlighted = Boolean(pin.highlighted);
+          const savedAnnotationDraft = getAnnotationDraft(pin);
+          const annotationDraft = annotationDraftsByPinId[pin.id] ?? savedAnnotationDraft;
+          const isSavingAnnotation = savingAnnotationPinIds.has(pin.id);
+          const isEditingAnnotation = editingAnnotationPinIds.has(pin.id);
+          const isEmphasized = emphasizedPinId === pin.id;
+          const hasSavedNote = savedAnnotationDraft.note.trim().length > 0;
+          const isSourceExpanded = expandedSourcePinIds.has(pin.id);
+          const sourceElementId = `pinned-translation-source-${pin.id}`;
+          const shouldShowSourceToggle = shouldOfferSourceToggle(pin.targetSentence);
+          const hasAnnotationChanges =
+            annotationDraft.note.trim() !== savedAnnotationDraft.note ||
+            annotationDraft.color !== (pin.color ?? "");
+          const canSaveAnnotation =
+            hasAnnotationChanges &&
+            !isSavingAnnotation;
+
+          return (
+            <article
+              className={`pinned-translation-card ${
+                isEmphasized ? "pinned-translation-card--emphasized" : ""
+              }`}
+              key={pin.id}
+              ref={(node) => setPinCardRef(pin.id, node)}
+            >
+              <div className="pinned-translation-card-toolbar">
+                {shouldShowTranslation ? (
+                  <span className="pinned-translation-card-model">{getModelLabel(pin.model)}</span>
+                ) : null}
+                <span className="pinned-translation-card-page">Page {pin.pageIndex + 1}</span>
+                <div className="pinned-translation-card-actions">
                   <button
-                    aria-controls={sourceElementId}
-                    aria-expanded={isSourceExpanded}
-                    aria-label={isSourceExpanded ? "Collapse original text" : "Expand original text"}
-                    className="icon-button icon-button--small pinned-translation-card-action pinned-translation-card-source-toggle"
-                    onClick={() => handleToggleSourceExpansion(pin.id)}
-                    title={isSourceExpanded ? "Collapse original" : "Expand original"}
+                    aria-label={isHighlighted ? "Stop highlighting original" : "Keep original highlighted"}
+                    className={`icon-button icon-button--small pinned-translation-card-action ${
+                      isHighlighted ? "icon-button--success" : ""
+                    }`}
+                    onClick={() => onHighlightPin(pin, !isHighlighted)}
+                    title={isHighlighted ? "Stop highlighting original" : "Keep original highlighted"}
                     type="button"
                   >
-                    {isSourceExpanded ? (
-                      <ChevronUp aria-hidden="true" size={16} strokeWidth={2} />
-                    ) : (
-                      <ChevronDown aria-hidden="true" size={16} strokeWidth={2} />
-                    )}
+                    <Highlighter aria-hidden="true" size={16} strokeWidth={2} />
                   </button>
-                ) : null}
-              </div>
-              <div className="pinned-translation-card-source-actions">
-                <button
-                  aria-label={shouldShowTranslation ? "Hide translation" : "Show translation"}
-                  aria-pressed={shouldShowTranslation}
-                  className={`icon-button icon-button--small pinned-translation-card-action ${
-                    shouldShowTranslation ? "icon-button--success" : ""
-                  }`}
-                  disabled={isRetranslating}
-                  onClick={() => handleToggleTranslation(pin)}
-                  title={shouldShowTranslation ? "Hide translation" : "Show translation"}
-                  type="button"
-                >
-                  <Languages aria-hidden="true" size={16} strokeWidth={2} />
-                </button>
-                <button
-                  aria-label="Retranslate annotation text"
-                  className="icon-button icon-button--small pinned-translation-card-action"
-                  disabled={isRetranslating}
-                  onClick={() => handleRetranslate(pin)}
-                  title="Retranslate"
-                  type="button"
-                >
-                  <RefreshCw aria-hidden="true" size={16} strokeWidth={2} />
-                </button>
-              </div>
-            </div>
-            {shouldShowTranslation ? (
-              <div className={`pinned-translation-card-output pinned-translation-card-output--${runtimeState?.status ?? "success"}`}>
-                {isRetranslating
-                  ? runtimeState?.draftTranslation || "Retranslating..."
-                  : pin.translation}
-              </div>
-            ) : null}
-            {runtimeState?.status === "error" ? (
-              <div className="pinned-translation-card-error">{runtimeState.errorMessage}</div>
-            ) : null}
-            <div className="pinned-annotation-editor">
-              <div className="pinned-annotation-editor-toolbar">
-                <div className="translation-popover-label">Note</div>
-                <div className="annotation-color-row" aria-label="Annotation color" role="group">
-                  {ANNOTATION_COLORS.map((color) => (
+                  <button
+                    aria-label="Locate original"
+                    className="icon-button icon-button--small pinned-translation-card-action"
+                    onClick={() => onLocatePin(pin)}
+                    title="Locate original"
+                    type="button"
+                  >
+                    <LocateFixed aria-hidden="true" size={16} strokeWidth={2} />
+                  </button>
+                  {!hasSavedNote && !isEditingAnnotation ? (
                     <button
-                      aria-label={`${color.label} annotation color`}
-                      aria-pressed={annotationDraft.color === color.value}
-                      className={`annotation-color-swatch annotation-color-swatch--${color.value} ${
-                        annotationDraft.color === color.value ? "annotation-color-swatch--active" : ""
+                      aria-label="Add note"
+                      aria-pressed={isEditingAnnotation}
+                      className={`icon-button icon-button--small pinned-translation-card-action ${
+                        isEditingAnnotation ? "icon-button--success" : ""
                       }`}
-                      key={color.value}
-                      onClick={() => updateAnnotationDraft(pin, { color: color.value })}
-                      title={color.label}
+                      onClick={() => handleToggleAnnotationEditor(pin.id)}
+                      title="Add note"
                       type="button"
-                    />
-                  ))}
+                    >
+                      <StickyNote aria-hidden="true" size={16} strokeWidth={2} />
+                    </button>
+                  ) : null}
+                  <button
+                    aria-label="Remove annotation"
+                    className="icon-button icon-button--small pinned-translation-card-action"
+                    onClick={() => onUnpin(pin)}
+                    title="Remove annotation"
+                    type="button"
+                  >
+                    <X aria-hidden="true" size={16} strokeWidth={2} />
+                  </button>
                 </div>
-                <button
-                  aria-label="Save annotation"
-                  className="icon-button icon-button--small pinned-translation-card-action"
-                  disabled={!hasAnnotationChanges || isSavingAnnotation}
-                  onClick={() => void handleSaveAnnotation(pin)}
-                  title="Save annotation"
-                  type="button"
-                >
-                  <Check aria-hidden="true" size={16} strokeWidth={2} />
-                </button>
               </div>
-              <textarea
-                className="pinned-annotation-note-input"
-                onChange={(event) => updateAnnotationDraft(pin, { note: event.target.value })}
-                placeholder="Add a note"
-                rows={3}
-                value={annotationDraft.note}
-              />
-            </div>
-          </article>
-        );
-      })}
+              <div className="pinned-translation-card-source-block">
+                <div className="pinned-translation-card-source-row">
+                  <div
+                    className={`pinned-translation-card-source ${
+                      shouldShowSourceToggle && !isSourceExpanded
+                        ? "pinned-translation-card-source--collapsed"
+                        : ""
+                    }`}
+                    id={sourceElementId}
+                  >
+                    {pin.targetSentence}
+                  </div>
+                  {shouldShowSourceToggle ? (
+                    <button
+                      aria-controls={sourceElementId}
+                      aria-expanded={isSourceExpanded}
+                      aria-label={isSourceExpanded ? "Collapse original text" : "Expand original text"}
+                      className="icon-button icon-button--small pinned-translation-card-action pinned-translation-card-source-toggle"
+                      onClick={() => handleToggleSourceExpansion(pin.id)}
+                      title={isSourceExpanded ? "Collapse original" : "Expand original"}
+                      type="button"
+                    >
+                      {isSourceExpanded ? (
+                        <ChevronUp aria-hidden="true" size={16} strokeWidth={2} />
+                      ) : (
+                        <ChevronDown aria-hidden="true" size={16} strokeWidth={2} />
+                      )}
+                    </button>
+                  ) : null}
+                </div>
+                <div className="pinned-translation-card-source-actions">
+                  <button
+                    aria-label={shouldShowTranslation ? "Hide translation" : "Show translation"}
+                    aria-pressed={shouldShowTranslation}
+                    className={`icon-button icon-button--small pinned-translation-card-action ${
+                      shouldShowTranslation ? "icon-button--success" : ""
+                    }`}
+                    disabled={isRetranslating}
+                    onClick={() => handleToggleTranslation(pin)}
+                    title={shouldShowTranslation ? "Hide translation" : "Show translation"}
+                    type="button"
+                  >
+                    <Languages aria-hidden="true" size={16} strokeWidth={2} />
+                  </button>
+                  <button
+                    aria-label="Retranslate annotation text"
+                    className="icon-button icon-button--small pinned-translation-card-action"
+                    disabled={isRetranslating}
+                    onClick={() => handleRetranslate(pin)}
+                    title="Retranslate"
+                    type="button"
+                  >
+                    <RefreshCw aria-hidden="true" size={16} strokeWidth={2} />
+                  </button>
+                </div>
+              </div>
+              {hasSavedNote || isEditingAnnotation ? (
+                <div className={`pinned-translation-card-note ${
+                  isEditingAnnotation ? "pinned-translation-card-note--editing" : ""
+                }`}>
+                  {isEditingAnnotation ? (
+                    <>
+                      <div className="pinned-annotation-editor-toolbar">
+                        <div className="translation-popover-label">Note</div>
+                        <div className="annotation-color-row" aria-label="Annotation color" role="group">
+                          {ANNOTATION_COLORS.map((color) => (
+                            <button
+                              aria-label={`${color.label} annotation color`}
+                              aria-pressed={annotationDraft.color === color.value}
+                              className={`annotation-color-swatch annotation-color-swatch--${color.value} ${
+                                annotationDraft.color === color.value ? "annotation-color-swatch--active" : ""
+                              }`}
+                              key={color.value}
+                              onClick={() => updateAnnotationDraft(pin, { color: color.value })}
+                              title={color.label}
+                              type="button"
+                            />
+                          ))}
+                        </div>
+                        <button
+                          aria-label="Save annotation"
+                          className="icon-button icon-button--small pinned-translation-card-action"
+                          disabled={!canSaveAnnotation}
+                          onClick={() => void handleSaveAnnotation(pin)}
+                          title="Save annotation"
+                          type="button"
+                        >
+                          <Check aria-hidden="true" size={16} strokeWidth={2} />
+                        </button>
+                        <button
+                          aria-label="Close note editor"
+                          className="icon-button icon-button--small pinned-translation-card-action"
+                          onClick={() => handleToggleAnnotationEditor(pin.id)}
+                          title="Close note editor"
+                          type="button"
+                        >
+                          <X aria-hidden="true" size={16} strokeWidth={2} />
+                        </button>
+                      </div>
+                      <textarea
+                        className="pinned-annotation-note-input"
+                        onChange={(event) => updateAnnotationDraft(pin, { note: event.target.value })}
+                        placeholder="Add a note"
+                        rows={3}
+                        value={annotationDraft.note}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <div className="pinned-translation-card-note-header">
+                        <div className="pinned-translation-card-note-label">Note</div>
+                        <div className="pinned-translation-card-note-actions">
+                          <button
+                            aria-label="Edit note"
+                            className="icon-button icon-button--small pinned-translation-card-action"
+                            onClick={() => handleToggleAnnotationEditor(pin.id)}
+                            title="Edit note"
+                            type="button"
+                          >
+                            <PencilLine aria-hidden="true" size={16} strokeWidth={2} />
+                          </button>
+                          <button
+                            aria-label="Delete note"
+                            className="icon-button icon-button--small pinned-translation-card-action"
+                            disabled={isSavingAnnotation}
+                            onClick={() => void handleDeleteAnnotationNote(pin)}
+                            title="Delete note"
+                            type="button"
+                          >
+                            <Trash2 aria-hidden="true" size={16} strokeWidth={2} />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="pinned-translation-card-note-text">
+                        {savedAnnotationDraft.note}
+                      </div>
+                    </>
+                  )}
+                </div>
+              ) : null}
+              {shouldShowTranslation ? (
+                <div className={`pinned-translation-card-output pinned-translation-card-output--${runtimeState?.status ?? "success"}`}>
+                  {isRetranslating
+                    ? runtimeState?.draftTranslation || "Retranslating..."
+                    : pin.translation}
+                </div>
+              ) : null}
+              {runtimeState?.status === "error" ? (
+                <div className="pinned-translation-card-error">{runtimeState.errorMessage}</div>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+      <div className="pins-pane-summary">
+        {pins.length} saved annotation{pins.length === 1 ? "" : "s"}
+      </div>
     </div>
   );
 }
@@ -543,4 +839,96 @@ function shouldOfferSourceToggle(source: string) {
   }
 
   return (trimmedSource.match(/[.!?。！？]+/g)?.length ?? 0) > 2;
+}
+
+function comparePinsBySortMode(
+  left: TranslationPin,
+  right: TranslationPin,
+  sortMode: PinSortMode,
+) {
+  switch (sortMode) {
+    case "updated":
+      if (left.updatedAt !== right.updatedAt) {
+        return right.updatedAt - left.updatedAt;
+      }
+      return comparePinsByContentOrder(left, right);
+    case "alpha": {
+      const textComparison = left.targetSentence.localeCompare(
+        right.targetSentence,
+        undefined,
+        { sensitivity: "base" },
+      );
+
+      return textComparison || comparePinsByContentOrder(left, right);
+    }
+    case "content":
+    default:
+      return comparePinsByContentOrder(left, right);
+  }
+}
+
+function getNextPinSortMode(sortMode: PinSortMode): PinSortMode {
+  switch (sortMode) {
+    case "updated":
+      return "content";
+    case "content":
+      return "alpha";
+    case "alpha":
+    default:
+      return "updated";
+  }
+}
+
+function getPinSortLabel(sortMode: PinSortMode) {
+  switch (sortMode) {
+    case "updated":
+      return "modified time";
+    case "content":
+      return "content order";
+    case "alpha":
+    default:
+      return "text A-Z";
+  }
+}
+
+function comparePinsByContentOrder(left: TranslationPin, right: TranslationPin) {
+  if (left.pageIndex !== right.pageIndex) {
+    return left.pageIndex - right.pageIndex;
+  }
+
+  const leftPosition = getPinContentPosition(left);
+  const rightPosition = getPinContentPosition(right);
+
+  if (leftPosition !== rightPosition) {
+    return leftPosition - rightPosition;
+  }
+
+  return left.id.localeCompare(right.id);
+}
+
+function getPinContentPosition(pin: TranslationPin) {
+  const positions = [
+    ...(pin.regions?.map((region) => region.textSpan.startGlobalChar) ?? []),
+  ].filter((position) => Number.isFinite(position));
+
+  if (positions.length > 0) {
+    return Math.min(...positions);
+  }
+
+  const firstRect = pin.rectsOnPage
+    .slice()
+    .sort((left, right) => (left.top - right.top) || (left.left - right.left))[0];
+
+  return firstRect ? firstRect.top * 10000 + firstRect.left : 0;
+}
+
+function getPinSearchText(pin: TranslationPin) {
+  return [
+    pin.targetSentence,
+    pin.selectedText,
+    pin.normalizedSentence,
+    pin.note,
+    pin.translation,
+    `page ${pin.pageIndex + 1}`,
+  ].filter(Boolean).join("\n");
 }

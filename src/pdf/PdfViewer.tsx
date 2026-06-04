@@ -3,6 +3,7 @@ import type {
   CSSProperties,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
+  ReactNode,
   TouchEvent as ReactTouchEvent,
 } from "react";
 import { Check, Minus, Plus, RotateCcw, X } from "lucide-react";
@@ -51,6 +52,7 @@ type PdfViewerProps = {
   activeTranslationCardZIndex: number;
   activeSelection?: SentenceSelection;
   entry: PdfLibraryEntry;
+  headerControls?: ReactNode;
   locateRequest?: PinLocateRequest;
   onActivateTranslationCard: (selection: SentenceSelection) => void;
   onCloseTranslationCard: (selection: SentenceSelection) => void;
@@ -68,6 +70,7 @@ type PdfViewerProps = {
   ) => Promise<void>;
   onPageTextReadyForPaperContext: (pageIndex: number, text: string) => void;
   onReadingPositionChange: (position: ReadingPositionUpdate) => void;
+  onRevealPinCard: (pin: TranslationPin) => void;
   onSentenceSelectionChange: (selection: SentenceSelection | undefined) => void;
   onTranslationCardViewChange: (
     selection: SentenceSelection,
@@ -169,6 +172,7 @@ export function PdfViewer({
   activeTranslationCardZIndex,
   activeSelection,
   entry,
+  headerControls,
   locateRequest,
   onActivateTranslationCard,
   onCloseTranslationCard,
@@ -180,6 +184,7 @@ export function PdfViewer({
   onRemoveLocalRecord,
   onPinTranslation,
   onReadingPositionChange,
+  onRevealPinCard,
   onSentenceSelectionChange,
   onTranslationCardViewChange,
   pinnedTranslationCards,
@@ -216,6 +221,8 @@ export function PdfViewer({
   const [copyNotice, setCopyNotice] = useState<string>();
   const [copiedSelection, setCopiedSelection] = useState<SentenceSelection>();
   const [confirmedMobileReaderMode, setConfirmedMobileReaderMode] = useState<ReaderMode>();
+  const [collapsedMobileSelectionKey, setCollapsedMobileSelectionKey] = useState<string>();
+  const [activeMobilePinnedCardKey, setActiveMobilePinnedCardKey] = useState<string>();
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [locatedPinId, setLocatedPinId] = useState<string>();
@@ -1142,6 +1149,52 @@ export function PdfViewer({
     }
   }, [handleLocatePin, locateRequest]);
 
+  useEffect(() => {
+    if (!isMobileViewport) {
+      setActiveMobilePinnedCardKey(undefined);
+      setCollapsedMobileSelectionKey(undefined);
+    }
+  }, [isMobileViewport]);
+
+  useEffect(() => {
+    if (
+      collapsedMobileSelectionKey &&
+      (!activeSelection || collapsedMobileSelectionKey !== createSelectionTargetKey(activeSelection))
+    ) {
+      setCollapsedMobileSelectionKey(undefined);
+    }
+  }, [activeSelection, collapsedMobileSelectionKey]);
+
+  useEffect(() => {
+    if (!activeMobilePinnedCardKey) {
+      return;
+    }
+
+    const shouldCloseForSelection =
+      Boolean(activeSelection) ||
+      Boolean(draftSelection) ||
+      Boolean(mobilePendingSelection) ||
+      readerMode === "select" ||
+      selectionMode === "cross";
+
+    if (shouldCloseForSelection) {
+      setActiveMobilePinnedCardKey(undefined);
+      return;
+    }
+
+    if (!pinnedTranslationCards.some((card) => card.key === activeMobilePinnedCardKey)) {
+      setActiveMobilePinnedCardKey(undefined);
+    }
+  }, [
+    activeMobilePinnedCardKey,
+    activeSelection,
+    draftSelection,
+    mobilePendingSelection,
+    pinnedTranslationCards,
+    readerMode,
+    selectionMode,
+  ]);
+
   const handleCopySelection = useCallback(
     (selection: SentenceSelection) => {
       void copySelectedText(selection);
@@ -1153,6 +1206,33 @@ export function PdfViewer({
   const handleClearSelection = useCallback(() => {
     onSentenceSelectionChange(undefined);
   }, [onSentenceSelectionChange]);
+
+  const handleOpenMobilePinnedCard = useCallback(
+    (cardKey: string, selection: SentenceSelection) => {
+      setActiveMobilePinnedCardKey(cardKey);
+      onActivateTranslationCard(selection);
+    },
+    [onActivateTranslationCard],
+  );
+
+  const handleCollapseMobileTranslationCard = useCallback(
+    (selection: SentenceSelection, isPinned: boolean) => {
+      if (isPinned) {
+        setActiveMobilePinnedCardKey(undefined);
+        setCollapsedMobileSelectionKey(undefined);
+        onSentenceSelectionChange(undefined);
+        window.getSelection()?.removeAllRanges();
+        return;
+      }
+
+      setCollapsedMobileSelectionKey(createSelectionTargetKey(selection));
+    },
+    [onSentenceSelectionChange],
+  );
+
+  const handleOpenCollapsedMobileTranslationCard = useCallback(() => {
+    setCollapsedMobileSelectionKey(undefined);
+  }, []);
 
   const handleCreateSelectAnnotation = useCallback(
     async (selection: SentenceSelection, annotation: PinAnnotationInput) => {
@@ -1213,7 +1293,8 @@ export function PdfViewer({
             {pages.length > 0 ? `${pages.length} pages` : "Loading PDF"}
           </div>
         </div>
-        <div className="pdf-viewer-actions" aria-label="PDF zoom controls">
+        <div className="pdf-viewer-actions" aria-label="PDF controls">
+          {headerControls}
           {selectionMode === "cross" ? (
             <div className="cross-selection-toolbar" aria-label="Cross-region selection controls">
               <span className="cross-selection-count">
@@ -1325,18 +1406,25 @@ export function PdfViewer({
                     key={`${entry.fingerprint}-${page.pageNumber}`}
                     onActivateTranslationCard={onActivateTranslationCard}
                     onCloseTranslationCard={onCloseTranslationCard}
+                    activeMobilePinnedCardKey={activeMobilePinnedCardKey}
+                    collapsedMobileSelectionKey={collapsedMobileSelectionKey}
                     onClearSelection={handleClearSelection}
+                    onCollapseMobileTranslationCard={handleCollapseMobileTranslationCard}
                     onCopySelection={handleCopySelection}
                     onCreateAnnotation={handleCreateSelectAnnotation}
+                    onOpenCollapsedMobileTranslationCard={handleOpenCollapsedMobileTranslationCard}
+                    onOpenMobilePinnedCard={handleOpenMobilePinnedCard}
                     onPinTranslationCard={onPinTranslationCard}
                     onPinnedTranslationRefresh={onPinnedTranslationRefresh}
                     onPinTranslation={onPinTranslation}
+                    onRevealPinCard={onRevealPinCard}
                     onPageTextReadyForPaperContext={onPageTextReadyForPaperContext}
                     onTextIndexClear={handleTextIndexClear}
                     onTextIndexReady={handleTextIndexReady}
                     onTranslationCardViewChange={onTranslationCardViewChange}
                     pdfDocument={pdfDocument}
                     pinnedTranslationCards={pinnedTranslationCards}
+                    isMobileViewport={isMobileViewport}
                     paperContext={paperContext}
                     pins={pins}
                     queuedCrossSelections={queuedCrossSelections}
@@ -1401,20 +1489,27 @@ export function PdfViewer({
 }
 
 const PdfPageView = memo(function PdfPageView({
+  activeMobilePinnedCardKey,
   activeTranslationCardZIndex,
   activeSelection,
   canvasOutputScaleCap,
   descriptor,
+  collapsedMobileSelectionKey,
   draftSelection,
   locatedPinId,
+  isMobileViewport,
   onActivateTranslationCard,
   onCloseTranslationCard,
   onClearSelection,
+  onCollapseMobileTranslationCard,
   onCopySelection,
   onCreateAnnotation,
+  onOpenCollapsedMobileTranslationCard,
+  onOpenMobilePinnedCard,
   onPinTranslationCard,
   onPinnedTranslationRefresh,
   onPinTranslation,
+  onRevealPinCard,
   onPageTextReadyForPaperContext,
   onTextIndexClear,
   onTextIndexReady,
@@ -1432,26 +1527,33 @@ const PdfPageView = memo(function PdfPageView({
   copySelection,
   settings,
 }: {
+  activeMobilePinnedCardKey?: string;
   activeTranslationCardZIndex: number;
   activeSelection?: SentenceSelection;
   canvasOutputScaleCap: number;
+  collapsedMobileSelectionKey?: string;
   descriptor: PageDescriptor;
   draftSelection?: SentenceSelection;
+  isMobileViewport: boolean;
   locatedPinId?: string;
   onActivateTranslationCard: (selection: SentenceSelection) => void;
   onCloseTranslationCard: (selection: SentenceSelection) => void;
   onClearSelection: () => void;
+  onCollapseMobileTranslationCard: (selection: SentenceSelection, isPinned: boolean) => void;
   onCopySelection: (selection: SentenceSelection) => void;
   onCreateAnnotation: (
     selection: SentenceSelection,
     annotation: PinAnnotationInput,
   ) => Promise<void>;
+  onOpenCollapsedMobileTranslationCard: () => void;
+  onOpenMobilePinnedCard: (cardKey: string, selection: SentenceSelection) => void;
   onPinTranslationCard: (input: TranslationCardPinInput) => void;
   onPinnedTranslationRefresh: (input: PinWriteInput) => void;
   onPinTranslation: (
     input: PinWriteInput,
     action: TranslationFavoriteAction,
   ) => Promise<void>;
+  onRevealPinCard: (pin: TranslationPin) => void;
   onPageTextReadyForPaperContext: (pageIndex: number, text: string) => void;
   onTextIndexClear: (pageIndex: number) => void;
   onTextIndexReady: (pageTextIndex: PageTextIndex) => void;
@@ -1637,15 +1739,22 @@ const PdfPageView = memo(function PdfPageView({
         {shouldRender ? (
           <PageOverlayLayer
             activeTranslationCardZIndex={activeTranslationCardZIndex}
+            activeMobilePinnedCardKey={activeMobilePinnedCardKey}
+            collapsedMobileSelectionKey={collapsedMobileSelectionKey}
+            isMobileViewport={isMobileViewport}
             locatedPinId={locatedPinId}
             onActivateTranslationCard={onActivateTranslationCard}
+            onCollapseMobileTranslationCard={onCollapseMobileTranslationCard}
             onCloseTranslationCard={onCloseTranslationCard}
             onClearSelection={onClearSelection}
             onCopySelection={onCopySelection}
             onCreateAnnotation={onCreateAnnotation}
+            onOpenCollapsedMobileTranslationCard={onOpenCollapsedMobileTranslationCard}
+            onOpenMobilePinnedCard={onOpenMobilePinnedCard}
             onPinTranslationCard={onPinTranslationCard}
             onPinnedTranslationRefresh={onPinnedTranslationRefresh}
             onPinTranslation={onPinTranslation}
+            onRevealPinCard={onRevealPinCard}
             onTranslationCardViewChange={onTranslationCardViewChange}
             pageHeight={descriptor.height * renderScale}
             pageIndex={pageIndex}
@@ -1717,6 +1826,10 @@ function isSameSelectionTarget(
       left.pdfFingerprint === right.pdfFingerprint &&
       left.normalizedSentence === right.normalizedSentence,
   );
+}
+
+function createSelectionTargetKey(selection: SentenceSelection) {
+  return `${selection.pdfFingerprint}:${selection.pageIndex}:${selection.normalizedSentence}`;
 }
 
 function createCompositeCrossSelection(
