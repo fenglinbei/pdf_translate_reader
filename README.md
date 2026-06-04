@@ -126,11 +126,51 @@ Run `supabase/schema.sql` in the Supabase SQL editor before using the app. It
 creates the private `user-pdfs` Storage bucket, the `public.user_documents`
 table, document-state sync tables for annotations, translation cache, paper
 context, pinned translation cards, user settings, API logs, and RLS policies for
-per-user access.
+per-user access. `user_documents` also stores the last page, scroll offset, and
+zoom used when reopening a PDF.
 
 The browser uses `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for login and
 Storage access. The Node API proxy reads the same values from `.env.local`, or
 `SUPABASE_URL` and `SUPABASE_ANON_KEY` if those are set by the host.
+
+### Signup allowlist hook
+
+`supabase/schema.sql` also creates `public.signup_email_allowlist` and the
+`public.hook_restrict_signup_by_email_allowlist(event jsonb)` auth hook
+function. To make registration invite-only by email:
+
+1. Run `supabase/schema.sql` in the Supabase SQL editor.
+2. In Supabase Dashboard, go to Authentication -> Hooks.
+3. Enable Before User Created.
+4. Choose the Postgres function
+   `public.hook_restrict_signup_by_email_allowlist`.
+5. Keep "Allow new users to sign up" enabled if users should self-register after
+   being added to the allowlist.
+
+Authorize an email address:
+
+```sql
+insert into public.signup_email_allowlist (email, note)
+values ('someone@example.com', 'approved')
+on conflict (email) do update
+set active = true,
+    note = excluded.note,
+    updated_at = now();
+```
+
+Revoke signup access without deleting the audit note:
+
+```sql
+update public.signup_email_allowlist
+set active = false,
+    updated_at = now()
+where email = 'someone@example.com';
+```
+
+Emails are normalized to lowercase on insert and update. The allowlist table has
+RLS enabled and no public policies, so browser clients cannot read or modify it.
+If an admin invite/create flow also creates users through Supabase Auth, add the
+email to the allowlist before creating the user.
 
 ### One-command nginx deployment
 

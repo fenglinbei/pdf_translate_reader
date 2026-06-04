@@ -203,6 +203,7 @@ export function PdfViewer({
   const draftSelectionRef = useRef<SentenceSelection>();
   const realZoomCommitTimerRef = useRef<number>();
   const textContentCacheRef = useRef(new Map<number, CachedPageText>());
+  const userZoomRef = useRef(1);
   const zoomAnchorRef = useRef<ZoomAnchor>();
   const [pdfDocument, setPdfDocument] = useState<PdfDocumentProxy>();
   const [pages, setPages] = useState<PageDescriptor[]>([]);
@@ -224,6 +225,10 @@ export function PdfViewer({
   const [renderPageIndexes, setRenderPageIndexes] = useState<Set<number>>(() => new Set());
   const [renderZoom, setRenderZoom] = useState(1);
   const [userZoom, setUserZoom] = useState(1);
+
+  useEffect(() => {
+    userZoomRef.current = userZoom;
+  }, [userZoom]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 700px), (pointer: coarse) and (max-width: 920px)");
@@ -273,8 +278,11 @@ export function PdfViewer({
     setPdfDocument(undefined);
     setBaseScale(undefined);
     setRenderPageIndexes(new Set());
-    setRenderZoom(1);
-    setUserZoom(1);
+    const restoredZoom = normalizeUserZoom(entry.lastZoom);
+
+    userZoomRef.current = restoredZoom;
+    setRenderZoom(restoredZoom);
+    setUserZoom(restoredZoom);
     setDraftSelection(undefined);
     setQueuedCrossSelections([]);
     pageIndexesRef.current = new Map();
@@ -350,8 +358,7 @@ export function PdfViewer({
 
   useEffect(() => {
     setBaseScale(undefined);
-    setRenderZoom(1);
-    setUserZoom(1);
+    setRenderZoom(userZoomRef.current);
   }, [isMobileViewport]);
 
   const fitScale = baseScale ?? liveFitScale;
@@ -400,6 +407,27 @@ export function PdfViewer({
       saveTimerRef.current = window.setTimeout(flushReadingPosition, 300);
     },
     [flushReadingPosition],
+  );
+
+  const queueCurrentReadingPosition = useCallback(
+    (lastZoom = userZoomRef.current) => {
+      const scrollElement = scrollRef.current;
+
+      if (!scrollElement) {
+        return;
+      }
+
+      queueReadingPosition({
+        lastPageIndex: getCurrentPageIndexFromLayout(
+          pageLayout,
+          scrollElement.scrollTop,
+          scrollElement.clientHeight,
+        ),
+        lastScrollTop: scrollElement.scrollTop,
+        lastZoom,
+      });
+    },
+    [pageLayout, queueReadingPosition],
   );
 
   useEffect(() => {
@@ -467,13 +495,19 @@ export function PdfViewer({
         (zoomAnchor.scrollLeft + zoomAnchor.offsetX) * zoomAnchor.scaleRatio - zoomAnchor.offsetX;
       scrollElement.scrollTop =
         (zoomAnchor.scrollTop + zoomAnchor.offsetY) * zoomAnchor.scaleRatio - zoomAnchor.offsetY;
+      queueCurrentReadingPosition(userZoomRef.current);
     });
-  }, [displayScale]);
+  }, [displayScale, queueCurrentReadingPosition]);
 
   useEffect(() => {
     const scrollElement = scrollRef.current;
 
-    if (!scrollElement || pages.length === 0 || restoredFingerprintRef.current === entry.fingerprint) {
+    if (
+      !scrollElement ||
+      pages.length === 0 ||
+      !hasMeasuredAvailableWidth ||
+      restoredFingerprintRef.current === entry.fingerprint
+    ) {
       return;
     }
 
@@ -488,7 +522,15 @@ export function PdfViewer({
 
       restoredFingerprintRef.current = entry.fingerprint;
     });
-  }, [entry.fingerprint, entry.lastPageIndex, entry.lastScrollTop, pages.length, displayScale, pageLayout]);
+  }, [
+    entry.fingerprint,
+    entry.lastPageIndex,
+    entry.lastScrollTop,
+    hasMeasuredAvailableWidth,
+    pages.length,
+    displayScale,
+    pageLayout,
+  ]);
 
   const handleScroll = useCallback(() => {
     const scrollElement = scrollRef.current;
@@ -511,6 +553,7 @@ export function PdfViewer({
         scrollElement.clientHeight,
       ),
       lastScrollTop: scrollElement.scrollTop,
+      lastZoom: userZoomRef.current,
     });
   }, [pageLayout, queueReadingPosition, renderPageOverscan]);
 
@@ -1879,6 +1922,14 @@ function roundZoom(value: number) {
 
 function roundPreciseZoom(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function normalizeUserZoom(value: unknown) {
+  const numericValue = Number(value);
+
+  return Number.isFinite(numericValue)
+    ? roundPreciseZoom(clamp(numericValue, USER_ZOOM_MIN, USER_ZOOM_MAX))
+    : 1;
 }
 
 function clamp(value: number, min: number, max: number) {

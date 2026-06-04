@@ -1,5 +1,90 @@
 create extension if not exists pgcrypto;
 
+create table if not exists public.signup_email_allowlist (
+  email text primary key check (email ~ '^[^@[:space:]]+@[^@[:space:]]+[.][^@[:space:]]+$'),
+  note text,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.signup_email_allowlist enable row level security;
+
+revoke all on public.signup_email_allowlist from anon, authenticated, public;
+
+create or replace function public.normalize_signup_email_allowlist()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  new.email := lower(btrim(new.email));
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_signup_email_allowlist_normalize
+  on public.signup_email_allowlist;
+
+create trigger trg_signup_email_allowlist_normalize
+before insert or update on public.signup_email_allowlist
+for each row
+execute function public.normalize_signup_email_allowlist();
+
+revoke execute
+  on function public.normalize_signup_email_allowlist
+  from authenticated, anon, public;
+
+create or replace function public.hook_restrict_signup_by_email_allowlist(event jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  signup_email text;
+  is_allowed boolean;
+begin
+  signup_email := lower(btrim(coalesce(event->'user'->>'email', '')));
+
+  if signup_email = '' then
+    return jsonb_build_object(
+      'error', jsonb_build_object(
+        'http_code', 403,
+        'message', 'Email signup is required for this application.'
+      )
+    );
+  end if;
+
+  select exists (
+    select 1
+    from public.signup_email_allowlist allowlist
+    where allowlist.email = signup_email
+      and allowlist.active = true
+  ) into is_allowed;
+
+  if is_allowed then
+    return '{}'::jsonb;
+  end if;
+
+  return jsonb_build_object(
+    'error', jsonb_build_object(
+      'http_code', 403,
+      'message', 'This email is not authorized to sign up.'
+    )
+  );
+end;
+$$;
+
+grant usage on schema public to supabase_auth_admin;
+grant execute
+  on function public.hook_restrict_signup_by_email_allowlist
+  to supabase_auth_admin;
+revoke execute
+  on function public.hook_restrict_signup_by_email_allowlist
+  from authenticated, anon, public;
+
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('user-pdfs', 'user-pdfs', false, 104857600, array['application/pdf'])
 on conflict (id) do update
@@ -21,9 +106,13 @@ create table if not exists public.user_documents (
   last_opened_at timestamptz not null default now(),
   last_page_index integer,
   last_scroll_top double precision,
+  last_zoom double precision,
   open_count integer not null default 1 check (open_count >= 0),
   deleted_at timestamptz
 );
+
+alter table public.user_documents
+  add column if not exists last_zoom double precision;
 
 create unique index if not exists user_documents_active_user_content_sha256_key
   on public.user_documents (user_id, content_sha256)

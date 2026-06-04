@@ -45,6 +45,7 @@ export type PdfLibraryEntry = {
   openCount: number;
   lastPageIndex?: number;
   lastScrollTop?: number;
+  lastZoom?: number;
   pdfMetadata?: PdfMetadata;
   storagePath?: string;
   deletedAt?: number;

@@ -90,7 +90,10 @@ export async function markPdfOpened(fingerprint: string) {
   return updatedEntry;
 }
 
-export type ReadingPositionUpdate = Pick<PdfLibraryEntry, "lastPageIndex" | "lastScrollTop">;
+export type ReadingPositionUpdate = Pick<
+  PdfLibraryEntry,
+  "lastPageIndex" | "lastScrollTop" | "lastZoom"
+>;
 
 export async function updatePdfReadingPosition(
   fingerprint: string,
@@ -106,6 +109,7 @@ export async function updatePdfReadingPosition(
     ...entry,
     lastPageIndex: position.lastPageIndex,
     lastScrollTop: position.lastScrollTop,
+    lastZoom: position.lastZoom ?? entry.lastZoom,
   };
 
   const db = await getAppDb();

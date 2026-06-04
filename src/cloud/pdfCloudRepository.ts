@@ -27,6 +27,7 @@ type UserDocumentRow = {
   last_opened_at: string;
   last_page_index?: number | null;
   last_scroll_top?: number | null;
+  last_zoom?: number | null;
   mime_type: "application/pdf";
   open_count: number;
   pdf_fingerprint: string;
@@ -171,6 +172,7 @@ export async function updateCloudReadingPosition(
   const row = await updateUserDocument(documentId, {
     last_page_index: position.lastPageIndex ?? null,
     last_scroll_top: position.lastScrollTop ?? null,
+    last_zoom: position.lastZoom ?? null,
   });
 
   await updatePdfReadingPosition(row.pdf_fingerprint, position);
@@ -248,11 +250,13 @@ async function saveCloudPdfLocalCache(
 
   if (
     typeof row.last_page_index === "number" ||
-    typeof row.last_scroll_top === "number"
+    typeof row.last_scroll_top === "number" ||
+    typeof row.last_zoom === "number"
   ) {
     const updatedEntry = await updatePdfReadingPosition(entry.fingerprint, {
       lastPageIndex: row.last_page_index ?? undefined,
       lastScrollTop: row.last_scroll_top ?? undefined,
+      lastZoom: row.last_zoom ?? undefined,
     });
 
     return updatedEntry ? mergeCloudFields(updatedEntry, row) : mergeCloudFields(entry, row);
@@ -282,6 +286,7 @@ function mapCloudLibraryEntry(row: UserDocumentRow): CloudPdfLibraryEntry {
     lastOpenedAt: Date.parse(row.last_opened_at),
     lastPageIndex: row.last_page_index ?? undefined,
     lastScrollTop: row.last_scroll_top ?? undefined,
+    lastZoom: row.last_zoom ?? undefined,
     mimeType: row.mime_type,
     openCount: row.open_count,
     pdfMetadata: row.pdf_metadata ?? undefined,
@@ -300,6 +305,7 @@ function mergeCloudFields(entry: PdfLibraryEntry, row: UserDocumentRow): PdfLibr
     lastOpenedAt: Date.parse(row.last_opened_at),
     lastPageIndex: row.last_page_index ?? entry.lastPageIndex,
     lastScrollTop: row.last_scroll_top ?? entry.lastScrollTop,
+    lastZoom: row.last_zoom ?? entry.lastZoom,
     openCount: row.open_count,
     pdfMetadata: row.pdf_metadata ?? entry.pdfMetadata,
     storagePath: row.storage_path,
@@ -327,6 +333,7 @@ function getUserDocumentColumns() {
     "last_opened_at",
     "last_page_index",
     "last_scroll_top",
+    "last_zoom",
     "mime_type",
     "open_count",
     "pdf_fingerprint",
