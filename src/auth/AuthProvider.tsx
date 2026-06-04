@@ -1,6 +1,11 @@
 import type { ReactNode } from "react";
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
+import {
+  clearAuthSessionSnapshot,
+  restoreAuthSessionFromSnapshot,
+  saveAuthSessionSnapshot,
+} from "./authSessionSnapshot";
 import { isSupabaseConfigured, requireSupabaseClient, supabase } from "./supabaseClient";
 
 type AuthStatus = "checking" | "misconfigured" | "signedIn" | "signedOut";
@@ -22,56 +27,91 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isSupabaseConfigured ? "checking" : "misconfigured",
   );
 
+  const applySession = useCallback((nextSession: Session | null) => {
+    setSession(nextSession ?? undefined);
+    setStatus(nextSession ? "signedIn" : "signedOut");
+  }, []);
+
   useEffect(() => {
     if (!supabase) {
       setStatus("misconfigured");
       return undefined;
     }
 
+    const client = requireSupabaseClient();
     let cancelled = false;
+    let authSubscription: { unsubscribe: () => void } | undefined;
 
-    supabase.auth.getSession()
-      .then(({ data, error }) => {
-        if (cancelled) {
-          return;
-        }
+    async function bootstrapAuth() {
+      try {
+        const { data, error } = await client.auth.getSession();
 
         if (error) {
-          setSession(undefined);
-          setStatus("signedOut");
+          throw error;
+        }
+
+        const restoredSession =
+          data.session ?? await restoreAuthSessionFromSnapshot(client);
+
+        if (!cancelled) {
+          if (restoredSession) {
+            saveAuthSessionSnapshot(restoredSession);
+          }
+
+          applySession(restoredSession);
+        }
+
+        const { data: listener } = client.auth.onAuthStateChange((event, nextSession) => {
+          if (cancelled) {
+            return;
+          }
+
+          if (nextSession) {
+            saveAuthSessionSnapshot(nextSession);
+            applySession(nextSession);
+            return;
+          }
+
+          if (event === "SIGNED_OUT") {
+            clearAuthSessionSnapshot();
+            applySession(null);
+          }
+        });
+
+        if (cancelled) {
+          listener.subscription.unsubscribe();
           return;
         }
 
-        setSession(data.session ?? undefined);
-        setStatus(data.session ? "signedIn" : "signedOut");
-      })
-      .catch(() => {
+        authSubscription = listener.subscription;
+      } catch {
         if (!cancelled) {
-          setSession(undefined);
-          setStatus("signedOut");
+          clearAuthSessionSnapshot();
+          applySession(null);
         }
-      });
+      }
+    }
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession ?? undefined);
-      setStatus(nextSession ? "signedIn" : "signedOut");
-    });
+    void bootstrapAuth();
 
     return () => {
       cancelled = true;
-      listener.subscription.unsubscribe();
+      authSubscription?.unsubscribe();
     };
-  }, []);
+  }, [applySession]);
 
   const value = useMemo<AuthContextValue>(() => ({
     session,
     signIn: async (email: string, password: string) => {
       const client = requireSupabaseClient();
-      const { error } = await client.auth.signInWithPassword({ email, password });
+      const { data, error } = await client.auth.signInWithPassword({ email, password });
 
       if (error) {
         throw error;
       }
+
+      saveAuthSessionSnapshot(data.session);
+      applySession(data.session);
     },
     signOut: async () => {
       const client = requireSupabaseClient();
@@ -80,18 +120,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error) {
         throw error;
       }
+
+      clearAuthSessionSnapshot();
+      applySession(null);
     },
     signUp: async (email: string, password: string) => {
       const client = requireSupabaseClient();
-      const { error } = await client.auth.signUp({ email, password });
+      const { data, error } = await client.auth.signUp({ email, password });
 
       if (error) {
         throw error;
       }
+
+      if (data.session) {
+        saveAuthSessionSnapshot(data.session);
+        applySession(data.session);
+      }
     },
     status,
     user: session?.user,
-  }), [session, status]);
+  }), [applySession, session, status]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

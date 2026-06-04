@@ -90,6 +90,11 @@ import {
 import { clearTranslationCache } from "../translation/translationRepository";
 import { getStorageErrorMessage } from "../translation/errors";
 import { TRANSLATION_PROMPT_VERSION } from "../translation/defaults";
+import {
+  clearReaderSessionDocument,
+  getReaderSession,
+  updateReaderSession,
+} from "./readerSessionRepository";
 import { useApiHealth } from "./useApiHealth";
 
 type PaneResizeState = {
@@ -145,10 +150,12 @@ function getVisibleCloudSyncMessage(
 
 export function ReaderShell() {
   const auth = useAuth();
+  const readerSessionUserId = auth.user?.id;
   const health = useApiHealth();
   const apiStatus = health.status === "ok" ? "online" : health.status;
   const isSupabaseConfigured = health.status === "ok" ? health.data.supabase.configured : false;
   const [libraryEntries, setLibraryEntries] = useState<CloudPdfLibraryEntry[]>([]);
+  const [isLibraryLoaded, setIsLibraryLoaded] = useState(false);
   const [currentEntry, setCurrentEntry] = useState<PdfLibraryEntry>();
   const [isImporting, setIsImporting] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -175,6 +182,9 @@ export function ReaderShell() {
   const [cloudSyncMessage, setCloudSyncMessage] = useState("Cloud sync is ready.");
   const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>("idle");
   const [damagedLibraryFingerprint, setDamagedLibraryFingerprint] = useState<string>();
+  const [readerSessionHydratedUserId, setReaderSessionHydratedUserId] = useState<string>();
+  const activeReaderSessionUserIdRef = useRef<string>();
+  const autoRestoreUserIdRef = useRef<string>();
   const locateRequestIdRef = useRef(0);
   const paneResizeStateRef = useRef<PaneResizeState>();
   const pinPanelFocusRequestIdRef = useRef(0);
@@ -249,14 +259,106 @@ export function ReaderShell() {
   );
 
   const refreshLibrary = useCallback(async () => {
-    setLibraryEntries(await listCloudPdfLibraryEntries());
+    const entries = await listCloudPdfLibraryEntries();
+
+    setLibraryEntries(entries);
+    setIsLibraryLoaded(true);
+
+    return entries;
   }, []);
 
   useEffect(() => {
+    setIsLibraryLoaded(false);
     void refreshLibrary().catch(() => {
       setStatusMessage("Could not read the local PDF library.");
     });
-  }, [refreshLibrary]);
+  }, [readerSessionUserId, refreshLibrary]);
+
+  useEffect(() => {
+    if (!readerSessionUserId) {
+      setReaderSessionHydratedUserId(undefined);
+      return;
+    }
+
+    if (
+      activeReaderSessionUserIdRef.current &&
+      activeReaderSessionUserIdRef.current !== readerSessionUserId
+    ) {
+      autoRestoreUserIdRef.current = undefined;
+      setCurrentEntry(undefined);
+      setSentenceSelection(undefined);
+      applyPinnedTranslationCards([]);
+      setPins([]);
+      setLibraryEntries([]);
+      setIsLibraryLoaded(false);
+    }
+
+    activeReaderSessionUserIdRef.current = readerSessionUserId;
+    const savedSession = getReaderSession(readerSessionUserId);
+
+    setIsLibraryPaneOpen(savedSession?.isLibraryPaneOpen ?? true);
+    setIsPinsPaneOpen(savedSession?.isPinsPaneOpen ?? true);
+    setLibraryPaneWidth(clamp(
+      savedSession?.libraryPaneWidth ?? LIBRARY_PANE_DEFAULT_WIDTH,
+      LIBRARY_PANE_MIN_WIDTH,
+      LIBRARY_PANE_MAX_WIDTH,
+    ));
+    setPinsPaneWidth(clamp(
+      savedSession?.pinsPaneWidth ?? PINS_PANE_DEFAULT_WIDTH,
+      PINS_PANE_MIN_WIDTH,
+      PINS_PANE_MAX_WIDTH,
+    ));
+    setReaderMode(savedSession?.readerMode ?? "translate");
+    setSelectionMode(savedSession?.selectionMode ?? "continuous");
+    setReaderSessionHydratedUserId(readerSessionUserId);
+  }, [applyPinnedTranslationCards, readerSessionUserId]);
+
+  useEffect(() => {
+    if (
+      !readerSessionUserId ||
+      readerSessionHydratedUserId !== readerSessionUserId
+    ) {
+      return;
+    }
+
+    updateReaderSession(readerSessionUserId, {
+      isLibraryPaneOpen,
+      isPinsPaneOpen,
+      libraryPaneWidth,
+      pinsPaneWidth,
+      readerMode,
+      selectionMode,
+    });
+  }, [
+    isLibraryPaneOpen,
+    isPinsPaneOpen,
+    libraryPaneWidth,
+    pinsPaneWidth,
+    readerMode,
+    readerSessionHydratedUserId,
+    readerSessionUserId,
+    selectionMode,
+  ]);
+
+  useEffect(() => {
+    if (
+      !readerSessionUserId ||
+      readerSessionHydratedUserId !== readerSessionUserId ||
+      !currentEntry
+    ) {
+      return;
+    }
+
+    updateReaderSession(readerSessionUserId, {
+      activeCloudDocumentId: currentEntry.cloudDocumentId,
+      activeFingerprint: currentEntry.fingerprint,
+    });
+  }, [
+    currentEntry?.cloudDocumentId,
+    currentEntry?.fingerprint,
+    readerSessionHydratedUserId,
+    readerSessionUserId,
+  ]);
 
   useEffect(() => {
     const handleCloudSyncError = (event: Event) => {
@@ -479,6 +581,46 @@ export function ReaderShell() {
     },
     [applyPinnedTranslationCards, refreshLibrary],
   );
+
+  useEffect(() => {
+    if (
+      !readerSessionUserId ||
+      readerSessionHydratedUserId !== readerSessionUserId ||
+      !isLibraryLoaded ||
+      autoRestoreUserIdRef.current === readerSessionUserId
+    ) {
+      return;
+    }
+
+    if (currentEntry) {
+      autoRestoreUserIdRef.current = readerSessionUserId;
+      return;
+    }
+
+    const savedSession = getReaderSession(readerSessionUserId);
+    const savedEntry = savedSession
+      ? libraryEntries.find((entry) =>
+        entry.cloudDocumentId === savedSession.activeCloudDocumentId ||
+        entry.fingerprint === savedSession.activeFingerprint
+      )
+      : undefined;
+    const restoreEntry = savedEntry ?? getLatestLibraryEntry(libraryEntries);
+
+    autoRestoreUserIdRef.current = readerSessionUserId;
+
+    if (!restoreEntry) {
+      return;
+    }
+
+    void handleOpenHistory(restoreEntry);
+  }, [
+    currentEntry,
+    handleOpenHistory,
+    isLibraryLoaded,
+    libraryEntries,
+    readerSessionHydratedUserId,
+    readerSessionUserId,
+  ]);
 
   const handleDocumentLoadError = useCallback(
     (fingerprint: string, message: string) => {
@@ -889,6 +1031,13 @@ export function ReaderShell() {
         await deletePdfLocalData(fingerprint);
       }
 
+      if (readerSessionUserId) {
+        clearReaderSessionDocument(readerSessionUserId, {
+          cloudDocumentId,
+          fingerprint,
+        });
+      }
+
       if (damagedLibraryFingerprint === fingerprint) {
         setDamagedLibraryFingerprint(undefined);
         setStatusMessage(undefined);
@@ -914,6 +1063,7 @@ export function ReaderShell() {
       applyPinnedTranslationCards,
       clearPinnedTranslationCardSaveTimer,
       libraryEntries,
+      readerSessionUserId,
       refreshLibrary,
     ],
   );
@@ -1538,6 +1688,16 @@ function resolvePdfDeleteTarget(
   return {
     fingerprint: target,
   };
+}
+
+function getLatestLibraryEntry(entries: CloudPdfLibraryEntry[]) {
+  return entries.reduce<CloudPdfLibraryEntry | undefined>((latestEntry, entry) => {
+    if (!latestEntry || entry.lastOpenedAt > latestEntry.lastOpenedAt) {
+      return entry;
+    }
+
+    return latestEntry;
+  }, undefined);
 }
 
 function clamp(value: number, min: number, max: number) {
