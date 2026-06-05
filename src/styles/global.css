@@ -650,6 +650,18 @@ button {
   cursor: pointer;
 }
 
+.pdf-dropzone--compact .pdf-dropzone-trigger {
+  width: 100%;
+  min-width: 0;
+}
+
+.pdf-dropzone--compact .pdf-dropzone-trigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pdf-dropzone-trigger:hover {
   border-color: #aab5c3;
   color: var(--accent-strong);

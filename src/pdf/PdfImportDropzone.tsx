@@ -14,10 +14,12 @@ export function PdfImportDropzone({
 }: PdfImportDropzoneProps) {
   const inputId = useId();
   const [isDragging, setIsDragging] = useState(false);
+  const importLabel = variant === "compact" ? "Import" : "Import PDF or Package";
+  const importTitle = "Import PDF or reading package";
 
-  const importFirstPdf = useCallback(
+  const importFirstSupportedFile = useCallback(
     (files: FileList | File[]) => {
-      const pdfFile = Array.from(files).find(isPdfFile);
+      const pdfFile = Array.from(files).find(isSupportedImportFile);
 
       if (pdfFile) {
         onImport(pdfFile);
@@ -47,30 +49,43 @@ export function PdfImportDropzone({
       onDrop={(event) => {
         event.preventDefault();
         setIsDragging(false);
-        importFirstPdf(event.dataTransfer.files);
+        importFirstSupportedFile(event.dataTransfer.files);
       }}
     >
       <input
         id={inputId}
         type="file"
-        accept="application/pdf,.pdf"
+        accept="application/pdf,.pdf,.ptrx,.pdftr.zip,application/zip"
         disabled={isImporting}
         onChange={(event) => {
           if (event.target.files) {
-            importFirstPdf(event.target.files);
+            importFirstSupportedFile(event.target.files);
           }
           event.currentTarget.value = "";
         }}
       />
-      <label className="pdf-dropzone-trigger" htmlFor={inputId}>
+      <label
+        aria-label={importTitle}
+        className="pdf-dropzone-trigger"
+        htmlFor={inputId}
+        title={importTitle}
+      >
         <Upload aria-hidden="true" size={18} strokeWidth={2} />
-        <span>{isImporting ? "Importing..." : "Import PDF"}</span>
+        <span>{isImporting ? "Importing..." : importLabel}</span>
       </label>
-      {variant === "full" ? <p>Choose a PDF or drop it here.</p> : null}
+      {variant === "full" ? <p>Choose a PDF or reading package, or drop it here.</p> : null}
     </div>
   );
 }
 
-function isPdfFile(file: File) {
-  return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+function isSupportedImportFile(file: File) {
+  const name = file.name.toLowerCase();
+
+  return (
+    file.type === "application/pdf" ||
+    file.type === "application/zip" ||
+    name.endsWith(".pdf") ||
+    name.endsWith(".ptrx") ||
+    name.endsWith(".pdftr.zip")
+  );
 }

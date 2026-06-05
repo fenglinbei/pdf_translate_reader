@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import {
   Activity,
+  Archive,
   Check,
   Combine,
+  Download,
   Languages,
   LogOut,
   MousePointer2,
@@ -15,7 +17,11 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { deletePdfLocalData, type ReadingPositionUpdate } from "../cache/pdfLibraryRepository";
+import {
+  deletePdfLocalData,
+  updatePdfReadingPosition,
+  type ReadingPositionUpdate,
+} from "../cache/pdfLibraryRepository";
 import { useAuth } from "../auth/AuthProvider";
 import {
   deleteCloudPdfDocument,
@@ -33,6 +39,14 @@ import {
   getCloudSyncStatusDetail,
 } from "../cloud/syncStatus";
 import { PROJECT_CONFIG } from "../config/projectConfig";
+import {
+  createDocumentArchive,
+  importDocumentArchiveState,
+  isDocumentArchiveFile,
+  parseDocumentArchive,
+} from "../importExport/documentArchive";
+import { downloadBlob, replaceFileExtension } from "../importExport/download";
+import type { DocumentArchiveDocument } from "../importExport/archiveTypes";
 import { PdfImportDropzone } from "../pdf/PdfImportDropzone";
 import { PdfLibrary } from "../pdf/PdfLibrary";
 import { createPdfFingerprint } from "../pdf/pdfFingerprint";
@@ -179,6 +193,7 @@ export function ReaderShell() {
   );
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
   const [statusMessage, setStatusMessage] = useState<string>();
+  const [isExporting, setIsExporting] = useState(false);
   const [cloudSyncMessage, setCloudSyncMessage] = useState("Cloud sync is ready.");
   const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>("idle");
   const [damagedLibraryFingerprint, setDamagedLibraryFingerprint] = useState<string>();
@@ -528,12 +543,44 @@ export function ReaderShell() {
       setDamagedLibraryFingerprint(undefined);
 
       try {
-        const identity = await createPdfFingerprint(file);
-        const entry = await importPdfToCloud(file, identity);
-        if (entry.cloudDocumentId) {
-          await hydrateCloudDocumentState(entry.cloudDocumentId, entry.fingerprint).catch(() => {
-            setStatusMessage("Could not sync cloud document state.");
+        let entry: PdfLibraryEntry;
+
+        if (isDocumentArchiveFile(file)) {
+          const archive = await parseDocumentArchive(file);
+          const identity = await createPdfFingerprint(archive.pdfFile);
+          const expectedContentSha256 = archive.manifest.document.contentSha256;
+
+          if (expectedContentSha256 && expectedContentSha256 !== identity.contentSha256) {
+            throw new Error("The reading package PDF does not match its saved content hash.");
+          }
+
+          entry = await importPdfToCloud(archive.pdfFile, {
+            ...identity,
+            fileName: archive.manifest.document.fileName || identity.fileName,
+            pdfMetadata: identity.pdfMetadata ?? archive.manifest.document.pdfMetadata,
           });
+
+          if (entry.cloudDocumentId) {
+            await hydrateCloudDocumentState(entry.cloudDocumentId, entry.fingerprint).catch(() => {
+              setStatusMessage("Could not sync cloud document state.");
+            });
+          }
+
+          entry = await applyArchiveReadingPosition(entry, archive.manifest.document);
+          await importDocumentArchiveState({
+            entry,
+            mode: "merge",
+            state: archive.manifest.state,
+          });
+        } else {
+          const identity = await createPdfFingerprint(file);
+
+          entry = await importPdfToCloud(file, identity);
+          if (entry.cloudDocumentId) {
+            await hydrateCloudDocumentState(entry.cloudDocumentId, entry.fingerprint).catch(() => {
+              setStatusMessage("Could not sync cloud document state.");
+            });
+          }
         }
 
         setCurrentEntry(entry);
@@ -1017,6 +1064,44 @@ export function ReaderShell() {
     await clearTranslationCache();
   }, []);
 
+  const flushPinnedTranslationCards = useCallback(async () => {
+    const cards = pinnedTranslationCardsRef.current;
+
+    for (const card of cards) {
+      clearPinnedTranslationCardSaveTimer(card.key);
+    }
+
+    await Promise.all(cards.map((card) => putPinnedTranslationCard(card)));
+  }, [clearPinnedTranslationCardSaveTimer]);
+
+  const handleExportPdf = useCallback(() => {
+    if (!currentEntry) {
+      return;
+    }
+
+    downloadBlob(currentEntry.blob, currentEntry.fileName);
+  }, [currentEntry]);
+
+  const handleExportReadingPackage = useCallback(async () => {
+    if (!currentEntry) {
+      return;
+    }
+
+    setIsExporting(true);
+    setStatusMessage(undefined);
+
+    try {
+      await flushPinnedTranslationCards();
+      const archive = await createDocumentArchive(currentEntry);
+
+      downloadBlob(archive, replaceFileExtension(currentEntry.fileName, ".ptrx"));
+    } catch (error) {
+      setStatusMessage(getStorageErrorMessage(error, "Could not export this reading package."));
+    } finally {
+      setIsExporting(false);
+    }
+  }, [currentEntry, flushPinnedTranslationCards]);
+
   const handleDeletePdfData = useCallback(
     async (target: CloudPdfLibraryEntry | PdfLibraryEntry | string) => {
       const { cloudDocumentId, fingerprint } = resolvePdfDeleteTarget(
@@ -1304,6 +1389,33 @@ export function ReaderShell() {
       </button>
     </>
   );
+  const renderDocumentHeaderControls = () => (
+    <div className="pdf-sidebar-toolbar" aria-label="Reader and export controls">
+      {renderSidebarToggleButtons()}
+      <button
+        aria-label="Export PDF"
+        className="icon-button"
+        disabled={isExporting}
+        onClick={handleExportPdf}
+        title="Export PDF"
+        type="button"
+      >
+        <Download aria-hidden="true" size={17} strokeWidth={2} />
+      </button>
+      <button
+        aria-label="Export reading package"
+        className="icon-button"
+        disabled={isExporting}
+        onClick={() => {
+          void handleExportReadingPackage();
+        }}
+        title="Export reading package"
+        type="button"
+      >
+        <Archive aria-hidden="true" size={17} strokeWidth={2} />
+      </button>
+    </div>
+  );
 
   return (
     <div className="app-shell">
@@ -1466,11 +1578,7 @@ export function ReaderShell() {
               activeTranslationCardZIndex={activeTranslationCardZIndex}
               activeSelection={sentenceSelection}
               entry={currentEntry}
-              headerControls={
-                <div className="pdf-sidebar-toolbar" aria-label="Reader side panels">
-                  {renderSidebarToggleButtons()}
-                </div>
-              }
+              headerControls={renderDocumentHeaderControls()}
               locateRequest={locateRequest}
               onActivateTranslationCard={handleActivateTranslationCard}
               onCreateAnnotation={handleCreateAnnotation}
@@ -1688,6 +1796,59 @@ function resolvePdfDeleteTarget(
   return {
     fingerprint: target,
   };
+}
+
+async function applyArchiveReadingPosition(
+  entry: PdfLibraryEntry,
+  document: DocumentArchiveDocument,
+) {
+  const position = getArchiveReadingPosition(document);
+
+  if (!position || hasReadingPosition(entry)) {
+    return entry;
+  }
+
+  if (entry.cloudDocumentId) {
+    const updatedEntry = await updateCloudReadingPosition(entry.cloudDocumentId, position);
+
+    return {
+      ...entry,
+      lastOpenedAt: updatedEntry.lastOpenedAt,
+      lastPageIndex: updatedEntry.lastPageIndex,
+      lastScrollTop: updatedEntry.lastScrollTop,
+      lastZoom: updatedEntry.lastZoom,
+    };
+  }
+
+  return await updatePdfReadingPosition(entry.fingerprint, position) ?? entry;
+}
+
+function getArchiveReadingPosition(
+  document: DocumentArchiveDocument,
+): ReadingPositionUpdate | undefined {
+  const position: ReadingPositionUpdate = {};
+
+  if (typeof document.lastPageIndex === "number") {
+    position.lastPageIndex = document.lastPageIndex;
+  }
+
+  if (typeof document.lastScrollTop === "number") {
+    position.lastScrollTop = document.lastScrollTop;
+  }
+
+  if (typeof document.lastZoom === "number") {
+    position.lastZoom = document.lastZoom;
+  }
+
+  return hasReadingPosition(position) ? position : undefined;
+}
+
+function hasReadingPosition(position: ReadingPositionUpdate) {
+  return (
+    typeof position.lastPageIndex === "number" ||
+    typeof position.lastScrollTop === "number" ||
+    typeof position.lastZoom === "number"
+  );
 }
 
 function getLatestLibraryEntry(entries: CloudPdfLibraryEntry[]) {
