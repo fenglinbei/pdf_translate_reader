@@ -1613,11 +1613,35 @@ button {
   margin: 7px 0;
   overflow-x: auto;
   overflow-y: hidden;
-  padding-bottom: 2px;
+  padding-bottom: 1px;
+  scrollbar-width: none;
 }
 
 .rich-math-text-math--display .katex-display {
   margin: 0;
+}
+
+.rich-math-text-math--display:hover,
+.rich-math-text-math--display:focus-within {
+  scrollbar-width: thin;
+}
+
+.rich-math-text-math--display::-webkit-scrollbar {
+  height: 0;
+}
+
+.rich-math-text-math--display:hover::-webkit-scrollbar,
+.rich-math-text-math--display:focus-within::-webkit-scrollbar {
+  height: 6px;
+}
+
+.rich-math-text-math--display::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(111, 121, 135, 0.42);
+}
+
+.rich-math-text-math--display::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .rich-math-text-math-fallback {
@@ -1635,6 +1659,30 @@ button {
   max-width: 100%;
   margin: 7px 0;
   overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.rich-math-text-math-fallback--display:hover,
+.rich-math-text-math-fallback--display:focus-within {
+  scrollbar-width: thin;
+}
+
+.rich-math-text-math-fallback--display::-webkit-scrollbar {
+  height: 0;
+}
+
+.rich-math-text-math-fallback--display:hover::-webkit-scrollbar,
+.rich-math-text-math-fallback--display:focus-within::-webkit-scrollbar {
+  height: 6px;
+}
+
+.rich-math-text-math-fallback--display::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(111, 121, 135, 0.42);
+}
+
+.rich-math-text-math-fallback--display::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .pinned-translation-card-source-block {
