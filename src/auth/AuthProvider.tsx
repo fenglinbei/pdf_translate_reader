@@ -118,7 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { error } = await client.auth.signOut();
 
       if (error) {
-        throw error;
+        await client.auth.signOut({ scope: "local" }).catch(() => undefined);
       }
 
       clearAuthSessionSnapshot();
