@@ -18,6 +18,7 @@ import { createTranslationCacheKey } from "./cacheKey";
 import { TRANSLATION_PROMPT_VERSION } from "./defaults";
 import { streamTranslation } from "./translationClient";
 import { getTranslationCacheEntry, putTranslationCacheEntry } from "./translationRepository";
+import { RichMathText } from "./RichMathText";
 import type {
   FloatingTranslationCardView,
   TranslationCardPlacement,
@@ -974,13 +975,21 @@ export function TranslationPopover({
         <div className="translation-popover-section">
           <div className="translation-popover-label">{t("translation.title")}</div>
           <div className={`translation-popover-output translation-popover-output--${status}`}>
-            {status === "error" ? errorMessage : translation || t("translation.translating")}
+            {status === "error" ? (
+              errorMessage
+            ) : translation ? (
+              <RichMathText text={translation} />
+            ) : (
+              t("translation.translating")
+            )}
           </div>
         </div>
 
         <div className="translation-popover-section">
           <div className="translation-popover-label">{t("translation.original")}</div>
-          <div className="translation-popover-source">{selection.targetSentence}</div>
+          <div className="translation-popover-source">
+            <RichMathText text={selection.targetSentence} />
+          </div>
         </div>
 
         {usage || translationSource === "cache" || cacheWarning ? (

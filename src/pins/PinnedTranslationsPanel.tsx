@@ -38,6 +38,7 @@ import {
 } from "./pinRepository";
 import { putApiCallLog } from "../translation/apiLogRepository";
 import { getTranslationErrorMessage } from "../translation/errors";
+import { RichMathText } from "../translation/RichMathText";
 
 type PinnedTranslationsPanelProps = {
   focusRequest?: PinPanelFocusRequest;
@@ -665,7 +666,7 @@ export function PinnedTranslationsPanel({
                     }`}
                     id={sourceElementId}
                   >
-                    {pin.targetSentence}
+                    <RichMathText text={pin.targetSentence} />
                   </div>
                   {shouldShowSourceToggle ? (
                     <button
@@ -797,9 +798,15 @@ export function PinnedTranslationsPanel({
               ) : null}
               {shouldShowTranslation ? (
                 <div className={`pinned-translation-card-output pinned-translation-card-output--${runtimeState?.status ?? "success"}`}>
-                  {isRetranslating
-                    ? runtimeState?.draftTranslation || t("annotation.retranslating")
-                    : pin.translation}
+                  {isRetranslating ? (
+                    runtimeState?.draftTranslation ? (
+                      <RichMathText text={runtimeState.draftTranslation} />
+                    ) : (
+                      t("annotation.retranslating")
+                    )
+                  ) : (
+                    <RichMathText text={pin.translation} />
+                  )}
                 </div>
               ) : null}
               {runtimeState?.status === "error" ? (
