@@ -1340,7 +1340,7 @@ button {
   position: absolute;
   display: grid;
   min-width: 224px;
-  max-width: min(320px, 72vw);
+  max-width: min(var(--selection-action-popover-width, 260px), 72vw);
   padding: 8px;
   border: 1px solid rgba(184, 192, 204, 0.92);
   border-radius: 8px;
@@ -1348,6 +1348,12 @@ button {
   background: rgba(255, 253, 250, 0.98);
   box-shadow: 0 16px 36px rgba(23, 32, 45, 0.2);
   pointer-events: auto;
+  z-index: 90;
+}
+
+.queued-selection-popover {
+  width: max-content;
+  min-width: 0;
 }
 
 .mobile-selection-confirm-bar {
@@ -1356,13 +1362,13 @@ button {
 
 .select-action-command-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: auto auto auto auto;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
 
 .queued-selection-command-row {
-  grid-template-columns: minmax(0, 1fr) minmax(0, auto) auto auto;
+  grid-template-columns: auto auto auto auto;
 }
 
 .select-action-word-count {
@@ -1399,7 +1405,7 @@ button {
 }
 
 .select-action-command-button--primary {
-  max-width: 190px;
+  max-width: 152px;
   border-color: rgba(37, 99, 235, 0.36);
   color: #ffffff;
   background: var(--accent);
@@ -3012,6 +3018,11 @@ button {
 
   .select-action-command-button {
     min-height: 36px;
+  }
+
+  .select-action-command-row {
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    gap: 6px;
   }
 
   .mobile-selection-confirm-bar {

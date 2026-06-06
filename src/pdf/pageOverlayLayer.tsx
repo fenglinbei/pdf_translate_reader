@@ -298,6 +298,7 @@ export function PageOverlayLayer({
           style: activePinnedCard.style,
         }
       : popoverPlacement;
+  const foregroundActionZIndex = activeTranslationCardZIndex + 2;
 
   return (
     <div className="pdf-page-overlay" ref={overlayRef}>
@@ -395,7 +396,10 @@ export function PageOverlayLayer({
           onUndo={onUndoQueuedSelection}
           placement={queuedActionPlacement.placement}
           readerMode={readerMode}
-          style={queuedActionPlacement.style}
+          style={{
+            ...queuedActionPlacement.style,
+            zIndex: foregroundActionZIndex,
+          }}
         />
       ) : null}
       {hasDraftSelection ? (
@@ -478,7 +482,10 @@ export function PageOverlayLayer({
               }
               placement={activeSelectionActionPlacement.placement}
               selection={activePopoverSelection}
-              style={activeSelectionActionPlacement.style}
+              style={{
+                ...activeSelectionActionPlacement.style,
+                zIndex: foregroundActionZIndex,
+              }}
             />
           ) : activeSelectionTranslationPlacement ? (
             <TranslationPopover

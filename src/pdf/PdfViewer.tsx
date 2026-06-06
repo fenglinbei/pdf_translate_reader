@@ -1698,6 +1698,7 @@ const PdfPageView = memo(function PdfPageView({
     activeTranslationCardZIndex,
     pageIndex,
     pinnedTranslationCards,
+    queuedSelections: queuedCrossSelections,
   });
   const pageStyle = useMemo<PdfPageStyle>(
     () =>
@@ -1903,11 +1904,13 @@ function getTranslationCardPageZIndex({
   activeTranslationCardZIndex,
   pageIndex,
   pinnedTranslationCards,
+  queuedSelections,
 }: {
   activeSelection?: SentenceSelection;
   activeTranslationCardZIndex: number;
   pageIndex: number;
   pinnedTranslationCards: PinnedTranslationCard[];
+  queuedSelections: SentenceSelection[];
 }) {
   let pageZIndex: number | undefined;
 
@@ -1916,7 +1919,10 @@ function getTranslationCardPageZIndex({
       isSameSelectionTarget(card.selection, activeSelection),
     );
 
-    pageZIndex = activePinnedCard?.zIndex ?? activeTranslationCardZIndex;
+    pageZIndex = Math.max(
+      activePinnedCard?.zIndex ?? 0,
+      activeTranslationCardZIndex + 2,
+    );
   }
 
   for (const card of pinnedTranslationCards) {
@@ -1925,6 +1931,12 @@ function getTranslationCardPageZIndex({
     }
 
     pageZIndex = Math.max(pageZIndex ?? 0, card.zIndex);
+  }
+
+  const queuedActionSelection = queuedSelections[queuedSelections.length - 1];
+
+  if (hasPopoverAnchorOnPage(queuedActionSelection, pageIndex)) {
+    pageZIndex = Math.max(pageZIndex ?? 0, activeTranslationCardZIndex + 3);
   }
 
   return pageZIndex;
