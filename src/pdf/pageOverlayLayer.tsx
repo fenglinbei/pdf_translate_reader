@@ -83,6 +83,7 @@ type PageOverlayLayerProps = {
   readerMode: ReaderMode;
   selection?: SentenceSelection;
   settings: AppSettings;
+  suppressSelectionActions?: boolean;
 };
 
 export function PageOverlayLayer({
@@ -122,6 +123,7 @@ export function PageOverlayLayer({
   readerMode,
   selection,
   settings,
+  suppressSelectionActions = false,
 }: PageOverlayLayerProps) {
   const { t } = useI18n();
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -144,6 +146,11 @@ export function PageOverlayLayer({
     getSelectionRectsOnPage(queuedSelection, pageIndex, pageWidth, pageHeight),
   );
   const queuedActionSelection = queuedSelections[queuedSelections.length - 1];
+  const queuedActionKey = queuedActionSelection
+    ? `${queuedActionSelection.pdfFingerprint}:${queuedActionSelection.pageIndex}:${
+        queuedActionSelection.normalizedSentence
+      }:${queuedActionSelection.regions?.length ?? 0}`
+    : "";
   const queuedActionRectSource = queuedActionSelection
     ? getAnchorRectSourceOnPage(queuedActionSelection, pageIndex)
     : undefined;
@@ -196,7 +203,7 @@ export function PageOverlayLayer({
     copySelection && hasCopySelection
       ? getSelectionRectsOnPage(copySelection, pageIndex, pageWidth, pageHeight)
       : [];
-  const needsPopoverPlacement = Boolean(selection && selectionAnchorRects.length > 0);
+  const needsPopoverPlacement = Boolean(selectionAnchorRects.length > 0 || queuedActionRects.length > 0);
 
   useEffect(() => {
     if (!needsPopoverPlacement) {
@@ -237,7 +244,7 @@ export function PageOverlayLayer({
       currentScrollElement.removeEventListener("scroll", updatePageGutters);
       window.removeEventListener("resize", updatePageGutters);
     };
-  }, [needsPopoverPlacement, pageHeight, pageWidth, selectionKey]);
+  }, [needsPopoverPlacement, pageHeight, pageWidth, queuedActionKey, selectionKey]);
 
   if (
     !hasSelection &&
@@ -261,15 +268,17 @@ export function PageOverlayLayer({
         })
       : undefined;
   const actionPopoverPlacement =
-    selection && selectionAnchorRects.length > 0
+    !suppressSelectionActions && selection && selectionAnchorRects.length > 0
       ? getActionPopoverPlacement(getSelectionBounds(selectionAnchorRects), {
+          gutters: pageGutters,
           height: pageHeight,
           width: pageWidth,
         })
       : undefined;
   const queuedActionPlacement =
-    queuedActionRects.length > 0
+    !suppressSelectionActions && queuedActionRects.length > 0
       ? getActionPopoverPlacement(getSelectionBounds(queuedActionRects), {
+          gutters: pageGutters,
           height: pageHeight,
           width: pageWidth,
         })
@@ -278,13 +287,17 @@ export function PageOverlayLayer({
     selection && (popoverPlacement || actionPopoverPlacement)
       ? hydrateSelectionForCurrentPage(selection, pageIndex, pageWidth, pageHeight)
       : undefined;
-  const activeSelectionActionPlacement = actionPopoverPlacement ?? popoverPlacement;
-  const activeSelectionTranslationPlacement = activePinnedCard
-    ? {
-        placement: activePinnedCard.placement,
-        style: activePinnedCard.style,
-      }
-    : popoverPlacement;
+  const activeSelectionActionPlacement = suppressSelectionActions
+    ? undefined
+    : actionPopoverPlacement ?? popoverPlacement;
+  const activeSelectionTranslationPlacement = suppressSelectionActions
+    ? undefined
+    : activePinnedCard
+      ? {
+          placement: activePinnedCard.placement,
+          style: activePinnedCard.style,
+        }
+      : popoverPlacement;
 
   return (
     <div className="pdf-page-overlay" ref={overlayRef}>

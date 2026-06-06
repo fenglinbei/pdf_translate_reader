@@ -235,6 +235,7 @@ export function PdfViewer({
   const [isPanning, setIsPanning] = useState(false);
   const [draftSelection, setDraftSelection] = useState<SentenceSelection>();
   const [queuedCrossSelections, setQueuedCrossSelections] = useState<SentenceSelection[]>([]);
+  const [areSelectionActionsSuppressed, setAreSelectionActionsSuppressed] = useState(false);
   const [copyNotice, setCopyNotice] = useState<string>();
   const [copiedSelection, setCopiedSelection] = useState<SentenceSelection>();
   const [confirmedMobileReaderMode, setConfirmedMobileReaderMode] = useState<ReaderMode>();
@@ -319,6 +320,7 @@ export function PdfViewer({
     setUserZoom(restoredZoom);
     setDraftSelection(undefined);
     setQueuedCrossSelections([]);
+    setAreSelectionActionsSuppressed(false);
     pageIndexesRef.current = new Map();
     textContentCacheRef.current = new Map();
     draftSelectionRef.current = undefined;
@@ -485,6 +487,7 @@ export function PdfViewer({
     setCopyNotice(undefined);
     setCopiedSelection(undefined);
     setDraftSelection(undefined);
+    setAreSelectionActionsSuppressed(false);
     window.getSelection()?.removeAllRanges();
   }, [readerMode]);
 
@@ -496,6 +499,7 @@ export function PdfViewer({
     setCopyNotice(undefined);
     setCopiedSelection(undefined);
     setDraftSelection(undefined);
+    setAreSelectionActionsSuppressed(false);
     if (selectionMode !== "cross") {
       queuedCrossSelectionsRef.current = [];
       setQueuedCrossSelections([]);
@@ -521,6 +525,7 @@ export function PdfViewer({
     setCopyNotice(undefined);
     setCopiedSelection(undefined);
     setDraftSelection(undefined);
+    setAreSelectionActionsSuppressed(false);
 
     if (!isMobileSegmentedSelectionMode) {
       queuedCrossSelectionsRef.current = [];
@@ -866,6 +871,7 @@ export function PdfViewer({
       );
 
       if (existingIndex >= 0) {
+        setAreSelectionActionsSuppressed(false);
         onSentenceSelectionChange(undefined);
         showSelectionNotice(t("pdf.regionAlreadySelected", { count: existingIndex + 1 }));
         return;
@@ -875,6 +881,7 @@ export function PdfViewer({
 
       queuedCrossSelectionsRef.current = nextSelections;
       setQueuedCrossSelections(nextSelections);
+      setAreSelectionActionsSuppressed(false);
       onSentenceSelectionChange(undefined);
       showSelectionNotice(t("pdf.addedRegion", { count: nextSelections.length }));
     },
@@ -894,6 +901,7 @@ export function PdfViewer({
 
     queuedCrossSelectionsRef.current = [];
     setQueuedCrossSelections([]);
+    setAreSelectionActionsSuppressed(false);
     if (effectiveReaderMode === "select") {
       onSentenceSelectionChange(addPageMetricsToSelection(selection));
       return;
@@ -911,6 +919,7 @@ export function PdfViewer({
   ]);
 
   const handleUndoCrossSelection = useCallback(() => {
+    setAreSelectionActionsSuppressed(false);
     setQueuedCrossSelections((currentSelections) => {
       const nextSelections = currentSelections.slice(0, -1);
 
@@ -922,6 +931,7 @@ export function PdfViewer({
   const handleClearCrossSelection = useCallback(() => {
     queuedCrossSelectionsRef.current = [];
     setQueuedCrossSelections([]);
+    setAreSelectionActionsSuppressed(false);
     onSentenceSelectionChange(undefined);
   }, [onSentenceSelectionChange]);
 
@@ -938,6 +948,8 @@ export function PdfViewer({
       setDraftSelection(undefined);
       setMobilePendingSelection(undefined);
       setConfirmedMobileReaderMode(undefined);
+      setAreSelectionActionsSuppressed(true);
+      onSentenceSelectionChange(undefined);
       spanDragRef.current = {
         latestHit: pointerHit,
         pointerId: event.pointerId,
@@ -984,6 +996,8 @@ export function PdfViewer({
 
     draftSelectionRef.current = undefined;
     setDraftSelection(undefined);
+    setAreSelectionActionsSuppressed(true);
+    onSentenceSelectionChange(undefined);
     spanDragRef.current = {
       latestHit: pointerHit,
       pointerId: event.pointerId,
@@ -995,8 +1009,8 @@ export function PdfViewer({
     capturePointer(event.currentTarget, event.pointerId);
     event.preventDefault();
   }, [
-    entry.fingerprint,
     isMobileSegmentedSelectionMode,
+    onSentenceSelectionChange,
   ]);
 
   const handleTextPointerMove = useCallback(
@@ -1115,6 +1129,7 @@ export function PdfViewer({
           draftSelectionRef.current = selectionWithMetrics;
           setDraftSelection(selectionWithMetrics);
           setMobilePendingSelection(selectionWithMetrics);
+          setAreSelectionActionsSuppressed(false);
           return;
         }
 
@@ -1123,6 +1138,7 @@ export function PdfViewer({
         if (isRegionSelectionMode) {
           addCrossSelectionPart(selectionWithMetrics);
         } else {
+          setAreSelectionActionsSuppressed(false);
           onSentenceSelectionChange(selectionWithMetrics);
         }
         return;
@@ -1131,6 +1147,7 @@ export function PdfViewer({
       draftSelectionRef.current = undefined;
       setDraftSelection(undefined);
       setMobilePendingSelection(undefined);
+      setAreSelectionActionsSuppressed(false);
     },
     [
       addPageMetricsToSelection,
@@ -1157,6 +1174,7 @@ export function PdfViewer({
       draftSelectionRef.current = undefined;
       setDraftSelection(undefined);
       setMobilePendingSelection(undefined);
+      setAreSelectionActionsSuppressed(false);
     }
   }, []);
 
@@ -1488,6 +1506,7 @@ export function PdfViewer({
                     copySelection={copiedSelection}
                     locatedPinId={locatedPinId}
                     settings={settings}
+                    suppressSelectionActions={areSelectionActionsSuppressed}
                   />
                 ))
               : <div className="reader-message">{t("pdf.loadingWithDots")}</div>}
@@ -1614,6 +1633,7 @@ const PdfPageView = memo(function PdfPageView({
   copyNotice,
   copySelection,
   settings,
+  suppressSelectionActions,
 }: {
   activeMobilePinnedCardKey?: string;
   activeTranslationCardZIndex: number;
@@ -1667,6 +1687,7 @@ const PdfPageView = memo(function PdfPageView({
   copyNotice?: string;
   copySelection?: SentenceSelection;
   settings: AppSettings;
+  suppressSelectionActions: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pageRef = useRef<HTMLDivElement>(null);
@@ -1867,6 +1888,7 @@ const PdfPageView = memo(function PdfPageView({
             draftSelection={draftSelection}
             selection={activeSelection}
             settings={settings}
+            suppressSelectionActions={suppressSelectionActions}
           />
         ) : null}
         {renderState === "no-text" ? <div className="pdf-page-error">{OCR_UNSUPPORTED_MESSAGE}</div> : null}
