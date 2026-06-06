@@ -247,6 +247,9 @@ Optional deployment variables:
 SERVER_NAME=example.com PORT=8787 WEB_ROOT=/var/www/pdf-translate-reader bash scripts/deploy-linux-nginx.sh
 ```
 
+For Mathpix PDF parsing behind nginx, set `CLIENT_MAX_BODY_SIZE` high enough
+for uploaded PDFs, for example `CLIENT_MAX_BODY_SIZE=120m`.
+
 The API service runs as the current user by default. Override it if needed:
 
 ```bash

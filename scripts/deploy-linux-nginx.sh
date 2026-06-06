@@ -17,6 +17,7 @@ NGINX_CONF="/etc/nginx/conf.d/${APP_NAME}.conf"
 HTTP_REDIRECT_PORT="${HTTP_REDIRECT_PORT:-80}"
 SSL_CERT_PATH="${SSL_CERT_PATH:-}"
 SSL_KEY_PATH="${SSL_KEY_PATH:-}"
+CLIENT_MAX_BODY_SIZE="${CLIENT_MAX_BODY_SIZE:-120m}"
 
 case "$HTTPS_MODE" in
   edge)
@@ -56,6 +57,7 @@ write_nginx_locations() {
   index index.html;
 
   location /api/ {
+    client_max_body_size ${CLIENT_MAX_BODY_SIZE};
     proxy_pass http://127.0.0.1:${PORT}/api/;
     proxy_http_version 1.1;
     proxy_set_header Host \$host;

@@ -145,6 +145,10 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
 }
 
 async function readErrorMessage(response: Response) {
+  if (response.status === 413) {
+    return "PDF upload is too large for the API gateway. Increase nginx client_max_body_size or lower MATHPIX_MAX_PDF_BYTES.";
+  }
+
   try {
     const payload = await response.json();
 
