@@ -187,6 +187,8 @@ button {
 }
 
 .topbar {
+  position: relative;
+  z-index: 75;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -988,6 +990,8 @@ button {
 }
 
 .pdf-viewer-header {
+  position: relative;
+  z-index: 65;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1084,6 +1088,8 @@ button {
 }
 
 .pdf-scroll-region {
+  position: relative;
+  z-index: 0;
   min-width: 0;
   min-height: 0;
   overflow: auto;
@@ -2580,7 +2586,7 @@ button {
 .settings-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: 90;
   display: grid;
   justify-items: end;
   background: rgba(24, 32, 42, 0.22);
@@ -2969,7 +2975,7 @@ button {
   .mobile-panel-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 50;
+    z-index: 85;
     display: block;
     background: rgba(24, 32, 42, 0.28);
   }

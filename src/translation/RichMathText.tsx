@@ -36,6 +36,7 @@ const DISPLAY_ENVIRONMENTS = [
   "multline*",
 ];
 const HEADING_PATTERN = /^\\(section|subsection|subsubsection|paragraph)\*?\{([^{}]*)\}\s*/;
+const MARKDOWN_HEADING_PATTERN = /^[ \t]{0,3}#{1,6}[ \t]+([^\r\n]+?)(?:[ \t]+#+[ \t]*)?(?:\r?\n|$)/;
 const OVERFLOW_TOLERANCE_PX = 4;
 
 export function RichMathText({ className, scale, text }: RichMathTextProps) {
@@ -211,14 +212,35 @@ function tokenizeRichMathText(input: string): RichMathToken[] {
 function readHeading(input: string, start: number) {
   const match = HEADING_PATTERN.exec(input.slice(start));
 
+  if (match) {
+    return {
+      end: start + match[0].length,
+      text: cleanLatexText(match[2]),
+    };
+  }
+
+  return readMarkdownHeading(input, start);
+}
+
+function readMarkdownHeading(input: string, start: number) {
+  if (!isLineStart(input, start)) {
+    return undefined;
+  }
+
+  const match = MARKDOWN_HEADING_PATTERN.exec(input.slice(start));
+
   if (!match) {
     return undefined;
   }
 
   return {
     end: start + match[0].length,
-    text: cleanLatexText(match[2]),
+    text: cleanMarkdownText(match[1]),
   };
+}
+
+function isLineStart(input: string, start: number) {
+  return start === 0 || input[start - 1] === "\n" || input[start - 1] === "\r";
 }
 
 function readDelimitedMath(
@@ -303,6 +325,13 @@ function cleanLatexText(text: string) {
     .replace(/\\_/g, "_")
     .replace(/\\#/g, "#")
     .replace(/\\\$/g, "$")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanMarkdownText(text: string) {
+  return text
+    .replace(/\\([\\`*_{}\[\]()#+\-.!|>])/g, "$1")
     .replace(/\s+/g, " ")
     .trim();
 }

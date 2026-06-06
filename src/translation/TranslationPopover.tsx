@@ -118,6 +118,7 @@ const CONTENT_SCALE_MAX = 1.35;
 const CONTENT_SCALE_STEP = 0.1;
 const MOBILE_SHEET_MIN_HEIGHT = 220;
 const MOBILE_SHEET_MAX_HEIGHT = 720;
+const MOBILE_SHEET_Z_INDEX = 60;
 const DEFAULT_ANNOTATION_COLOR: AnnotationColor = "yellow";
 const ANNOTATION_COLORS: AnnotationColor[] = ["yellow", "blue", "green", "red"];
 
@@ -821,7 +822,11 @@ export function TranslationPopover({
         : undefined),
       ...(isMobileSheet && mobileSheetHeight ? { height: mobileSheetHeight } : undefined),
       transform: isMobileSheet ? undefined : `translate(${dragOffset.x}px, ${dragOffset.y}px)`,
-      ...(typeof zIndex === "number" ? { zIndex: isMobileSheet ? Math.max(zIndex, 60) : zIndex } : undefined),
+      ...(isMobileSheet
+        ? { zIndex: MOBILE_SHEET_Z_INDEX }
+        : typeof zIndex === "number"
+          ? { zIndex }
+          : undefined),
     }),
     [dragOffset.x, dragOffset.y, isMobileSheet, mobileSheetHeight, popoverSize, style, zIndex],
   );
