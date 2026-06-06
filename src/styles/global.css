@@ -1014,6 +1014,19 @@ button {
   border-right: 1px solid var(--border);
 }
 
+.pdf-export-toolbar {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 6px;
+  padding-right: 7px;
+  border-right: 1px solid var(--border);
+}
+
+.mobile-reader-side-dock {
+  display: none;
+}
+
 .pdf-viewer-heading {
   min-width: 0;
 }
@@ -2831,6 +2844,45 @@ button {
     flex: 0 0 auto;
   }
 
+  .pdf-sidebar-toolbar--pane-toggles {
+    display: none;
+  }
+
+  .mobile-reader-side-dock {
+    display: block;
+  }
+
+  .mobile-reader-side-dock-button {
+    position: fixed;
+    top: 50%;
+    z-index: 35;
+    width: 38px;
+    height: 46px;
+    border-color: rgba(184, 192, 204, 0.92);
+    color: var(--text-muted);
+    background: rgba(255, 253, 250, 0.96);
+    box-shadow: 0 10px 28px rgba(23, 32, 45, 0.18);
+    transform: translateY(-50%);
+  }
+
+  .mobile-reader-side-dock-button--library {
+    left: 0;
+    border-left: 0;
+    border-radius: 0 8px 8px 0;
+  }
+
+  .mobile-reader-side-dock-button--pins {
+    right: 0;
+    border-right: 0;
+    border-radius: 8px 0 0 8px;
+  }
+
+  .mobile-reader-side-dock-button--active {
+    border-color: rgba(37, 99, 235, 0.36);
+    color: var(--accent-strong);
+    background: rgba(255, 253, 250, 0.98);
+  }
+
   .pinned-card-chip {
     display: inline-grid;
   }
@@ -3015,6 +3067,7 @@ button {
   }
 
   .pdf-sidebar-toolbar,
+  .pdf-export-toolbar,
   .cross-selection-toolbar {
     gap: 3px;
     padding-right: 4px;
@@ -3024,6 +3077,11 @@ button {
   .cross-selection-toolbar .icon-button {
     width: 34px;
     height: 34px;
+  }
+
+  .mobile-reader-side-dock-button {
+    width: 34px;
+    height: 44px;
   }
 
   .empty-page-frame {

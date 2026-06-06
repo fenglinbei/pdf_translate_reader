@@ -1390,29 +1390,69 @@ export function ReaderShell() {
     </>
   );
   const renderDocumentHeaderControls = () => (
-    <div className="pdf-sidebar-toolbar" aria-label="Reader and export controls">
-      {renderSidebarToggleButtons()}
+    <>
+      <div className="pdf-sidebar-toolbar pdf-sidebar-toolbar--pane-toggles" aria-label="Reader side panels">
+        {renderSidebarToggleButtons()}
+      </div>
+      <div className="pdf-export-toolbar" aria-label="Export controls">
+        <button
+          aria-label="Export PDF"
+          className="icon-button"
+          disabled={isExporting}
+          onClick={handleExportPdf}
+          title="Export PDF"
+          type="button"
+        >
+          <Download aria-hidden="true" size={17} strokeWidth={2} />
+        </button>
+        <button
+          aria-label="Export reading package"
+          className="icon-button"
+          disabled={isExporting}
+          onClick={() => {
+            void handleExportReadingPackage();
+          }}
+          title="Export reading package"
+          type="button"
+        >
+          <Archive aria-hidden="true" size={17} strokeWidth={2} />
+        </button>
+      </div>
+    </>
+  );
+  const renderMobileReaderSideDock = () => (
+    <div className="mobile-reader-side-dock" aria-label="Reader side panels">
       <button
-        aria-label="Export PDF"
-        className="icon-button"
-        disabled={isExporting}
-        onClick={handleExportPdf}
-        title="Export PDF"
+        aria-label={isLibraryControlOpen ? "Close library pane" : "Open library pane"}
+        aria-pressed={isLibraryControlOpen}
+        className={`icon-button mobile-reader-side-dock-button mobile-reader-side-dock-button--library ${
+          isLibraryControlOpen ? "mobile-reader-side-dock-button--active" : ""
+        }`}
+        onClick={handleLibraryPaneToggle}
+        title={isLibraryControlOpen ? "Close library" : "Open library"}
         type="button"
       >
-        <Download aria-hidden="true" size={17} strokeWidth={2} />
+        {isLibraryControlOpen ? (
+          <PanelLeftClose aria-hidden="true" size={17} strokeWidth={2} />
+        ) : (
+          <PanelLeftOpen aria-hidden="true" size={17} strokeWidth={2} />
+        )}
       </button>
       <button
-        aria-label="Export reading package"
-        className="icon-button"
-        disabled={isExporting}
-        onClick={() => {
-          void handleExportReadingPackage();
-        }}
-        title="Export reading package"
+        aria-label={isPinsControlOpen ? "Close annotations pane" : "Open annotations pane"}
+        aria-pressed={isPinsControlOpen}
+        className={`icon-button mobile-reader-side-dock-button mobile-reader-side-dock-button--pins ${
+          isPinsControlOpen ? "mobile-reader-side-dock-button--active" : ""
+        }`}
+        onClick={handlePinsPaneToggle}
+        title={isPinsControlOpen ? "Close annotations" : "Open annotations"}
         type="button"
       >
-        <Archive aria-hidden="true" size={17} strokeWidth={2} />
+        {isPinsControlOpen ? (
+          <PanelRightClose aria-hidden="true" size={17} strokeWidth={2} />
+        ) : (
+          <PanelRightOpen aria-hidden="true" size={17} strokeWidth={2} />
+        )}
       </button>
     </div>
   );
@@ -1653,6 +1693,7 @@ export function ReaderShell() {
           )}
         </aside>
       </main>
+      {currentEntry ? renderMobileReaderSideDock() : null}
       {mobilePanel ? (
         <div
           className="mobile-panel-backdrop"
