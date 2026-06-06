@@ -35,6 +35,15 @@ import {
 
 const DEFAULT_ANNOTATION_COLOR: AnnotationColor = "yellow";
 const ANNOTATION_COLORS: AnnotationColor[] = ["yellow", "blue", "green", "red"];
+const TRANSLATION_CARD_PORTAL_Z_INDEX_OFFSET = 3000;
+
+type PageViewportRect = {
+  bottom: number;
+  height: number;
+  left: number;
+  top: number;
+  width: number;
+};
 
 type PageOverlayLayerProps = {
   activeMobilePinnedCardKey?: string;
@@ -128,6 +137,13 @@ export function PageOverlayLayer({
   const { t } = useI18n();
   const overlayRef = useRef<HTMLDivElement>(null);
   const [pageGutters, setPageGutters] = useState<PageGutters>({ left: 0, right: 0 });
+  const [pageViewportRect, setPageViewportRect] = useState<PageViewportRect>({
+    bottom: pageHeight,
+    height: pageHeight,
+    left: 0,
+    top: 0,
+    width: pageWidth,
+  });
   const selectionKey = selection
     ? `${selection.pdfFingerprint}:${selection.pageIndex}:${selection.normalizedSentence}:${
         selection.regions?.length ?? 0
@@ -204,9 +220,12 @@ export function PageOverlayLayer({
       ? getSelectionRectsOnPage(copySelection, pageIndex, pageWidth, pageHeight)
       : [];
   const needsPopoverPlacement = Boolean(selectionAnchorRects.length > 0 || queuedActionRects.length > 0);
+  const needsOverlayMetrics = Boolean(
+    needsPopoverPlacement || pinnedTranslationCardsOnPage.length > 0,
+  );
 
   useEffect(() => {
-    if (!needsPopoverPlacement) {
+    if (!needsOverlayMetrics) {
       return undefined;
     }
 
@@ -221,7 +240,7 @@ export function PageOverlayLayer({
     const currentPageElement = pageElement;
     const currentScrollElement = scrollElement;
 
-    function updatePageGutters() {
+    function updatePageMetrics() {
       const pageRect = currentPageElement.getBoundingClientRect();
       const scrollRect = currentScrollElement.getBoundingClientRect();
 
@@ -229,22 +248,36 @@ export function PageOverlayLayer({
         left: Math.max(0, pageRect.left - scrollRect.left),
         right: Math.max(0, scrollRect.right - pageRect.right),
       });
+      setPageViewportRect({
+        bottom: pageRect.bottom,
+        height: pageRect.height,
+        left: pageRect.left,
+        top: pageRect.top,
+        width: pageRect.width,
+      });
     }
 
-    const resizeObserver = new ResizeObserver(updatePageGutters);
+    const resizeObserver = new ResizeObserver(updatePageMetrics);
 
-    updatePageGutters();
+    updatePageMetrics();
     resizeObserver.observe(currentPageElement);
     resizeObserver.observe(currentScrollElement);
-    currentScrollElement.addEventListener("scroll", updatePageGutters, { passive: true });
-    window.addEventListener("resize", updatePageGutters);
+    currentScrollElement.addEventListener("scroll", updatePageMetrics, { passive: true });
+    window.addEventListener("resize", updatePageMetrics);
 
     return () => {
       resizeObserver.disconnect();
-      currentScrollElement.removeEventListener("scroll", updatePageGutters);
-      window.removeEventListener("resize", updatePageGutters);
+      currentScrollElement.removeEventListener("scroll", updatePageMetrics);
+      window.removeEventListener("resize", updatePageMetrics);
     };
-  }, [needsPopoverPlacement, pageHeight, pageWidth, queuedActionKey, selectionKey]);
+  }, [
+    needsOverlayMetrics,
+    pageHeight,
+    pageWidth,
+    pinnedTranslationCardsOnPage.length,
+    queuedActionKey,
+    selectionKey,
+  ]);
 
   if (
     !hasSelection &&
@@ -557,9 +590,18 @@ export function PageOverlayLayer({
               paperContext={paperContext}
               selection={activePopoverSelection}
               settings={settings}
-              style={activeSelectionTranslationPlacement.style}
+              renderInPortal={!isMobileViewport}
+              style={
+                isMobileViewport
+                  ? activeSelectionTranslationPlacement.style
+                  : getViewportPopoverStyle(activeSelectionTranslationPlacement.style, pageViewportRect)
+              }
               view={activePinnedCard?.view}
-              zIndex={activePinnedCard?.zIndex ?? activeTranslationCardZIndex}
+              zIndex={
+                isMobileViewport
+                  ? activePinnedCard?.zIndex ?? activeTranslationCardZIndex
+                  : getTranslationCardPortalZIndex(activePinnedCard?.zIndex ?? activeTranslationCardZIndex)
+              }
             />
           ) : null
         : null}
@@ -665,9 +707,18 @@ export function PageOverlayLayer({
                     paperContext={paperContext}
                     selection={hydratedCardSelection}
                     settings={settings}
-                    style={card.style}
+                    renderInPortal={!isMobileViewport}
+                    style={
+                      isMobileViewport
+                        ? card.style
+                        : getViewportPopoverStyle(card.style, pageViewportRect)
+                    }
                     view={card.view}
-                    zIndex={card.zIndex}
+                    zIndex={
+                      isMobileViewport
+                        ? card.zIndex
+                        : getTranslationCardPortalZIndex(card.zIndex)
+                    }
                   />
                 ) : null}
               </div>
@@ -1229,4 +1280,61 @@ function isSamePinTarget(
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function getTranslationCardPortalZIndex(zIndex: number) {
+  return TRANSLATION_CARD_PORTAL_Z_INDEX_OFFSET + zIndex;
+}
+
+function getViewportPopoverStyle(
+  pageStyle: CSSProperties,
+  pageViewportRect: PageViewportRect,
+): CSSProperties {
+  const viewportStyle: CSSProperties = {
+    ...pageStyle,
+    position: "fixed",
+  };
+  const left = getCssNumericValue(pageStyle.left);
+  const top = getCssNumericValue(pageStyle.top);
+  const bottom = getCssNumericValue(pageStyle.bottom);
+
+  delete viewportStyle.right;
+
+  if (typeof left === "number") {
+    viewportStyle.left = pageViewportRect.left + left;
+  } else {
+    delete viewportStyle.left;
+  }
+
+  if (typeof top === "number") {
+    viewportStyle.top = pageViewportRect.top + top;
+    delete viewportStyle.bottom;
+  } else if (typeof bottom === "number") {
+    viewportStyle.bottom = getViewportHeight() - (pageViewportRect.bottom - bottom);
+    delete viewportStyle.top;
+  } else {
+    delete viewportStyle.top;
+    delete viewportStyle.bottom;
+  }
+
+  return viewportStyle;
+}
+
+function getCssNumericValue(value: CSSProperties[keyof CSSProperties]) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmedValue = value.trim();
+  const numericValue = Number.parseFloat(trimmedValue);
+
+  return Number.isFinite(numericValue) ? numericValue : undefined;
+}
+
+function getViewportHeight() {
+  return typeof window === "undefined" ? 0 : window.innerHeight;
 }

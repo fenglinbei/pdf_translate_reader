@@ -73,6 +73,7 @@ type TranslationPopoverProps = {
   pinSelection?: SentenceSelection;
   placement: TranslationCardPlacement;
   paperContext?: PaperContext;
+  renderInPortal?: boolean;
   selection: SentenceSelection;
   settings: AppSettings;
   style: CSSProperties;
@@ -137,6 +138,7 @@ export function TranslationPopover({
   pinSelection,
   placement,
   paperContext,
+  renderInPortal = false,
   selection,
   settings,
   style,
@@ -1055,7 +1057,7 @@ export function TranslationPopover({
     </div>
   );
 
-  if (isMobileSheet && typeof document !== "undefined") {
+  if ((isMobileSheet || renderInPortal) && typeof document !== "undefined") {
     return createPortal(popover, document.body);
   }
 
