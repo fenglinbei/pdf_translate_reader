@@ -2,6 +2,7 @@ import { getSupabaseAccessToken } from "../auth/supabaseClient";
 import type { PdfLibraryEntry } from "../types/domain";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api";
+const MATHPIX_REQUEST_TIMEOUT_MS = 30_000;
 
 export type MathpixSubmitResponse = {
   deleteRemoteAfterCache?: boolean;
@@ -17,80 +18,111 @@ export type MathpixStatusResponse = {
   status: string;
 };
 
-export async function submitMathpixDocument(entry: PdfLibraryEntry) {
+export async function submitMathpixDocument(entry: PdfLibraryEntry, signal?: AbortSignal) {
   const accessToken = await requireAccessToken();
-  const response = await fetch(`${apiBaseUrl}/mathpix/documents`, {
-    body: entry.blob,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/pdf",
-      "X-PDF-File-Name": encodeURIComponent(entry.fileName),
-    },
-    method: "POST",
-  });
+  const timeout = createTimeoutSignal(signal);
 
-  return readJsonResponse<MathpixSubmitResponse>(response);
-}
-
-export async function getMathpixDocumentStatus(mathpixPdfId: string) {
-  const accessToken = await requireAccessToken();
-  const response = await fetch(
-    `${apiBaseUrl}/mathpix/documents/${encodeURIComponent(mathpixPdfId)}/status`,
-    {
+  try {
+    const response = await fetch(`${apiBaseUrl}/mathpix/documents`, {
+      body: entry.blob,
       headers: {
         Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/pdf",
+        "X-PDF-File-Name": encodeURIComponent(entry.fileName),
       },
-      method: "GET",
-    },
-  );
+      method: "POST",
+      signal: timeout.signal,
+    });
 
-  return readJsonResponse<MathpixStatusResponse>(response);
+    return readJsonResponse<MathpixSubmitResponse>(response);
+  } finally {
+    timeout.dispose();
+  }
+}
+
+export async function getMathpixDocumentStatus(mathpixPdfId: string, signal?: AbortSignal) {
+  const accessToken = await requireAccessToken();
+  const timeout = createTimeoutSignal(signal);
+
+  try {
+    const response = await fetch(
+      `${apiBaseUrl}/mathpix/documents/${encodeURIComponent(mathpixPdfId)}/status`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        method: "GET",
+        signal: timeout.signal,
+      },
+    );
+
+    return readJsonResponse<MathpixStatusResponse>(response);
+  } finally {
+    timeout.dispose();
+  }
 }
 
 export async function getMathpixDocumentResult(
   mathpixPdfId: string,
   format: "lines.json",
+  signal?: AbortSignal,
 ): Promise<unknown>;
 export async function getMathpixDocumentResult(
   mathpixPdfId: string,
   format: "mmd",
+  signal?: AbortSignal,
 ): Promise<string>;
 export async function getMathpixDocumentResult(
   mathpixPdfId: string,
   format: "lines.json" | "mmd",
+  signal?: AbortSignal,
 ) {
   const accessToken = await requireAccessToken();
-  const response = await fetch(
-    `${apiBaseUrl}/mathpix/documents/${encodeURIComponent(mathpixPdfId)}/result?format=${encodeURIComponent(format)}`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
+  const timeout = createTimeoutSignal(signal);
+
+  try {
+    const response = await fetch(
+      `${apiBaseUrl}/mathpix/documents/${encodeURIComponent(mathpixPdfId)}/result?format=${encodeURIComponent(format)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        method: "GET",
+        signal: timeout.signal,
       },
-      method: "GET",
-    },
-  );
+    );
 
-  if (!response.ok) {
-    throw new Error(await readErrorMessage(response));
+    if (!response.ok) {
+      throw new Error(await readErrorMessage(response));
+    }
+
+    return format === "mmd" ? response.text() : response.json();
+  } finally {
+    timeout.dispose();
   }
-
-  return format === "mmd" ? response.text() : response.json();
 }
 
-export async function deleteMathpixRemoteDocument(mathpixPdfId: string) {
+export async function deleteMathpixRemoteDocument(mathpixPdfId: string, signal?: AbortSignal) {
   const accessToken = await requireAccessToken();
-  const response = await fetch(
-    `${apiBaseUrl}/mathpix/documents/${encodeURIComponent(mathpixPdfId)}`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-      method: "DELETE",
-    },
-  );
+  const timeout = createTimeoutSignal(signal);
 
-  if (!response.ok) {
-    throw new Error(await readErrorMessage(response));
+  try {
+    const response = await fetch(
+      `${apiBaseUrl}/mathpix/documents/${encodeURIComponent(mathpixPdfId)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        method: "DELETE",
+        signal: timeout.signal,
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(await readErrorMessage(response));
+    }
+  } finally {
+    timeout.dispose();
   }
 }
 
@@ -124,4 +156,29 @@ async function readErrorMessage(response: Response) {
   }
 
   return response.statusText || `Request failed with status ${response.status}`;
+}
+
+function createTimeoutSignal(parentSignal?: AbortSignal) {
+  const abortController = new AbortController();
+  const timeoutId = window.setTimeout(() => {
+    abortController.abort();
+  }, MATHPIX_REQUEST_TIMEOUT_MS);
+
+  function handleParentAbort() {
+    abortController.abort();
+  }
+
+  if (parentSignal?.aborted) {
+    abortController.abort();
+  } else {
+    parentSignal?.addEventListener("abort", handleParentAbort, { once: true });
+  }
+
+  return {
+    dispose: () => {
+      window.clearTimeout(timeoutId);
+      parentSignal?.removeEventListener("abort", handleParentAbort);
+    },
+    signal: abortController.signal,
+  };
 }

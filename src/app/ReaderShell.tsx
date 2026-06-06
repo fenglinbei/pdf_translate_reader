@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import {
   deletePdfLocalData,
+  saveImportedPdf,
   updatePdfReadingPosition,
   type ReadingPositionUpdate,
 } from "../cache/pdfLibraryRepository";
@@ -140,6 +141,7 @@ const PINS_PANE_DEFAULT_WIDTH = 280;
 const PINS_PANE_MAX_WIDTH = 460;
 const PINS_PANE_MIN_WIDTH = 300;
 const TRANSLATION_CARD_BASE_Z_INDEX = 20;
+const MATHPIX_BACKGROUND_PARSE_DELAY_MS = 2000;
 
 const CLOUD_SYNC_STATUS_LABEL_KEYS: Record<VisibleCloudSyncStatus, MessageKey> = {
   "cloud-missing": "cloud.setup",
@@ -588,56 +590,58 @@ export function ReaderShell() {
     }
 
     const abortController = new AbortController();
+    const parseTimer = window.setTimeout(() => {
+      void runMathpixParsePipeline({
+        entry: currentEntry,
+        onPages: (pages) => {
+          if (abortController.signal.aborted || currentEntry.fingerprint !== activeFingerprint) {
+            return;
+          }
 
-    void runMathpixParsePipeline({
-      entry: currentEntry,
-      onPages: (pages) => {
-        if (abortController.signal.aborted || currentEntry.fingerprint !== activeFingerprint) {
+          applyMathpixParsedPages(pages);
+
+          const pageTexts = pages
+            .slice(0, PROJECT_CONFIG.paperContext.maxScanPages)
+            .map((page) => page.pageText)
+            .filter((text) => text.trim().length > 0);
+
+          if (pageTexts.length > 0) {
+            void updatePaperContextFromPageTexts({
+              fileName: currentEntry.fileName,
+              metadataTitle: currentEntry.pdfMetadata?.title,
+              pageTexts,
+              cloudDocumentId: currentEntry.cloudDocumentId,
+              pdfFingerprint: currentEntry.fingerprint,
+            })
+              .then((record) => {
+                setPaperContext((currentRecord) =>
+                  currentRecord?.pdfFingerprint === record.pdfFingerprint &&
+                  currentRecord.contextHash === record.contextHash
+                    ? currentRecord
+                    : record,
+                );
+              })
+              .catch(() => undefined);
+          }
+        },
+        signal: abortController.signal,
+      }).catch((error) => {
+        if (isAbortError(error)) {
           return;
         }
 
-        applyMathpixParsedPages(pages);
-
-        const pageTexts = pages
-          .slice(0, PROJECT_CONFIG.paperContext.maxScanPages)
-          .map((page) => page.pageText)
-          .filter((text) => text.trim().length > 0);
-
-        if (pageTexts.length > 0) {
-          void updatePaperContextFromPageTexts({
-            fileName: currentEntry.fileName,
-            metadataTitle: currentEntry.pdfMetadata?.title,
-            pageTexts,
-            cloudDocumentId: currentEntry.cloudDocumentId,
-            pdfFingerprint: currentEntry.fingerprint,
-          })
-            .then((record) => {
-              setPaperContext((currentRecord) =>
-                currentRecord?.pdfFingerprint === record.pdfFingerprint &&
-                currentRecord.contextHash === record.contextHash
-                  ? currentRecord
-                  : record,
-              );
-            })
-            .catch(() => undefined);
+        if (!abortController.signal.aborted && currentEntry.fingerprint === activeFingerprint) {
+          setStatusMessage(
+            error instanceof Error
+              ? `Mathpix parsing failed. Using PDF text fallback. ${error.message}`
+              : "Mathpix parsing failed. Using PDF text fallback.",
+          );
         }
-      },
-      signal: abortController.signal,
-    }).catch((error) => {
-      if (isAbortError(error)) {
-        return;
-      }
-
-      if (!abortController.signal.aborted && currentEntry.fingerprint === activeFingerprint) {
-        setStatusMessage(
-          error instanceof Error
-            ? `Mathpix parsing failed. Using PDF text fallback. ${error.message}`
-            : "Mathpix parsing failed. Using PDF text fallback.",
-        );
-      }
-    });
+      });
+    }, MATHPIX_BACKGROUND_PARSE_DELAY_MS);
 
     return () => {
+      window.clearTimeout(parseTimer);
       abortController.abort();
     };
   }, [
@@ -691,12 +695,29 @@ export function ReaderShell() {
         } else {
           const identity = await createPdfFingerprint(file);
 
-          entry = await importPdfToCloud(file, identity);
-          if (entry.cloudDocumentId) {
-            await hydrateCloudDocumentState(entry.cloudDocumentId, entry.fingerprint).catch(() => {
-              setStatusMessage("Could not sync cloud document state.");
+          entry = await saveImportedPdf({
+            blob: file.slice(0, file.size, "application/pdf"),
+            ...identity,
+          });
+
+          void importPdfToCloud(file, identity)
+            .then(async (cloudEntry) => {
+              if (cloudEntry.cloudDocumentId) {
+                await hydrateCloudDocumentState(cloudEntry.cloudDocumentId, cloudEntry.fingerprint).catch(() => {
+                  setStatusMessage("Could not sync cloud document state.");
+                });
+              }
+
+              setCurrentEntry((current) =>
+                current?.fingerprint === cloudEntry.fingerprint
+                  ? { ...current, ...cloudEntry }
+                  : current,
+              );
+              await refreshLibrary();
+            })
+            .catch((error) => {
+              setStatusMessage(getStorageErrorMessage(error, "PDF opened locally, but cloud upload failed."));
             });
-          }
         }
 
         setCurrentEntry(entry);
@@ -704,7 +725,9 @@ export function ReaderShell() {
         setMobilePanel(null);
         applyPinnedTranslationCards([]);
         setPins([]);
-        await refreshLibrary();
+        void refreshLibrary().catch(() => {
+          setStatusMessage("Could not refresh the PDF library.");
+        });
       } catch (error) {
         setStatusMessage(getStorageErrorMessage(error, "Could not import this PDF."));
       } finally {
@@ -721,18 +744,41 @@ export function ReaderShell() {
 
       try {
         const openedEntry = await openCloudPdfDocument(entry.cloudDocumentId);
-        if (openedEntry.cloudDocumentId) {
-          await hydrateCloudDocumentState(openedEntry.cloudDocumentId, openedEntry.fingerprint).catch(() => {
-            setStatusMessage("Could not sync cloud document state.");
-          });
-        }
 
         setCurrentEntry(openedEntry);
         setSentenceSelection(undefined);
         setMobilePanel(null);
         applyPinnedTranslationCards([]);
         setPins([]);
-        await refreshLibrary();
+        void refreshLibrary().catch(() => {
+          setStatusMessage("Could not refresh the PDF library.");
+        });
+
+        if (openedEntry.cloudDocumentId) {
+          void hydrateCloudDocumentState(openedEntry.cloudDocumentId, openedEntry.fingerprint)
+            .then((state) => {
+              setCurrentEntry((current) =>
+                current?.fingerprint === openedEntry.fingerprint
+                  ? { ...current, cloudDocumentId: openedEntry.cloudDocumentId }
+                  : current,
+              );
+              setPaperContext((current) =>
+                current?.pdfFingerprint === openedEntry.fingerprint
+                  ? current
+                  : state.paperContext,
+              );
+              setPins((currentPins) =>
+                mergePins(
+                  currentPins.filter((pin) => pin.pdfFingerprint === openedEntry.fingerprint),
+                  state.pins,
+                ),
+              );
+              applyPinnedTranslationCards(state.pinnedTranslationCards);
+            })
+            .catch(() => {
+              setStatusMessage("Could not sync cloud document state.");
+            });
+        }
       } catch (error) {
         setDamagedLibraryFingerprint(entry.fingerprint);
         setStatusMessage(

@@ -60,7 +60,7 @@ export async function runMathpixParsePipeline({
 
   if (!record.mathpixPdfId) {
     assertNotAborted(signal);
-    const submitted = await submitMathpixDocument(entry);
+    const submitted = await submitMathpixDocument(entry, signal);
     const now = Date.now();
 
     record = await putMathpixDocumentRecord({
@@ -82,7 +82,7 @@ export async function runMathpixParsePipeline({
 
   while (true) {
     assertNotAborted(signal);
-    const status = await getMathpixDocumentStatus(mathpixPdfId);
+    const status = await getMathpixDocumentStatus(mathpixPdfId, signal);
     const nextStatus = normalizeMathpixStatus(status.status);
     const now = Date.now();
 
@@ -99,8 +99,8 @@ export async function runMathpixParsePipeline({
 
     if (nextStatus === "completed") {
       const [linesJson, fullMmd] = await Promise.all([
-        getMathpixDocumentResult(mathpixPdfId, "lines.json"),
-        getMathpixDocumentResult(mathpixPdfId, "mmd").catch(() => ""),
+        getMathpixDocumentResult(mathpixPdfId, "lines.json", signal),
+        getMathpixDocumentResult(mathpixPdfId, "mmd", signal).catch(() => ""),
       ]);
       const pages = normalizeMathpixLinesJson({ entry, linesJson });
 
