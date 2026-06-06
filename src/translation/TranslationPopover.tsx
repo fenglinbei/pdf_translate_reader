@@ -1,4 +1,4 @@
-import { Bookmark, Check, ChevronDown, Pin, RefreshCw, StickyNote, X } from "lucide-react";
+import { Bookmark, Check, ChevronDown, Pin, RefreshCw, StickyNote, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { CSSProperties, KeyboardEvent, MouseEvent, PointerEvent, TouchEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -111,6 +111,10 @@ const POPOVER_MIN_WIDTH = 260;
 const POPOVER_MAX_WIDTH = 560;
 const POPOVER_MIN_HEIGHT = 220;
 const POPOVER_MAX_HEIGHT = 560;
+const CONTENT_SCALE_DEFAULT = 1;
+const CONTENT_SCALE_MIN = 0.85;
+const CONTENT_SCALE_MAX = 1.35;
+const CONTENT_SCALE_STEP = 0.1;
 const MOBILE_SHEET_MIN_HEIGHT = 220;
 const MOBILE_SHEET_MAX_HEIGHT = 720;
 const DEFAULT_ANNOTATION_COLOR: AnnotationColor = "yellow";
@@ -163,6 +167,7 @@ export function TranslationPopover({
   const [activeCacheKey, setActiveCacheKey] = useState<string>();
   const [favoriteStatus, setFavoriteStatus] = useState<FavoriteStatus>("idle");
   const [dragOffset, setDragOffset] = useState<DragOffset>({ x: 0, y: 0 });
+  const [contentScale, setContentScale] = useState(CONTENT_SCALE_DEFAULT);
   const [isMobileSheet, setIsMobileSheet] = useState(false);
   const [mobileSheetHeight, setMobileSheetHeight] = useState<number>();
   const [popoverSize, setPopoverSize] = useState<PopoverSize>();
@@ -459,6 +464,7 @@ export function TranslationPopover({
     });
     setAnnotationStatus("idle");
     setDragOffset(view?.dragOffset ?? { x: 0, y: 0 });
+    setContentScale(normalizeContentScale(view?.contentScale));
     setIsAnnotationEditorOpen(Boolean(annotationNote?.trim()));
     setPopoverSize(view?.size);
     setFavoriteStatus("idle");
@@ -496,9 +502,27 @@ export function TranslationPopover({
   const handleCardPin = useCallback(() => {
     onCardPin?.({
       dragOffset,
+      contentScale,
       size: popoverSize,
     });
-  }, [dragOffset, onCardPin, popoverSize]);
+  }, [contentScale, dragOffset, onCardPin, popoverSize]);
+
+  const handleContentScaleChange = useCallback(
+    (direction: 1 | -1) => {
+      setContentScale((currentScale) => {
+        const nextScale = normalizeContentScale(currentScale + direction * CONTENT_SCALE_STEP);
+
+        if (nextScale === currentScale) {
+          return currentScale;
+        }
+
+        onViewChange?.({ contentScale: nextScale }, { committed: true });
+
+        return nextScale;
+      });
+    },
+    [onViewChange],
+  );
 
   const handleFavorite = useCallback(() => {
     if (!onFavorite || favoriteStatus === "saving" || (!isFavorited && status === "error")) {
@@ -899,6 +923,26 @@ export function TranslationPopover({
           >
             <RefreshCw aria-hidden="true" size={16} strokeWidth={2} />
           </button>
+          <button
+            aria-label={t("translation.zoomOutContent")}
+            className="icon-button icon-button--small pinned-translation-card-action translation-popover-action"
+            disabled={contentScale <= CONTENT_SCALE_MIN}
+            onClick={() => handleContentScaleChange(-1)}
+            title={t("translation.zoomOutContent")}
+            type="button"
+          >
+            <ZoomOut aria-hidden="true" size={16} strokeWidth={2} />
+          </button>
+          <button
+            aria-label={t("translation.zoomInContent")}
+            className="icon-button icon-button--small pinned-translation-card-action translation-popover-action"
+            disabled={contentScale >= CONTENT_SCALE_MAX}
+            onClick={() => handleContentScaleChange(1)}
+            title={t("translation.zoomInContent")}
+            type="button"
+          >
+            <ZoomIn aria-hidden="true" size={16} strokeWidth={2} />
+          </button>
           {isMobileSheet && onCollapse ? (
             <button
               aria-label={t("translation.collapseCard")}
@@ -978,7 +1022,7 @@ export function TranslationPopover({
             {status === "error" ? (
               errorMessage
             ) : translation ? (
-              <RichMathText text={translation} />
+              <RichMathText scale={contentScale} text={translation} />
             ) : (
               t("translation.translating")
             )}
@@ -988,7 +1032,7 @@ export function TranslationPopover({
         <div className="translation-popover-section">
           <div className="translation-popover-label">{t("translation.original")}</div>
           <div className="translation-popover-source">
-            <RichMathText text={selection.targetSentence} />
+            <RichMathText scale={contentScale} text={selection.targetSentence} />
           </div>
         </div>
 
@@ -1018,6 +1062,14 @@ export function TranslationPopover({
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function normalizeContentScale(value: number | undefined) {
+  const scale = typeof value === "number" && Number.isFinite(value)
+    ? value
+    : CONTENT_SCALE_DEFAULT;
+
+  return Math.round(clamp(scale, CONTENT_SCALE_MIN, CONTENT_SCALE_MAX) * 100) / 100;
 }
 
 function getMobileSheetMaxHeight() {

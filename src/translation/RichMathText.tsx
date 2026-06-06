@@ -1,7 +1,9 @@
 import katex from "katex";
+import { useEffect, useRef, useState } from "react";
 
 type RichMathTextProps = {
   className?: string;
+  scale?: number;
   text: string;
 };
 
@@ -34,18 +36,22 @@ const DISPLAY_ENVIRONMENTS = [
   "multline*",
 ];
 const HEADING_PATTERN = /^\\(section|subsection|subsubsection|paragraph)\*?\{([^{}]*)\}\s*/;
+const OVERFLOW_TOLERANCE_PX = 1;
 
-export function RichMathText({ className, text }: RichMathTextProps) {
+export function RichMathText({ className, scale, text }: RichMathTextProps) {
   const tokens = tokenizeRichMathText(text);
 
   return (
-    <span className={["rich-math-text", className].filter(Boolean).join(" ")}>
-      {tokens.map((token, index) => renderToken(token, index))}
+    <span
+      className={["rich-math-text", className].filter(Boolean).join(" ")}
+      style={typeof scale === "number" ? { fontSize: `${scale}em` } : undefined}
+    >
+      {tokens.map((token, index) => renderToken(token, index, scale))}
     </span>
   );
 }
 
-function renderToken(token: RichMathToken, index: number) {
+function renderToken(token: RichMathToken, index: number, scale: number | undefined) {
   if (token.kind === "text") {
     return token.text ? <span key={index}>{token.text}</span> : null;
   }
@@ -61,26 +67,80 @@ function renderToken(token: RichMathToken, index: number) {
   const renderedMath = renderMath(token.text, token.displayMode);
 
   if (!renderedMath) {
-    return (
-      <span
-        className={
-          token.displayMode
-            ? "rich-math-text-math-fallback rich-math-text-math-fallback--display"
-            : "rich-math-text-math-fallback"
-        }
+    return token.displayMode ? (
+      <OverflowAwareSpan
+        className="rich-math-text-math-fallback rich-math-text-math-fallback--display"
         key={index}
+        measurementKey={scale}
       >
+        {token.raw}
+      </OverflowAwareSpan>
+    ) : (
+      <span className="rich-math-text-math-fallback" key={index}>
         {token.raw}
       </span>
     );
   }
 
-  return (
+  return token.displayMode ? (
+    <OverflowAwareSpan
+      className="rich-math-text-math rich-math-text-math--display"
+      dangerouslySetInnerHTML={{ __html: renderedMath }}
+      key={index}
+      measurementKey={scale}
+    />
+  ) : (
     <span
-      className={token.displayMode ? "rich-math-text-math rich-math-text-math--display" : "rich-math-text-math"}
+      className="rich-math-text-math"
       dangerouslySetInnerHTML={{ __html: renderedMath }}
       key={index}
     />
+  );
+}
+
+function OverflowAwareSpan({
+  children,
+  className,
+  dangerouslySetInnerHTML,
+  measurementKey,
+}: {
+  children?: string;
+  className: string;
+  dangerouslySetInnerHTML?: { __html: string };
+  measurementKey?: number;
+}) {
+  const elementRef = useRef<HTMLSpanElement>(null);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+
+  useEffect(() => {
+    const element = elementRef.current;
+
+    if (!element) {
+      return undefined;
+    }
+
+    const updateOverflowState = () => {
+      setIsOverflowing(element.scrollWidth > element.clientWidth + OVERFLOW_TOLERANCE_PX);
+    };
+    const resizeObserver = new ResizeObserver(updateOverflowState);
+
+    updateOverflowState();
+    resizeObserver.observe(element);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [children, dangerouslySetInnerHTML?.__html, measurementKey]);
+
+  return (
+    <span
+      className={`${className}${isOverflowing ? " rich-math-text-math--overflowing" : ""}`}
+      dangerouslySetInnerHTML={dangerouslySetInnerHTML}
+      ref={elementRef}
+      tabIndex={isOverflowing ? 0 : undefined}
+    >
+      {dangerouslySetInnerHTML ? undefined : children}
+    </span>
   );
 }
 

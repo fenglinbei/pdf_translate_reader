@@ -5,6 +5,7 @@ export type TranslationCardPlacement = "above" | "below" | "left" | "right";
 export type TranslationFavoriteAction = "add" | "remove";
 
 export type FloatingTranslationCardView = {
+  contentScale?: number;
   dragOffset: {
     x: number;
     y: number;

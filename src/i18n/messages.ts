@@ -238,6 +238,8 @@ export const MESSAGES = {
     "translation.translating": "Translating...",
     "translation.unpin": "Unpin",
     "translation.unpinCard": "Unpin translation card",
+    "translation.zoomInContent": "Increase card text size",
+    "translation.zoomOutContent": "Decrease card text size",
 
     "pdf.loading": "Loading PDF",
     "pdf.loadingWithDots": "Loading PDF...",
@@ -498,6 +500,8 @@ export const MESSAGES = {
     "translation.translating": "翻译中...",
     "translation.unpin": "取消固定",
     "translation.unpinCard": "取消固定翻译卡片",
+    "translation.zoomInContent": "放大卡片文字",
+    "translation.zoomOutContent": "缩小卡片文字",
 
     "pdf.loading": "正在加载 PDF",
     "pdf.loadingWithDots": "正在加载 PDF...",

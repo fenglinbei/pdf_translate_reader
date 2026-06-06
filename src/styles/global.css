@@ -1621,8 +1621,8 @@ button {
   margin: 0;
 }
 
-.rich-math-text-math--display:hover,
-.rich-math-text-math--display:focus-within {
+.rich-math-text-math--display.rich-math-text-math--overflowing:hover,
+.rich-math-text-math--display.rich-math-text-math--overflowing:focus {
   scrollbar-width: thin;
 }
 
@@ -1630,8 +1630,8 @@ button {
   height: 0;
 }
 
-.rich-math-text-math--display:hover::-webkit-scrollbar,
-.rich-math-text-math--display:focus-within::-webkit-scrollbar {
+.rich-math-text-math--display.rich-math-text-math--overflowing:hover::-webkit-scrollbar,
+.rich-math-text-math--display.rich-math-text-math--overflowing:focus::-webkit-scrollbar {
   height: 6px;
 }
 
@@ -1662,8 +1662,8 @@ button {
   scrollbar-width: none;
 }
 
-.rich-math-text-math-fallback--display:hover,
-.rich-math-text-math-fallback--display:focus-within {
+.rich-math-text-math-fallback--display.rich-math-text-math--overflowing:hover,
+.rich-math-text-math-fallback--display.rich-math-text-math--overflowing:focus {
   scrollbar-width: thin;
 }
 
@@ -1671,8 +1671,8 @@ button {
   height: 0;
 }
 
-.rich-math-text-math-fallback--display:hover::-webkit-scrollbar,
-.rich-math-text-math-fallback--display:focus-within::-webkit-scrollbar {
+.rich-math-text-math-fallback--display.rich-math-text-math--overflowing:hover::-webkit-scrollbar,
+.rich-math-text-math-fallback--display.rich-math-text-math--overflowing:focus::-webkit-scrollbar {
   height: 6px;
 }
 
