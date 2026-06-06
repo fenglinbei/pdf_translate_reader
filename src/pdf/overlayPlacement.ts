@@ -148,6 +148,42 @@ export function getPopoverPlacement(
   };
 }
 
+export function getActionPopoverPlacement(
+  anchor: SelectionBounds,
+  pageSize: { height: number; width: number },
+): {
+  placement: "above" | "below";
+  style: CSSProperties;
+} {
+  const popoverWidth = getPopoverWidth(pageSize.width - PAGE_MARGIN * 2);
+  const left = clamp(anchor.left, PAGE_MARGIN, pageSize.width - PAGE_MARGIN - popoverWidth);
+  const belowTop = anchor.bottom + POPOVER_GAP;
+  const hasBelowRoom = belowTop + POPOVER_MIN_HEIGHT <= pageSize.height - PAGE_MARGIN;
+  const widthStyle = {
+    "--translation-popover-width": `${popoverWidth}px`,
+  } as CSSProperties;
+
+  if (hasBelowRoom || anchor.top < pageSize.height / 2) {
+    return {
+      placement: "below",
+      style: {
+        ...widthStyle,
+        left,
+        top: Math.min(belowTop, pageSize.height - PAGE_MARGIN - POPOVER_MIN_HEIGHT),
+      },
+    };
+  }
+
+  return {
+    placement: "above",
+    style: {
+      ...widthStyle,
+      bottom: pageSize.height - anchor.top + POPOVER_GAP,
+      left,
+    },
+  };
+}
+
 function getOutsidePlacement(
   side: "left" | "right",
   gutterWidth: number,

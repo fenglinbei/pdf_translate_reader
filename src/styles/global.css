@@ -1361,6 +1361,10 @@ button {
   gap: 6px;
 }
 
+.queued-selection-command-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) auto auto;
+}
+
 .select-action-word-count {
   min-width: 0;
   overflow: hidden;
@@ -1387,11 +1391,32 @@ button {
   cursor: pointer;
 }
 
+.select-action-command-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-action-command-button--primary {
+  max-width: 190px;
+  border-color: rgba(37, 99, 235, 0.36);
+  color: #ffffff;
+  background: var(--accent);
+}
+
 .select-action-command-button:hover,
 .select-action-command-button:focus-visible {
   border-color: #b8cffd;
   color: var(--accent-strong);
   outline: 0;
+}
+
+.select-action-command-button--primary:hover,
+.select-action-command-button--primary:focus-visible {
+  border-color: rgba(37, 99, 235, 0.46);
+  color: #ffffff;
+  background: var(--accent-strong);
 }
 
 .select-action-note-panel {

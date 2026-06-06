@@ -1,4 +1,4 @@
-import { Bookmark, Check, Copy, Languages, Pin, StickyNote, X } from "lucide-react";
+import { Bookmark, Check, Copy, Languages, Pin, RotateCcw, StickyNote, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type {
   CSSProperties,
@@ -26,7 +26,12 @@ import type {
   TranslationCardViewChangeOptions,
 } from "../translation/floatingCardTypes";
 import { TranslationPopover } from "../translation/TranslationPopover";
-import { getPopoverPlacement, getSelectionBounds, type PageGutters } from "./overlayPlacement";
+import {
+  getActionPopoverPlacement,
+  getPopoverPlacement,
+  getSelectionBounds,
+  type PageGutters,
+} from "./overlayPlacement";
 
 const DEFAULT_ANNOTATION_COLOR: AnnotationColor = "yellow";
 const ANNOTATION_COLORS: AnnotationColor[] = ["yellow", "blue", "green", "red"];
@@ -60,6 +65,9 @@ type PageOverlayLayerProps = {
   onRevealPinnedTranslationCard: (card: PinnedTranslationCard) => void;
   onOpenCollapsedMobileTranslationCard: () => void;
   onOpenMobilePinnedCard: (cardKey: string, selection: SentenceSelection) => void;
+  onClearQueuedSelections: () => void;
+  onConfirmQueuedSelections: () => void;
+  onUndoQueuedSelection: () => void;
   onTranslationCardViewChange: (
     selection: SentenceSelection,
     viewChange: TranslationCardViewChange,
@@ -100,6 +108,9 @@ export function PageOverlayLayer({
   onRevealPinnedTranslationCard,
   onOpenCollapsedMobileTranslationCard,
   onOpenMobilePinnedCard,
+  onClearQueuedSelections,
+  onConfirmQueuedSelections,
+  onUndoQueuedSelection,
   onTranslationCardViewChange,
   pageHeight,
   pageIndex,
@@ -132,6 +143,14 @@ export function PageOverlayLayer({
   const queuedSelectionRects = queuedSelections.flatMap((queuedSelection) =>
     getSelectionRectsOnPage(queuedSelection, pageIndex, pageWidth, pageHeight),
   );
+  const queuedActionSelection = queuedSelections[queuedSelections.length - 1];
+  const queuedActionRectSource = queuedActionSelection
+    ? getAnchorRectSourceOnPage(queuedActionSelection, pageIndex)
+    : undefined;
+  const queuedActionRects =
+    !isMobileViewport && queuedActionRectSource
+      ? scaleStoredRects(queuedActionRectSource, pageWidth, pageHeight)
+      : [];
   const pinnedTranslationCardsOnPage = pinnedTranslationCards.filter(
     (card) =>
       hasSelectionOnPage(card.selection, pageIndex) &&
@@ -241,10 +260,31 @@ export function PageOverlayLayer({
           width: pageWidth,
         })
       : undefined;
+  const actionPopoverPlacement =
+    selection && selectionAnchorRects.length > 0
+      ? getActionPopoverPlacement(getSelectionBounds(selectionAnchorRects), {
+          height: pageHeight,
+          width: pageWidth,
+        })
+      : undefined;
+  const queuedActionPlacement =
+    queuedActionRects.length > 0
+      ? getActionPopoverPlacement(getSelectionBounds(queuedActionRects), {
+          height: pageHeight,
+          width: pageWidth,
+        })
+      : undefined;
   const activePopoverSelection =
-    selection && popoverPlacement
+    selection && (popoverPlacement || actionPopoverPlacement)
       ? hydrateSelectionForCurrentPage(selection, pageIndex, pageWidth, pageHeight)
       : undefined;
+  const activeSelectionActionPlacement = actionPopoverPlacement ?? popoverPlacement;
+  const activeSelectionTranslationPlacement = activePinnedCard
+    ? {
+        placement: activePinnedCard.placement,
+        style: activePinnedCard.style,
+      }
+    : popoverPlacement;
 
   return (
     <div className="pdf-page-overlay" ref={overlayRef}>
@@ -334,6 +374,17 @@ export function PageOverlayLayer({
           }}
         />
       ))}
+      {queuedActionPlacement ? (
+        <QueuedSelectionActionPopover
+          count={queuedSelections.length}
+          onClear={onClearQueuedSelections}
+          onConfirm={onConfirmQueuedSelections}
+          onUndo={onUndoQueuedSelection}
+          placement={queuedActionPlacement.placement}
+          readerMode={readerMode}
+          style={queuedActionPlacement.style}
+        />
+      ) : null}
       {hasDraftSelection ? (
         <>
           {draftRects.map((rect, index) => (
@@ -403,7 +454,7 @@ export function PageOverlayLayer({
           <Languages aria-hidden="true" size={13} strokeWidth={2.2} />
         </button>
       ) : null}
-      {selection && activePopoverSelection && popoverPlacement && !hasDraftSelection && !isActiveSelectionMobileCollapsed
+      {selection && activePopoverSelection && activeSelectionActionPlacement && !hasDraftSelection && !isActiveSelectionMobileCollapsed
         ? readerMode === "select" ? (
             <SelectActionPopover
               key={selectionKey}
@@ -412,11 +463,11 @@ export function PageOverlayLayer({
               onCreateAnnotation={(annotation) =>
                 onCreateAnnotation(activePopoverSelection, annotation)
               }
-              placement={popoverPlacement.placement}
+              placement={activeSelectionActionPlacement.placement}
               selection={activePopoverSelection}
-              style={popoverPlacement.style}
+              style={activeSelectionActionPlacement.style}
             />
-          ) : (
+          ) : activeSelectionTranslationPlacement ? (
             <TranslationPopover
               annotationColor={selectionPin?.color}
               annotationNote={selectionPin?.note}
@@ -437,9 +488,9 @@ export function PageOverlayLayer({
               }
               onCardPin={(view) =>
                 onPinTranslationCard({
-                  placement: activePinnedCard?.placement ?? popoverPlacement.placement,
+                  placement: activeSelectionTranslationPlacement.placement,
                   selection: activePopoverSelection,
-                  style: activePinnedCard?.style ?? popoverPlacement.style,
+                  style: activeSelectionTranslationPlacement.style,
                   view,
                 })
               }
@@ -472,15 +523,15 @@ export function PageOverlayLayer({
               pinSelection={{
                 ...activePopoverSelection,
               }}
-              placement={activePinnedCard?.placement ?? popoverPlacement.placement}
+              placement={activeSelectionTranslationPlacement.placement}
               paperContext={paperContext}
               selection={activePopoverSelection}
               settings={settings}
-              style={activePinnedCard?.style ?? popoverPlacement.style}
+              style={activeSelectionTranslationPlacement.style}
               view={activePinnedCard?.view}
               zIndex={activePinnedCard?.zIndex ?? activeTranslationCardZIndex}
             />
-          )
+          ) : null
         : null}
       {pinnedTranslationCardsOnPage.map((card) => {
             const cardSelection = card.selection;
@@ -734,6 +785,81 @@ function SelectActionPopover({
           ) : null}
         </div>
       )}
+    </div>
+  );
+}
+
+function QueuedSelectionActionPopover({
+  count,
+  onClear,
+  onConfirm,
+  onUndo,
+  placement,
+  readerMode,
+  style,
+}: {
+  count: number;
+  onClear: () => void;
+  onConfirm: () => void;
+  onUndo: () => void;
+  placement: string;
+  readerMode: ReaderMode;
+  style: CSSProperties;
+}) {
+  const { t } = useI18n();
+  const confirmLabel =
+    readerMode === "select" ? t("pdf.useSelectedRegions") : t("pdf.translateSelectedRegions");
+
+  function stopEvent(
+    event:
+      | ReactMouseEvent<HTMLDivElement>
+      | ReactPointerEvent<HTMLDivElement>
+      | ReactTouchEvent<HTMLDivElement>,
+  ) {
+    event.stopPropagation();
+  }
+
+  return (
+    <div
+      className={`select-action-popover queued-selection-popover select-action-popover--${placement}`}
+      onMouseDown={stopEvent}
+      onMouseUp={stopEvent}
+      onPointerDown={stopEvent}
+      onPointerUp={stopEvent}
+      onTouchEnd={stopEvent}
+      style={style}
+    >
+      <div className="select-action-command-row queued-selection-command-row">
+        <span className="select-action-word-count">
+          {t(count === 1 ? "pdf.regionCount" : "pdf.regionCountPlural", { count })}
+        </span>
+        <button
+          className="select-action-command-button select-action-command-button--primary"
+          onClick={onConfirm}
+          type="button"
+        >
+          <Check aria-hidden="true" size={15} strokeWidth={2} />
+          <span>{confirmLabel}</span>
+        </button>
+        <button
+          aria-label={t("common.undo")}
+          className="icon-button icon-button--small pinned-translation-card-action"
+          onClick={onUndo}
+          title={t("common.undo")}
+          type="button"
+        >
+          <RotateCcw aria-hidden="true" size={16} strokeWidth={2} />
+        </button>
+        <button
+          aria-label={t("common.clear")}
+          className="icon-button icon-button--small pinned-translation-card-action"
+          onClick={onClear}
+          title={t("common.clear")}
+          type="button"
+        >
+          <X aria-hidden="true" size={16} strokeWidth={2} />
+        </button>
+      </div>
     </div>
   );
 }

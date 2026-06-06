@@ -6,7 +6,7 @@ import type {
   ReactNode,
   TouchEvent as ReactTouchEvent,
 } from "react";
-import { Check, Minus, Plus, RotateCcw, X } from "lucide-react";
+import { Minus, Plus } from "lucide-react";
 import { pdfjsLib } from "./pdfjs";
 import type { TextContent } from "pdfjs-dist/types/src/display/api";
 import { useI18n } from "../i18n/I18nProvider";
@@ -1370,7 +1370,7 @@ export function PdfViewer({
 
   return (
     <div className="pdf-viewer-shell">
-      <div className={`pdf-viewer-header ${isRegionSelectionMode ? "pdf-viewer-header--cross" : ""}`}>
+      <div className="pdf-viewer-header">
         <div className="pdf-viewer-heading">
           <div className="pdf-viewer-title">{entry.pdfMetadata?.title || entry.fileName}</div>
           <div className="pdf-viewer-subtitle">
@@ -1379,45 +1379,6 @@ export function PdfViewer({
         </div>
         <div className="pdf-viewer-actions" aria-label={t("reader.pdfControls")}>
           {headerControls}
-          {isRegionSelectionMode ? (
-            <div className="cross-selection-toolbar" aria-label={t("pdf.crossSelectionControls")}>
-              <span className="cross-selection-count">
-                {t(queuedCrossSelections.length === 1 ? "pdf.regionCount" : "pdf.regionCountPlural", {
-                  count: queuedCrossSelections.length,
-                })}
-              </span>
-              <button
-                aria-label={effectiveReaderMode === "select" ? t("pdf.useSelectedRegions") : t("pdf.translateSelectedRegions")}
-                className="icon-button icon-button--small icon-button--success"
-                disabled={queuedCrossSelections.length === 0}
-                onClick={handleConfirmCrossSelection}
-                title={effectiveReaderMode === "select" ? t("pdf.useSelectedRegions") : t("pdf.translateSelectedRegions")}
-                type="button"
-              >
-                <Check aria-hidden="true" size={16} strokeWidth={2} />
-              </button>
-              <button
-                aria-label={t("pdf.undoLastSelectedRegion")}
-                className="icon-button icon-button--small"
-                disabled={queuedCrossSelections.length === 0}
-                onClick={handleUndoCrossSelection}
-                title={t("pdf.undoLastSelectedRegion")}
-                type="button"
-              >
-                <RotateCcw aria-hidden="true" size={16} strokeWidth={2} />
-              </button>
-              <button
-                aria-label={t("pdf.clearSelectedRegions")}
-                className="icon-button icon-button--small icon-button--danger"
-                disabled={queuedCrossSelections.length === 0}
-                onClick={handleClearCrossSelection}
-                title={t("pdf.clearSelectedRegions")}
-                type="button"
-              >
-                <X aria-hidden="true" size={16} strokeWidth={2} />
-              </button>
-            </div>
-          ) : null}
           <div className="pdf-zoom-toolbar" aria-label={t("pdf.zoomControls")}>
             <button
               aria-label={t("pdf.zoomOut")}
@@ -1496,7 +1457,9 @@ export function PdfViewer({
                     collapsedMobileSelectionKey={collapsedMobileSelectionKey}
                     emphasizedPinnedCardKey={emphasizedPinnedCardKey}
                     onClearSelection={handleClearSelection}
+                    onClearQueuedSelections={handleClearCrossSelection}
                     onCollapseMobileTranslationCard={handleCollapseMobileTranslationCard}
+                    onConfirmQueuedSelections={handleConfirmCrossSelection}
                     onCopySelection={handleCopySelection}
                     onCreateAnnotation={handleCreateSelectAnnotation}
                     onOpenCollapsedMobileTranslationCard={handleOpenCollapsedMobileTranslationCard}
@@ -1506,6 +1469,7 @@ export function PdfViewer({
                     onPinTranslation={onPinTranslation}
                     onRevealPinCard={onRevealPinCard}
                     onRevealPinnedTranslationCard={handleRevealPinnedTranslationCard}
+                    onUndoQueuedSelection={handleUndoCrossSelection}
                     onPageTextReadyForPaperContext={onPageTextReadyForPaperContext}
                     onTextIndexClear={handleTextIndexClear}
                     onTextIndexReady={handleTextIndexReady}
@@ -1571,6 +1535,37 @@ export function PdfViewer({
             </button>
           </div>
         </div>
+      ) : isMobileSegmentedSelectionMode && queuedCrossSelections.length > 0 ? (
+        <div className="mobile-selection-confirm-bar" role="group" aria-label={t("pdf.selectionActions")}>
+          <div className="mobile-selection-confirm-summary">
+            {t(queuedCrossSelections.length === 1 ? "pdf.regionCount" : "pdf.regionCountPlural", {
+              count: queuedCrossSelections.length,
+            })}
+          </div>
+          <div className="mobile-selection-confirm-actions">
+            <button
+              className="mobile-selection-confirm-button mobile-selection-confirm-button--primary"
+              onClick={handleConfirmCrossSelection}
+              type="button"
+            >
+              {effectiveReaderMode === "select" ? t("common.confirm") : t("pdf.translate")}
+            </button>
+            <button
+              className="mobile-selection-confirm-button"
+              onClick={handleUndoCrossSelection}
+              type="button"
+            >
+              {t("common.undo")}
+            </button>
+            <button
+              className="mobile-selection-confirm-button mobile-selection-confirm-button--ghost"
+              onClick={handleClearCrossSelection}
+              type="button"
+            >
+              {t("common.clear")}
+            </button>
+          </div>
+        </div>
       ) : null}
     </div>
   );
@@ -1590,7 +1585,9 @@ const PdfPageView = memo(function PdfPageView({
   onActivateTranslationCard,
   onCloseTranslationCard,
   onClearSelection,
+  onClearQueuedSelections,
   onCollapseMobileTranslationCard,
+  onConfirmQueuedSelections,
   onCopySelection,
   onCreateAnnotation,
   onOpenCollapsedMobileTranslationCard,
@@ -1600,6 +1597,7 @@ const PdfPageView = memo(function PdfPageView({
   onPinTranslation,
   onRevealPinCard,
   onRevealPinnedTranslationCard,
+  onUndoQueuedSelection,
   onPageTextReadyForPaperContext,
   onTextIndexClear,
   onTextIndexReady,
@@ -1630,7 +1628,9 @@ const PdfPageView = memo(function PdfPageView({
   onActivateTranslationCard: (selection: SentenceSelection) => void;
   onCloseTranslationCard: (selection: SentenceSelection) => void;
   onClearSelection: () => void;
+  onClearQueuedSelections: () => void;
   onCollapseMobileTranslationCard: (selection: SentenceSelection, isPinned: boolean) => void;
+  onConfirmQueuedSelections: () => void;
   onCopySelection: (selection: SentenceSelection) => void;
   onCreateAnnotation: (
     selection: SentenceSelection,
@@ -1646,6 +1646,7 @@ const PdfPageView = memo(function PdfPageView({
   ) => Promise<void>;
   onRevealPinCard: (pin: TranslationPin) => void;
   onRevealPinnedTranslationCard: (card: PinnedTranslationCard) => void;
+  onUndoQueuedSelection: () => void;
   onPageTextReadyForPaperContext: (pageIndex: number, text: string) => void;
   onTextIndexClear: (pageIndex: number) => void;
   onTextIndexReady: (pageTextIndex: PageTextIndex) => void;
@@ -1840,6 +1841,8 @@ const PdfPageView = memo(function PdfPageView({
             onCollapseMobileTranslationCard={onCollapseMobileTranslationCard}
             onCloseTranslationCard={onCloseTranslationCard}
             onClearSelection={onClearSelection}
+            onClearQueuedSelections={onClearQueuedSelections}
+            onConfirmQueuedSelections={onConfirmQueuedSelections}
             onCopySelection={onCopySelection}
             onCreateAnnotation={onCreateAnnotation}
             onOpenCollapsedMobileTranslationCard={onOpenCollapsedMobileTranslationCard}
@@ -1849,6 +1852,7 @@ const PdfPageView = memo(function PdfPageView({
             onPinTranslation={onPinTranslation}
             onRevealPinCard={onRevealPinCard}
             onRevealPinnedTranslationCard={onRevealPinnedTranslationCard}
+            onUndoQueuedSelection={onUndoQueuedSelection}
             onTranslationCardViewChange={onTranslationCardViewChange}
             pageHeight={descriptor.height * renderScale}
             pageIndex={pageIndex}
