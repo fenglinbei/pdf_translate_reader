@@ -9,6 +9,7 @@ import type {
 import { Check, Minus, Plus, RotateCcw, X } from "lucide-react";
 import { pdfjsLib } from "./pdfjs";
 import type { TextContent } from "pdfjs-dist/types/src/display/api";
+import { useI18n } from "../i18n/I18nProvider";
 import type { PinAnnotationInput, PinWriteInput } from "../pins/pinRepository";
 import type {
   AppSettings,
@@ -194,6 +195,7 @@ export function PdfViewer({
   selectionMode,
   settings,
 }: PdfViewerProps) {
+  const { t } = useI18n();
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageIndexesRef = useRef(new Map<number, PageTextIndex>());
   const locatedPinTimerRef = useRef<number>();
@@ -754,22 +756,25 @@ export function PdfViewer({
     [showSelectionNotice],
   );
 
-  const copySelectedText = useCallback(async (selection: SentenceSelection) => {
-    setCopiedSelection(selection);
+  const copySelectedText = useCallback(
+    async (selection: SentenceSelection) => {
+      setCopiedSelection(selection);
 
-    try {
-      await copyTextToClipboard(selection.targetSentence);
-      setCopyNotice("Copied");
-    } catch {
-      setCopyNotice("Copy failed");
-    }
+      try {
+        await copyTextToClipboard(selection.targetSentence);
+        setCopyNotice(t("pdf.copied"));
+      } catch {
+        setCopyNotice(t("pdf.copyFailed"));
+      }
 
-    window.clearTimeout(selectionNoticeTimerRef.current);
-    selectionNoticeTimerRef.current = window.setTimeout(() => {
-      setCopiedSelection(undefined);
-      setCopyNotice(undefined);
-    }, 1800);
-  }, []);
+      window.clearTimeout(selectionNoticeTimerRef.current);
+      selectionNoticeTimerRef.current = window.setTimeout(() => {
+        setCopiedSelection(undefined);
+        setCopyNotice(undefined);
+      }, 1800);
+    },
+    [t],
+  );
 
   const addPageMetricsToSelection = useCallback(
     (selection: SentenceSelection): SentenceSelection => {
@@ -804,7 +809,7 @@ export function PdfViewer({
 
       if (existingIndex >= 0) {
         onSentenceSelectionChange(undefined);
-        showSelectionNotice(`Region ${existingIndex + 1} already selected.`);
+        showSelectionNotice(t("pdf.regionAlreadySelected", { count: existingIndex + 1 }));
         return;
       }
 
@@ -813,9 +818,9 @@ export function PdfViewer({
       queuedCrossSelectionsRef.current = nextSelections;
       setQueuedCrossSelections(nextSelections);
       onSentenceSelectionChange(undefined);
-      showSelectionNotice(`Added region ${nextSelections.length}.`);
+      showSelectionNotice(t("pdf.addedRegion", { count: nextSelections.length }));
     },
-    [onSentenceSelectionChange, showSelectionNotice],
+    [onSentenceSelectionChange, showSelectionNotice, t],
   );
 
   const handleConfirmCrossSelection = useCallback(() => {
@@ -1237,10 +1242,10 @@ export function PdfViewer({
   const handleCreateSelectAnnotation = useCallback(
     async (selection: SentenceSelection, annotation: PinAnnotationInput) => {
       await onCreateAnnotation(selection, annotation);
-      showSelectionNotice("Annotation saved.");
+      showSelectionNotice(t("annotation.saved"));
       onSentenceSelectionChange(undefined);
     },
-    [onCreateAnnotation, onSentenceSelectionChange, showSelectionNotice],
+    [onCreateAnnotation, onSentenceSelectionChange, showSelectionNotice, t],
   );
 
   const clearMobilePendingSelection = useCallback(() => {
@@ -1290,66 +1295,68 @@ export function PdfViewer({
         <div className="pdf-viewer-heading">
           <div className="pdf-viewer-title">{entry.pdfMetadata?.title || entry.fileName}</div>
           <div className="pdf-viewer-subtitle">
-            {pages.length > 0 ? `${pages.length} pages` : "Loading PDF"}
+            {pages.length > 0 ? t("pdf.pages", { count: pages.length }) : t("pdf.loading")}
           </div>
         </div>
-        <div className="pdf-viewer-actions" aria-label="PDF controls">
+        <div className="pdf-viewer-actions" aria-label={t("reader.pdfControls")}>
           {headerControls}
           {selectionMode === "cross" ? (
-            <div className="cross-selection-toolbar" aria-label="Cross-region selection controls">
+            <div className="cross-selection-toolbar" aria-label={t("pdf.crossSelectionControls")}>
               <span className="cross-selection-count">
-                {queuedCrossSelections.length} region{queuedCrossSelections.length === 1 ? "" : "s"}
+                {t(queuedCrossSelections.length === 1 ? "pdf.regionCount" : "pdf.regionCountPlural", {
+                  count: queuedCrossSelections.length,
+                })}
               </span>
               <button
-                aria-label={readerMode === "select" ? "Use selected regions" : "Translate selected regions"}
+                aria-label={readerMode === "select" ? t("pdf.useSelectedRegions") : t("pdf.translateSelectedRegions")}
                 className="icon-button icon-button--small icon-button--success"
                 disabled={queuedCrossSelections.length === 0}
                 onClick={handleConfirmCrossSelection}
-                title={readerMode === "select" ? "Use selected regions" : "Translate selected regions"}
+                title={readerMode === "select" ? t("pdf.useSelectedRegions") : t("pdf.translateSelectedRegions")}
                 type="button"
               >
                 <Check aria-hidden="true" size={16} strokeWidth={2} />
               </button>
               <button
-                aria-label="Undo last selected region"
+                aria-label={t("pdf.undoLastSelectedRegion")}
                 className="icon-button icon-button--small"
                 disabled={queuedCrossSelections.length === 0}
                 onClick={handleUndoCrossSelection}
-                title="Undo last selected region"
+                title={t("pdf.undoLastSelectedRegion")}
                 type="button"
               >
                 <RotateCcw aria-hidden="true" size={16} strokeWidth={2} />
               </button>
               <button
-                aria-label="Clear selected regions"
+                aria-label={t("pdf.clearSelectedRegions")}
                 className="icon-button icon-button--small icon-button--danger"
                 disabled={queuedCrossSelections.length === 0}
                 onClick={handleClearCrossSelection}
-                title="Clear selected regions"
+                title={t("pdf.clearSelectedRegions")}
                 type="button"
               >
                 <X aria-hidden="true" size={16} strokeWidth={2} />
               </button>
             </div>
           ) : null}
-          <div className="pdf-zoom-toolbar" aria-label="PDF zoom controls">
+          <div className="pdf-zoom-toolbar" aria-label={t("pdf.zoomControls")}>
             <button
-              aria-label="Zoom out"
+              aria-label={t("pdf.zoomOut")}
               className="icon-button icon-button--small"
               disabled={userZoom <= USER_ZOOM_MIN}
               onClick={() => handleZoom(-1)}
-              title="Zoom out"
+              title={t("pdf.zoomOut")}
               type="button"
             >
               <Minus aria-hidden="true" size={16} strokeWidth={2} />
             </button>
             <span className="pdf-zoom-value">{Math.round(userZoom * 100)}%</span>
             <button
-              aria-label="Zoom in"
+              aria-label={t("pdf.zoomIn")}
               className="icon-button icon-button--small"
               disabled={userZoom >= USER_ZOOM_MAX}
               onClick={() => handleZoom(1)}
-              title="Zoom in"
+              title={t("pdf.zoomIn")}
               type="button"
             >
               <Plus aria-hidden="true" size={16} strokeWidth={2} />
@@ -1389,7 +1396,7 @@ export function PdfViewer({
                 }}
                 type="button"
               >
-                Remove record
+                {t("common.removeRecord")}
               </button>
             ) : null}
           </div>
@@ -1438,14 +1445,14 @@ export function PdfViewer({
                     settings={settings}
                   />
                 ))
-              : <div className="reader-message">Loading PDF...</div>}
+              : <div className="reader-message">{t("pdf.loadingWithDots")}</div>}
           </div>
         )}
       </div>
       {mobilePendingSelection ? (
-        <div className="mobile-selection-confirm-bar" role="group" aria-label="Selection actions">
+        <div className="mobile-selection-confirm-bar" role="group" aria-label={t("pdf.selectionActions")}>
           <div className="mobile-selection-confirm-summary">
-            {countWords(mobilePendingSelection.targetSentence)} words selected
+            {t("pdf.wordsSelected", { count: countWords(mobilePendingSelection.targetSentence) })}
           </div>
           <div className="mobile-selection-confirm-actions">
             {selectionMode === "cross" ? (
@@ -1454,7 +1461,7 @@ export function PdfViewer({
                 onClick={handleMobilePendingAddCrossSelection}
                 type="button"
               >
-                Add
+                {t("common.add")}
               </button>
             ) : (
               <>
@@ -1463,14 +1470,14 @@ export function PdfViewer({
                   onClick={handleMobilePendingTranslate}
                   type="button"
                 >
-                  Translate
+                  {t("pdf.translate")}
                 </button>
                 <button
                   className="mobile-selection-confirm-button"
                   onClick={handleMobilePendingCopy}
                   type="button"
                 >
-                  Copy
+                  {t("common.copy")}
                 </button>
               </>
             )}
@@ -1479,7 +1486,7 @@ export function PdfViewer({
               onClick={clearMobilePendingSelection}
               type="button"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
           </div>
         </div>

@@ -4,6 +4,8 @@ import {
   TRANSLATION_LANGUAGES,
   type TranslationLanguage,
 } from "../config/translationLanguages";
+import { useI18n } from "../i18n/I18nProvider";
+import { UI_LOCALES, type UiLocale } from "../i18n/uiLocales";
 import type {
   AppSettings,
   CloudPdfLibraryEntry,
@@ -76,6 +78,7 @@ export function SettingsPanel({
   settings,
   supabaseConfigured,
 }: SettingsPanelProps) {
+  const { formatNumber: formatLocalizedNumber, t } = useI18n();
   const [pendingAction, setPendingAction] = useState<PendingAction>();
   const [statusMessage, setStatusMessage] = useState<string>();
   const [usageSummary, setUsageSummary] = useState<ApiUsageSummary>(EMPTY_USAGE_SUMMARY);
@@ -109,17 +112,17 @@ export function SettingsPanel({
         setStatusMessage(undefined);
         await onSettingsChange(nextSettings);
       } catch {
-        setStatusMessage("Could not save settings.");
+        setStatusMessage(t("settings.saveFailed"));
       }
     },
-    [onSettingsChange],
+    [onSettingsChange, t],
   );
 
   const runConfirmedAction = useCallback(
     async (action: PendingAction, callback: () => Promise<void>, message: string) => {
       if (pendingAction !== action) {
         setPendingAction(action);
-        setStatusMessage("Confirm the action to continue.");
+        setStatusMessage(t("settings.confirmAction"));
         return;
       }
 
@@ -130,10 +133,10 @@ export function SettingsPanel({
         setStatusMessage(message);
         refreshUsageSummary();
       } catch {
-        setStatusMessage("Action failed.");
+        setStatusMessage(t("settings.actionFailed"));
       }
     },
-    [pendingAction, refreshUsageSummary],
+    [pendingAction, refreshUsageSummary, t],
   );
 
   const handleSourceLanguageChange = useCallback(
@@ -166,24 +169,45 @@ export function SettingsPanel({
       }}
       role="presentation"
     >
-      <aside className="settings-panel" aria-label="Settings panel">
+      <aside className="settings-panel" aria-label={t("settings.title")}>
         <header className="settings-panel-header">
           <div>
-            <div className="settings-panel-title">Settings</div>
-            <div className="settings-panel-subtitle">Local reader preferences</div>
+            <div className="settings-panel-title">{t("settings.title")}</div>
+            <div className="settings-panel-subtitle">{t("settings.localPreferences")}</div>
           </div>
-          <button className="icon-button" onClick={onClose} title="Close settings" type="button">
+          <button className="icon-button" onClick={onClose} title={t("settings.close")} type="button">
             <X aria-hidden="true" size={18} strokeWidth={2} />
           </button>
         </header>
 
         {statusMessage ? <div className="settings-panel-status">{statusMessage}</div> : null}
 
-        <section className="settings-section" aria-label="Translation settings">
-          <div className="settings-section-heading">Translation</div>
+        <section className="settings-section" aria-label={t("settings.interfaceLanguage")}>
+          <div className="settings-section-heading">{t("settings.interfaceLanguage")}</div>
+          <label className="settings-field">
+            <span>{t("settings.interfaceLanguage")}</span>
+            <select
+              value={settings.uiLocale}
+              onChange={(event) =>
+                void updateSettings({
+                  uiLocale: event.currentTarget.value as UiLocale,
+                })
+              }
+            >
+              {UI_LOCALES.map((locale) => (
+                <option key={locale.code} value={locale.code}>
+                  {locale.nativeLabel}
+                </option>
+              ))}
+            </select>
+          </label>
+        </section>
+
+        <section className="settings-section" aria-label={t("settings.translationSettings")}>
+          <div className="settings-section-heading">{t("settings.translation")}</div>
           <div className="settings-field-grid">
             <label className="settings-field">
-              <span>Source</span>
+              <span>{t("settings.source")}</span>
               <select
                 value={settings.sourceLang}
                 onChange={(event) =>
@@ -198,7 +222,7 @@ export function SettingsPanel({
               </select>
             </label>
             <label className="settings-field">
-              <span>Target</span>
+              <span>{t("settings.target")}</span>
               <select
                 value={settings.targetLang}
                 onChange={(event) =>
@@ -214,7 +238,7 @@ export function SettingsPanel({
             </label>
           </div>
           <label className="settings-field">
-            <span>Default model</span>
+            <span>{t("settings.defaultModel")}</span>
             <select
               value={settings.defaultModel}
               onChange={(event) =>
@@ -228,7 +252,7 @@ export function SettingsPanel({
             </select>
           </label>
           <label className="settings-field">
-            <span>Context window</span>
+            <span>{t("settings.contextWindow")}</span>
             <select
               value={settings.contextWindowN}
               onChange={(event) =>
@@ -254,14 +278,14 @@ export function SettingsPanel({
               }
               type="checkbox"
             />
-            <span>Long context</span>
+            <span>{t("settings.longContext")}</span>
           </label>
         </section>
 
-        <section className="settings-section" aria-label="Selection settings">
-          <div className="settings-section-heading">Selection</div>
+        <section className="settings-section" aria-label={t("settings.selectionSettings")}>
+          <div className="settings-section-heading">{t("settings.selection")}</div>
           <label className="settings-field">
-            <span>Dragged words</span>
+            <span>{t("settings.draggedWords")}</span>
             <input
               max={MAX_DRAGGED_WORDS_LIMIT}
               min={MIN_DRAGGED_WORDS_LIMIT}
@@ -277,13 +301,13 @@ export function SettingsPanel({
               value={settings.maxDraggedWords}
             />
             <small className="settings-field-hint">
-              Maximum {MAX_DRAGGED_WORDS_LIMIT} words.
+              {t("settings.maxWordsHint", { count: MAX_DRAGGED_WORDS_LIMIT })}
             </small>
           </label>
         </section>
 
-        <section className="settings-section" aria-label="Paper context">
-          <div className="settings-section-heading">Paper Context</div>
+        <section className="settings-section" aria-label={t("settings.paperContext")}>
+          <div className="settings-section-heading">{t("settings.paperContext")}</div>
           <PaperContextEditor
             currentEntry={currentEntry}
             onSave={onPaperContextSave}
@@ -291,89 +315,89 @@ export function SettingsPanel({
           />
         </section>
 
-        <section className="settings-section" aria-label="API status and usage">
-          <div className="settings-section-heading">API</div>
+        <section className="settings-section" aria-label={t("settings.api")}>
+          <div className="settings-section-heading">{t("settings.api")}</div>
           <div className="settings-readout-list">
-            <Readout label="Status" value={apiStatus} />
+            <Readout label={t("settings.status")} value={apiStatus} />
             <Readout
-              label="API key"
-              value={apiKeyConfigured === undefined ? "-" : apiKeyConfigured ? "configured" : "missing"}
+              label={t("settings.apiKey")}
+              value={apiKeyConfigured === undefined ? "-" : apiKeyConfigured ? t("common.configured") : t("common.missing")}
             />
             <Readout
-              label="Supabase"
-              value={supabaseConfigured === undefined ? "-" : supabaseConfigured ? "configured" : "missing"}
+              label={t("settings.supabase")}
+              value={supabaseConfigured === undefined ? "-" : supabaseConfigured ? t("common.configured") : t("common.missing")}
             />
-            <Readout label="Calls" value={String(usageSummary.totalCalls)} />
-            <Readout label="Errors" value={String(usageSummary.errorCalls)} />
-            <Readout label="Tokens" value={formatNumber(usageSummary.totalTokens)} />
+            <Readout label={t("settings.calls")} value={formatLocalizedNumber(usageSummary.totalCalls)} />
+            <Readout label={t("settings.errors")} value={formatLocalizedNumber(usageSummary.errorCalls)} />
+            <Readout label={t("settings.tokens")} value={formatLocalizedNumber(usageSummary.totalTokens)} />
             <Readout
-              label="Models"
+              label={t("settings.models")}
               value={`F ${usageSummary.modelCounts["deepseek-v4-flash"]} / P ${usageSummary.modelCounts["deepseek-v4-pro"]}`}
             />
-            <Readout label="DS cache hit" value={formatNumber(usageSummary.cacheHitTokens)} />
-            <Readout label="DS cache miss" value={formatNumber(usageSummary.cacheMissTokens)} />
+            <Readout label={t("settings.dsCacheHit")} value={formatLocalizedNumber(usageSummary.cacheHitTokens)} />
+            <Readout label={t("settings.dsCacheMiss")} value={formatLocalizedNumber(usageSummary.cacheMissTokens)} />
           </div>
-          <div className="settings-log-list" aria-label="Recent API calls">
+          <div className="settings-log-list" aria-label={t("settings.recentApiCalls")}>
             {usageSummary.recentLogs.length > 0
               ? usageSummary.recentLogs.map((log) => (
                   <div className="settings-log-row" key={log.id}>
                     <span>{log.model === "deepseek-v4-pro" ? "Pro" : "Flash"}</span>
                     <span>{log.status}</span>
                     <span>{formatDuration(log)}</span>
-                    <span>{formatNumber(log.totalTokens ?? 0)}</span>
+                    <span>{formatLocalizedNumber(log.totalTokens ?? 0)}</span>
                   </div>
                 ))
-              : <div className="settings-empty-row">No API calls logged</div>}
+              : <div className="settings-empty-row">{t("settings.noApiCalls")}</div>}
           </div>
         </section>
 
-        <section className="settings-section" aria-label="Library data management">
-          <div className="settings-section-heading">Library Data</div>
+        <section className="settings-section" aria-label={t("settings.libraryDataManagement")}>
+          <div className="settings-section-heading">{t("settings.libraryData")}</div>
           <div className="settings-action-list">
             <ConfirmButton
               disabled={false}
               isPending={pendingAction === "clear-cache"}
-              label="Clear translation cache"
+              label={t("settings.clearTranslationCache")}
               onCancel={() => setPendingAction(undefined)}
               onConfirm={() =>
                 void runConfirmedAction(
                   "clear-cache",
                   onClearTranslationCache,
-                  "Translation cache cleared.",
+                  t("settings.translationCacheCleared"),
                 )
               }
             />
             <ConfirmButton
               disabled={!currentEntry}
               isPending={pendingAction === "clear-current-pdf"}
-              label="Clear current PDF data"
+              label={t("settings.clearCurrentPdfData")}
               onCancel={() => setPendingAction(undefined)}
               onConfirm={() =>
                 void runConfirmedAction(
                   "clear-current-pdf",
                   onClearCurrentPdfData,
-                  "Current PDF data cleared.",
+                  t("settings.currentPdfDataCleared"),
                 )
               }
             />
             <ConfirmButton
               disabled={!currentEntry}
               isPending={pendingAction === "clear-current-pins"}
-              label="Clear current PDF annotations"
+              label={t("settings.clearCurrentPdfAnnotations")}
               onCancel={() => setPendingAction(undefined)}
               onConfirm={() =>
                 void runConfirmedAction(
                   "clear-current-pins",
                   onClearCurrentPdfPins,
-                  "Current PDF annotations cleared.",
+                  t("settings.currentPdfAnnotationsCleared"),
                 )
               }
             />
           </div>
         </section>
 
-        <section className="settings-section" aria-label="PDF history">
-          <div className="settings-section-heading">PDF History</div>
+        <section className="settings-section" aria-label={t("settings.pdfHistory")}>
+          <div className="settings-section-heading">{t("settings.pdfHistory")}</div>
           <div className="settings-history-list">
             {libraryEntries.length > 0
               ? libraryEntries.map((entry) => {
@@ -384,7 +408,7 @@ export function SettingsPanel({
                       <div className="settings-history-main">
                         <div className="settings-history-title">{entry.pdfMetadata?.title || entry.fileName}</div>
                         <div className="settings-history-meta">
-                          {formatBytes(entry.fileSize)} · {entry.openCount} opens
+                          {formatBytes(entry.fileSize)} · {t("settings.opens", { count: entry.openCount })}
                         </div>
                       </div>
                       {pendingAction === actionId ? (
@@ -395,10 +419,10 @@ export function SettingsPanel({
                               void runConfirmedAction(
                                 actionId,
                                 () => onDeletePdfData(entry),
-                                "PDF data removed.",
+                                t("settings.pdfDataRemoved"),
                               )
                             }
-                            title="Confirm remove PDF data"
+                            title={t("settings.removePdfDataConfirm")}
                             type="button"
                           >
                             <Check aria-hidden="true" size={16} strokeWidth={2} />
@@ -406,7 +430,7 @@ export function SettingsPanel({
                           <button
                             className="icon-button icon-button--small icon-button--danger"
                             onClick={() => setPendingAction(undefined)}
-                            title="Cancel"
+                            title={t("common.cancel")}
                             type="button"
                           >
                             <X aria-hidden="true" size={16} strokeWidth={2} />
@@ -417,9 +441,9 @@ export function SettingsPanel({
                           className="icon-button icon-button--small"
                           onClick={() => {
                             setPendingAction(actionId);
-                            setStatusMessage("Confirm the action to continue.");
+                            setStatusMessage(t("settings.confirmAction"));
                           }}
-                          title="Remove PDF data"
+                          title={t("settings.removePdfData")}
                           type="button"
                         >
                           <Trash2 aria-hidden="true" size={16} strokeWidth={2} />
@@ -428,7 +452,7 @@ export function SettingsPanel({
                     </div>
                   );
                 })
-              : <div className="settings-empty-row">No PDFs in library</div>}
+              : <div className="settings-empty-row">{t("settings.noPdfs")}</div>}
           </div>
         </section>
       </aside>
@@ -449,6 +473,8 @@ function ConfirmButton({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <div className="settings-action-row">
       <span>{label}</span>
@@ -458,7 +484,7 @@ function ConfirmButton({
             className="icon-button icon-button--small icon-button--success"
             disabled={disabled}
             onClick={onConfirm}
-            title="Confirm"
+            title={t("common.confirm")}
             type="button"
           >
             <Check aria-hidden="true" size={16} strokeWidth={2} />
@@ -466,7 +492,7 @@ function ConfirmButton({
           <button
             className="icon-button icon-button--small icon-button--danger"
             onClick={onCancel}
-            title="Cancel"
+            title={t("common.cancel")}
             type="button"
           >
             <X aria-hidden="true" size={16} strokeWidth={2} />
@@ -502,10 +528,6 @@ function formatBytes(bytes: number) {
   }
 
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-}
-
-function formatNumber(value: number) {
-  return new Intl.NumberFormat("en-US").format(value);
 }
 
 function formatDuration(log: { requestFinishedAt?: number; requestStartedAt: number }) {

@@ -1,5 +1,6 @@
 import { ArrowDownAZ, Check, Clock3, FileText, Search, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useI18n } from "../i18n/I18nProvider";
 import type { CloudPdfLibraryEntry } from "../types/domain";
 
 type PdfLibraryProps = {
@@ -11,12 +12,6 @@ type PdfLibraryProps = {
 };
 type PdfLibrarySortMode = "name" | "opened";
 
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  month: "short",
-  day: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-});
 const fileNameCollator = new Intl.Collator(undefined, {
   numeric: true,
   sensitivity: "base",
@@ -29,6 +24,7 @@ export function PdfLibrary({
   onOpen,
   showControls = false,
 }: PdfLibraryProps) {
+  const { formatDate, t } = useI18n();
   const [confirmingDeleteFingerprint, setConfirmingDeleteFingerprint] = useState<string>();
   const [deletingFingerprint, setDeletingFingerprint] = useState<string>();
   const [query, setQuery] = useState("");
@@ -45,7 +41,7 @@ export function PdfLibrary({
   }, [entries, query, sortMode]);
 
   if (entries.length === 0) {
-    return <div className="library-empty">No PDFs imported yet.</div>;
+    return <div className="library-empty">{t("library.empty")}</div>;
   }
 
   const handleConfirmDelete = async (entry: CloudPdfLibraryEntry) => {
@@ -64,7 +60,7 @@ export function PdfLibrary({
 
   const nextSortMode = sortMode === "name" ? "opened" : "name";
   const sortButtonLabel =
-    sortMode === "name" ? "Sorted by file name" : "Sorted by last opened";
+    sortMode === "name" ? t("library.sortedByName") : t("library.sortedByLastOpened");
 
   return (
     <div className="library-block">
@@ -72,17 +68,21 @@ export function PdfLibrary({
         <div className="library-controls">
           <label className="library-search">
             <Search aria-hidden="true" size={15} strokeWidth={2} />
-            <span className="sr-only">Search library</span>
+            <span className="sr-only">{t("library.search")}</span>
             <input
               className="library-search-input"
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search PDFs"
+              placeholder={t("library.searchPlaceholder")}
               type="search"
               value={query}
             />
           </label>
           <button
-            aria-label={`Switch to ${nextSortMode === "name" ? "file name" : "last opened"} sorting`}
+            aria-label={
+              nextSortMode === "name"
+                ? t("library.switchToNameSorting")
+                : t("library.switchToLastOpenedSorting")
+            }
             className="icon-button library-sort-button"
             onClick={() => setSortMode(nextSortMode)}
             title={sortButtonLabel}
@@ -98,7 +98,7 @@ export function PdfLibrary({
       ) : null}
 
       {visibleEntries.length === 0 ? (
-        <div className="library-empty">No matching PDFs.</div>
+        <div className="library-empty">{t("library.noMatches")}</div>
       ) : (
         <div className="library-list">
           {visibleEntries.map((entry) => {
@@ -122,7 +122,12 @@ export function PdfLibrary({
                   <span className="library-item-main">
                     <span className="library-item-title">{title}</span>
                     <span className="library-item-meta">
-                      {formatFileSize(entry.fileSize)} · {dateFormatter.format(entry.lastOpenedAt)}
+                      {formatFileSize(entry.fileSize)} · {formatDate(entry.lastOpenedAt, {
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
                     </span>
                   </span>
                 </button>
@@ -135,7 +140,7 @@ export function PdfLibrary({
                           className="icon-button icon-button--small icon-button--success"
                           disabled={isDeleting}
                           onClick={() => void handleConfirmDelete(entry)}
-                          title="Confirm delete"
+                          title={t("common.confirm")}
                           type="button"
                         >
                           <Check aria-hidden="true" size={15} strokeWidth={2} />
@@ -145,7 +150,7 @@ export function PdfLibrary({
                           className="icon-button icon-button--small icon-button--danger"
                           disabled={isDeleting}
                           onClick={() => setConfirmingDeleteFingerprint(undefined)}
-                          title="Cancel"
+                          title={t("common.cancel")}
                           type="button"
                         >
                           <X aria-hidden="true" size={15} strokeWidth={2} />
@@ -157,7 +162,7 @@ export function PdfLibrary({
                         className="icon-button icon-button--small"
                         disabled={isDeleting}
                         onClick={() => setConfirmingDeleteFingerprint(entry.fingerprint)}
-                        title="Delete PDF history"
+                        title={t("library.deleteHistory")}
                         type="button"
                       >
                         <Trash2 aria-hidden="true" size={15} strokeWidth={2} />

@@ -2,6 +2,7 @@ import { Bookmark, Check, ChevronDown, Pin, RefreshCw, StickyNote, X } from "luc
 import type { CSSProperties, KeyboardEvent, MouseEvent, PointerEvent, TouchEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useI18n } from "../i18n/I18nProvider";
 import type {
   AnnotationColor,
   AppSettings,
@@ -111,15 +112,7 @@ const POPOVER_MAX_HEIGHT = 560;
 const MOBILE_SHEET_MIN_HEIGHT = 220;
 const MOBILE_SHEET_MAX_HEIGHT = 720;
 const DEFAULT_ANNOTATION_COLOR: AnnotationColor = "yellow";
-const ANNOTATION_COLORS: Array<{
-  label: string;
-  value: AnnotationColor;
-}> = [
-  { label: "Yellow", value: "yellow" },
-  { label: "Blue", value: "blue" },
-  { label: "Green", value: "green" },
-  { label: "Red", value: "red" },
-];
+const ANNOTATION_COLORS: AnnotationColor[] = ["yellow", "blue", "green", "red"];
 
 export function TranslationPopover({
   annotationColor,
@@ -143,6 +136,7 @@ export function TranslationPopover({
   view,
   zIndex,
 }: TranslationPopoverProps) {
+  const { t } = useI18n();
   const popoverRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController>();
@@ -400,7 +394,7 @@ export function TranslationPopover({
             translation: streamedTranslation,
             usage: streamedUsage,
           }).catch(() => {
-            setCacheWarning("Could not save this translation to local cache.");
+            setCacheWarning(t("translation.cacheSaveFailed"));
           });
           onTranslationCompleteRef.current?.(createPinPayload(streamedTranslation, cacheKey, request));
           if (favoriteAfterTranslationRef.current) {
@@ -812,13 +806,13 @@ export function TranslationPopover({
     >
       {!isMobileSheet ? (
         <button
-          aria-label="Resize translation box"
+          aria-label={t("translation.resizeBox")}
           className="translation-popover-resize-hook"
           onPointerCancel={handleResizeEnd}
           onPointerDown={handleResizeStart}
           onPointerMove={handleResizeMove}
           onPointerUp={handleResizeEnd}
-          title="Resize"
+          title={t("translation.resize")}
           type="button"
         />
       ) : null}
@@ -829,25 +823,25 @@ export function TranslationPopover({
         onPointerDown={isMobileSheet ? handleMobileSheetResizeStart : handleDragStart}
         onPointerMove={isMobileSheet ? handleMobileSheetResizeMove : handleDragMove}
         onPointerUp={isMobileSheet ? handleMobileSheetResizeEnd : handleDragEnd}
-        title={isMobileSheet ? "Drag to resize" : "Drag to move"}
+        title={isMobileSheet ? t("translation.dragToResize") : t("translation.dragToMove")}
       />
       <div className="translation-popover-toolbar translation-popover-toolbar--actions-only">
         <div className="translation-popover-actions">
           <button
-            aria-label={isCardPinned ? "Unpin translation card" : "Pin translation card"}
+            aria-label={isCardPinned ? t("translation.unpinCard") : t("translation.pinCard")}
             aria-pressed={isCardPinned}
             className={`icon-button icon-button--small pinned-translation-card-action translation-popover-action ${
               isCardPinned ? "icon-button--success" : ""
             }`}
             onKeyDown={handleCardPinKeyDown}
             onPointerDown={handleCardPinPointerDown}
-            title={isCardPinned ? "Unpin" : "Pin"}
+            title={isCardPinned ? t("translation.unpin") : t("translation.pin")}
             type="button"
           >
             <Pin aria-hidden="true" size={16} strokeWidth={2} />
           </button>
           <button
-            aria-label={isFavorited ? "Remove saved annotation" : "Save annotation"}
+            aria-label={isFavorited ? t("translation.removeSavedAnnotation") : t("translation.saveAnnotation")}
             aria-pressed={isFavorited}
             className={`icon-button icon-button--small pinned-translation-card-action translation-popover-action ${
               effectiveFavoriteStatus === "saved"
@@ -862,13 +856,13 @@ export function TranslationPopover({
               (!isFavorited && status === "error")
             }
             onClick={handleFavorite}
-            title={isFavorited ? "Remove annotation" : "Save annotation"}
+            title={isFavorited ? t("annotation.remove") : t("translation.saveAnnotation")}
             type="button"
           >
             <Bookmark aria-hidden="true" size={16} strokeWidth={2} />
           </button>
           <button
-            aria-label={isAnnotationEditorOpen ? "Close note editor" : "Open note editor"}
+            aria-label={isAnnotationEditorOpen ? t("annotation.closeNoteEditor") : t("annotation.addNote")}
             aria-pressed={isAnnotationEditorOpen || hasSavedAnnotation}
             className={`icon-button icon-button--small pinned-translation-card-action translation-popover-action ${
               annotationStatus === "saved" || hasSavedAnnotation
@@ -879,7 +873,7 @@ export function TranslationPopover({
             }`}
             disabled={!onAnnotationSave}
             onClick={() => setIsAnnotationEditorOpen((isOpen) => !isOpen)}
-            title={hasSavedAnnotation ? "Edit note" : "Add note"}
+            title={hasSavedAnnotation ? t("annotation.editNote") : t("annotation.addNote")}
             type="button"
           >
             <StickyNote aria-hidden="true" size={16} strokeWidth={2} />
@@ -887,17 +881,17 @@ export function TranslationPopover({
           <button
             className="icon-button icon-button--small pinned-translation-card-action translation-popover-action"
             onClick={() => startTranslation({ bypassCache: true })}
-            title="Retranslate"
+            title={t("translation.retranslate")}
             type="button"
           >
             <RefreshCw aria-hidden="true" size={16} strokeWidth={2} />
           </button>
           {isMobileSheet && onCollapse ? (
             <button
-              aria-label="Collapse translation card"
+              aria-label={t("translation.collapseCard")}
               className="icon-button icon-button--small pinned-translation-card-action translation-popover-action"
               onClick={onCollapse}
-              title="Collapse"
+              title={t("translation.collapse")}
               type="button"
             >
               <ChevronDown aria-hidden="true" size={16} strokeWidth={2} />
@@ -906,7 +900,7 @@ export function TranslationPopover({
           <button
             className="icon-button icon-button--small pinned-translation-card-action translation-popover-action"
             onClick={onClose}
-            title="Close"
+            title={t("common.close")}
             type="button"
           >
             <X aria-hidden="true" size={16} strokeWidth={2} />
@@ -918,33 +912,33 @@ export function TranslationPopover({
         {isAnnotationEditorOpen ? (
           <div className="translation-popover-section">
             <div className="translation-popover-annotation-toolbar">
-              <div className="translation-popover-label">Note</div>
-              <div className="annotation-color-row" aria-label="Annotation color" role="group">
+              <div className="translation-popover-label">{t("annotation.note")}</div>
+              <div className="annotation-color-row" aria-label={t("annotation.color")} role="group">
                 {ANNOTATION_COLORS.map((color) => (
                   <button
-                    aria-label={`${color.label} annotation color`}
-                    aria-pressed={annotationDraft.color === color.value}
-                    className={`annotation-color-swatch annotation-color-swatch--${color.value} ${
-                      annotationDraft.color === color.value ? "annotation-color-swatch--active" : ""
+                    aria-label={t("annotation.colorLabel", { color: getAnnotationColorLabel(color, t) })}
+                    aria-pressed={annotationDraft.color === color}
+                    className={`annotation-color-swatch annotation-color-swatch--${color} ${
+                      annotationDraft.color === color ? "annotation-color-swatch--active" : ""
                     }`}
-                    key={color.value}
+                    key={color}
                     onClick={() =>
                       setAnnotationDraft((draft) => ({
                         ...draft,
-                        color: color.value,
+                        color,
                       }))
                     }
-                    title={color.label}
+                    title={getAnnotationColorLabel(color, t)}
                     type="button"
                   />
                 ))}
               </div>
               <button
-                aria-label="Save note"
+                aria-label={t("annotation.save")}
                 className="icon-button icon-button--small pinned-translation-card-action"
                 disabled={!canSaveAnnotation || !hasAnnotationDraftChanges}
                 onClick={() => void handleAnnotationSave()}
-                title="Save note"
+                title={t("annotation.save")}
                 type="button"
               >
                 <Check aria-hidden="true" size={16} strokeWidth={2} />
@@ -958,7 +952,7 @@ export function TranslationPopover({
                   note: event.target.value,
                 }))
               }
-              placeholder="Add a note"
+              placeholder={t("annotation.addNote")}
               rows={3}
               value={annotationDraft.note ?? ""}
             />
@@ -966,24 +960,24 @@ export function TranslationPopover({
         ) : null}
 
         <div className="translation-popover-section">
-          <div className="translation-popover-label">Translation</div>
+          <div className="translation-popover-label">{t("translation.title")}</div>
           <div className={`translation-popover-output translation-popover-output--${status}`}>
-            {status === "error" ? errorMessage : translation || "Translating..."}
+            {status === "error" ? errorMessage : translation || t("translation.translating")}
           </div>
         </div>
 
         <div className="translation-popover-section">
-          <div className="translation-popover-label">Original</div>
+          <div className="translation-popover-label">{t("translation.original")}</div>
           <div className="translation-popover-source">{selection.targetSentence}</div>
         </div>
 
         {usage || translationSource === "cache" || cacheWarning ? (
           <div className="translation-popover-meta">
-            {translationSource === "cache" ? <span>Local cache</span> : null}
+            {translationSource === "cache" ? <span>{t("translation.localCache")}</span> : null}
             {translationSource === "cache" && (usage || cacheWarning) ? " · " : null}
             {usage ? (
               <span>
-                Tokens {usage.totalTokens ?? "-"} · Cache hit {usage.promptCacheHitTokens ?? 0}
+                {t("translation.tokens")} {usage.totalTokens ?? "-"} · {t("translation.cacheHit")} {usage.promptCacheHitTokens ?? 0}
               </span>
             ) : null}
             {usage && cacheWarning ? " · " : null}
@@ -1011,4 +1005,21 @@ function getMobileSheetMaxHeight() {
   }
 
   return Math.min(MOBILE_SHEET_MAX_HEIGHT, Math.max(MOBILE_SHEET_MIN_HEIGHT, window.innerHeight - 24));
+}
+
+function getAnnotationColorLabel(
+  color: AnnotationColor,
+  t: ReturnType<typeof useI18n>["t"],
+) {
+  switch (color) {
+    case "blue":
+      return t("annotation.blue");
+    case "green":
+      return t("annotation.green");
+    case "red":
+      return t("annotation.red");
+    case "yellow":
+    default:
+      return t("annotation.yellow");
+  }
 }

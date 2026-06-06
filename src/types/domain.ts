@@ -1,4 +1,5 @@
 import type { TranslationLanguage } from "../config/translationLanguages";
+import type { UiLocale } from "../i18n/uiLocales";
 
 export type TranslationModel = "deepseek-v4-flash" | "deepseek-v4-pro";
 export type ReaderMode = "translate" | "select";
@@ -214,4 +215,5 @@ export type AppSettings = {
   maxDraggedWords: number;
   sourceLang: SourceLanguage;
   targetLang: TargetLanguage;
+  uiLocale: UiLocale;
 };

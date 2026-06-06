@@ -8,6 +8,7 @@ import {
   DEFAULT_TARGET_LANG,
   normalizeTranslationLanguagePair,
 } from "../config/translationLanguages";
+import { detectBrowserUiLocale, normalizeUiLocale } from "../i18n/uiLocales";
 import type { ApiCallLog, AppSettings, TranslationModel } from "../types/domain";
 
 const APP_SETTINGS_KEY = "app";
@@ -21,6 +22,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   maxDraggedWords: PROJECT_CONFIG.selection.defaultMaxDraggedWords,
   sourceLang: DEFAULT_SOURCE_LANG,
   targetLang: DEFAULT_TARGET_LANG,
+  uiLocale: detectBrowserUiLocale(),
 };
 
 export type ApiUsageSummary = {
@@ -118,6 +120,7 @@ export function normalizeAppSettings(input: unknown): AppSettings {
     maxDraggedWords,
     sourceLang,
     targetLang,
+    uiLocale: normalizeUiLocale(value.uiLocale, DEFAULT_APP_SETTINGS.uiLocale),
   };
 }
 

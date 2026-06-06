@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import {
   Activity,
@@ -39,6 +39,8 @@ import {
   getCloudSyncStatusDetail,
 } from "../cloud/syncStatus";
 import { PROJECT_CONFIG } from "../config/projectConfig";
+import { createI18n, I18nProvider } from "../i18n/I18nProvider";
+import type { MessageKey } from "../i18n/messages";
 import {
   createDocumentArchive,
   importDocumentArchiveState,
@@ -131,34 +133,35 @@ const PINS_PANE_MAX_WIDTH = 460;
 const PINS_PANE_MIN_WIDTH = 300;
 const TRANSLATION_CARD_BASE_Z_INDEX = 20;
 
-const CLOUD_SYNC_STATUS_LABELS: Record<VisibleCloudSyncStatus, string> = {
-  "cloud-missing": "Setup",
-  "local-only": "Local only",
-  checking: "Checking",
-  offline: "Offline",
-  synced: "Synced",
-  syncing: "Syncing",
+const CLOUD_SYNC_STATUS_LABEL_KEYS: Record<VisibleCloudSyncStatus, MessageKey> = {
+  "cloud-missing": "cloud.setup",
+  "local-only": "cloud.localOnly",
+  checking: "cloud.checking",
+  offline: "cloud.offline",
+  synced: "cloud.synced",
+  syncing: "cloud.syncing",
 };
 
 function getVisibleCloudSyncMessage(
   status: VisibleCloudSyncStatus,
   latestSyncMessage: string,
+  t: (key: MessageKey) => string,
 ) {
   switch (status) {
     case "checking":
-      return "Checking cloud sync status.";
+      return t("cloud.checkingStatus");
     case "cloud-missing":
-      return "Supabase is not configured on the API.";
+      return t("cloud.supabaseMissing");
     case "offline":
-      return "Cloud sync is unavailable while the API is offline.";
+      return t("cloud.offlineMessage");
     case "synced":
-      return latestSyncMessage || "Cloud sync is ready.";
+      return latestSyncMessage || t("cloud.ready");
     case "syncing":
-      return latestSyncMessage || "Syncing changes to cloud.";
+      return latestSyncMessage || t("cloud.syncingChanges");
     case "local-only":
-      return latestSyncMessage || "Saved locally, but cloud sync failed.";
+      return latestSyncMessage || t("cloud.savedLocal");
     default:
-      return "Cloud sync is ready.";
+      return t("cloud.ready");
   }
 }
 
@@ -194,8 +197,9 @@ export function ReaderShell() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
   const [statusMessage, setStatusMessage] = useState<string>();
   const [isExporting, setIsExporting] = useState(false);
-  const [cloudSyncMessage, setCloudSyncMessage] = useState("Cloud sync is ready.");
+  const [cloudSyncMessage, setCloudSyncMessage] = useState("");
   const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>("idle");
+  const { t } = useMemo(() => createI18n(settings.uiLocale), [settings.uiLocale]);
   const [damagedLibraryFingerprint, setDamagedLibraryFingerprint] = useState<string>();
   const [readerSessionHydratedUserId, setReaderSessionHydratedUserId] = useState<string>();
   const activeReaderSessionUserIdRef = useRef<string>();
@@ -222,8 +226,12 @@ export function ReaderShell() {
   const visibleCloudSyncMessage = getVisibleCloudSyncMessage(
     visibleCloudSyncStatus,
     cloudSyncMessage,
+    t,
   );
-  const mobileStatusLabel = `API ${apiStatus}. ${visibleCloudSyncMessage}`;
+  const mobileStatusLabel = t("reader.mobileStatus", {
+    apiStatus,
+    syncMessage: visibleCloudSyncMessage,
+  });
 
   const applyPinnedTranslationCards = useCallback((nextCards: PinnedTranslationCard[]) => {
     pinnedTranslationCardsRef.current = nextCards;
@@ -1280,7 +1288,7 @@ export function ReaderShell() {
             onClick={handleRemoveDamagedLibraryRecord}
             type="button"
           >
-            Remove
+            {t("common.remove")}
           </button>
         ) : null}
       </div>
@@ -1289,7 +1297,7 @@ export function ReaderShell() {
     <>
       <div className="library-pane-header">
         <div className="pane-heading-row">
-          <div className="pane-heading">Library</div>
+          <div className="pane-heading">{t("reader.library")}</div>
           {closeButton}
         </div>
         <PdfImportDropzone isImporting={isImporting} onImport={handleImport} variant="compact" />
@@ -1307,25 +1315,25 @@ export function ReaderShell() {
   const renderPinsPaneContent = (closeButton: ReactNode) => (
     <>
       <div className="pane-heading-row">
-        <div className="pane-heading">Annotations</div>
+        <div className="pane-heading">{t("reader.annotations")}</div>
         <div className="pins-clear-actions">
           {closeButton}
           {pins.length > 0 && isConfirmingClearPins ? (
             <>
               <button
-                aria-label="Confirm clear all annotations"
+                aria-label={t("common.confirm")}
                 className="icon-button icon-button--small icon-button--success"
                 onClick={handleClearPins}
-                title="Confirm clear all annotations"
+                title={t("common.confirm")}
                 type="button"
               >
                 <Check aria-hidden="true" size={16} strokeWidth={2} />
               </button>
               <button
-                aria-label="Cancel clear all annotations"
+                aria-label={t("common.cancel")}
                 className="icon-button icon-button--small icon-button--danger"
                 onClick={() => setIsConfirmingClearPins(false)}
-                title="Cancel"
+                title={t("common.cancel")}
                 type="button"
               >
                 <X aria-hidden="true" size={16} strokeWidth={2} />
@@ -1334,10 +1342,10 @@ export function ReaderShell() {
           ) : null}
           {pins.length > 0 && !isConfirmingClearPins ? (
             <button
-              aria-label="Clear all annotations"
+              aria-label={t("settings.clearCurrentPdfAnnotations")}
               className="icon-button icon-button--small"
               onClick={() => setIsConfirmingClearPins(true)}
-              title="Clear all annotations"
+              title={t("settings.clearCurrentPdfAnnotations")}
               type="button"
             >
               <Trash2 aria-hidden="true" size={16} strokeWidth={2} />
@@ -1360,11 +1368,11 @@ export function ReaderShell() {
   const renderSidebarToggleButtons = () => (
     <>
       <button
-        aria-label={isLibraryControlOpen ? "Close library pane" : "Open library pane"}
+        aria-label={isLibraryControlOpen ? t("reader.closeLibraryPane") : t("reader.openLibraryPane")}
         aria-pressed={isLibraryControlOpen}
         className="icon-button"
         onClick={handleLibraryPaneToggle}
-        title={isLibraryControlOpen ? "Close library" : "Open library"}
+        title={isLibraryControlOpen ? t("reader.closeLibrary") : t("reader.openLibrary")}
         type="button"
       >
         {isLibraryControlOpen ? (
@@ -1374,11 +1382,11 @@ export function ReaderShell() {
         )}
       </button>
       <button
-        aria-label={isPinsControlOpen ? "Close annotations pane" : "Open annotations pane"}
+        aria-label={isPinsControlOpen ? t("reader.closeAnnotationsPane") : t("reader.openAnnotationsPane")}
         aria-pressed={isPinsControlOpen}
         className="icon-button"
         onClick={handlePinsPaneToggle}
-        title={isPinsControlOpen ? "Close annotations" : "Open annotations"}
+        title={isPinsControlOpen ? t("reader.closeAnnotations") : t("reader.openAnnotations")}
         type="button"
       >
         {isPinsControlOpen ? (
@@ -1391,28 +1399,28 @@ export function ReaderShell() {
   );
   const renderDocumentHeaderControls = () => (
     <>
-      <div className="pdf-sidebar-toolbar pdf-sidebar-toolbar--pane-toggles" aria-label="Reader side panels">
+      <div className="pdf-sidebar-toolbar pdf-sidebar-toolbar--pane-toggles" aria-label={t("reader.sidePanels")}>
         {renderSidebarToggleButtons()}
       </div>
-      <div className="pdf-export-toolbar" aria-label="Export controls">
+      <div className="pdf-export-toolbar" aria-label={t("reader.exportControls")}>
         <button
-          aria-label="Export PDF"
+          aria-label={t("reader.exportPdf")}
           className="icon-button"
           disabled={isExporting}
           onClick={handleExportPdf}
-          title="Export PDF"
+          title={t("reader.exportPdf")}
           type="button"
         >
           <Download aria-hidden="true" size={17} strokeWidth={2} />
         </button>
         <button
-          aria-label="Export reading package"
+          aria-label={t("reader.exportPackage")}
           className="icon-button"
           disabled={isExporting}
           onClick={() => {
             void handleExportReadingPackage();
           }}
-          title="Export reading package"
+          title={t("reader.exportPackage")}
           type="button"
         >
           <Archive aria-hidden="true" size={17} strokeWidth={2} />
@@ -1421,15 +1429,15 @@ export function ReaderShell() {
     </>
   );
   const renderMobileReaderSideDock = () => (
-    <div className="mobile-reader-side-dock" aria-label="Reader side panels">
+    <div className="mobile-reader-side-dock" aria-label={t("reader.sidePanels")}>
       <button
-        aria-label={isLibraryControlOpen ? "Close library pane" : "Open library pane"}
+        aria-label={isLibraryControlOpen ? t("reader.closeLibraryPane") : t("reader.openLibraryPane")}
         aria-pressed={isLibraryControlOpen}
         className={`icon-button mobile-reader-side-dock-button mobile-reader-side-dock-button--library ${
           isLibraryControlOpen ? "mobile-reader-side-dock-button--active" : ""
         }`}
         onClick={handleLibraryPaneToggle}
-        title={isLibraryControlOpen ? "Close library" : "Open library"}
+        title={isLibraryControlOpen ? t("reader.closeLibrary") : t("reader.openLibrary")}
         type="button"
       >
         {isLibraryControlOpen ? (
@@ -1439,13 +1447,13 @@ export function ReaderShell() {
         )}
       </button>
       <button
-        aria-label={isPinsControlOpen ? "Close annotations pane" : "Open annotations pane"}
+        aria-label={isPinsControlOpen ? t("reader.closeAnnotationsPane") : t("reader.openAnnotationsPane")}
         aria-pressed={isPinsControlOpen}
         className={`icon-button mobile-reader-side-dock-button mobile-reader-side-dock-button--pins ${
           isPinsControlOpen ? "mobile-reader-side-dock-button--active" : ""
         }`}
         onClick={handlePinsPaneToggle}
-        title={isPinsControlOpen ? "Close annotations" : "Open annotations"}
+        title={isPinsControlOpen ? t("reader.closeAnnotations") : t("reader.openAnnotations")}
         type="button"
       >
         {isPinsControlOpen ? (
@@ -1458,26 +1466,27 @@ export function ReaderShell() {
   );
 
   return (
+    <I18nProvider locale={settings.uiLocale}>
     <div className="app-shell">
       <header className="topbar">
-        <div className="brand-lockup" aria-label="PDF Translate Reader">
+        <div className="brand-lockup" aria-label={t("app.name")}>
           <span className="brand-mark">P</span>
-          <span className="brand-text">PDF Translate Reader</span>
+          <span className="brand-text">{t("app.name")}</span>
         </div>
         <div className="topbar-actions">
           {currentEntry ? null : renderSidebarToggleButtons()}
-          <span className={`api-health api-health--${apiStatus}`} title={`API ${apiStatus}`}>
-            API
+          <span className={`api-health api-health--${apiStatus}`} title={t("reader.apiStatusTitle", { status: apiStatus })}>
+            {t("reader.api")}
           </span>
           <span
             aria-live="polite"
             className={`sync-health sync-health--${visibleCloudSyncStatus}`}
             title={visibleCloudSyncMessage}
           >
-            {CLOUD_SYNC_STATUS_LABELS[visibleCloudSyncStatus]}
+            {t(CLOUD_SYNC_STATUS_LABEL_KEYS[visibleCloudSyncStatus])}
           </span>
           <button
-            aria-label={`Open settings. ${mobileStatusLabel}`}
+            aria-label={t("reader.openSettingsWithStatus", { status: mobileStatusLabel })}
             className="mobile-status-button"
             onClick={() => setIsSettingsOpen(true)}
             title={mobileStatusLabel}
@@ -1500,18 +1509,18 @@ export function ReaderShell() {
                 setStatusMessage("Could not sign out.");
               });
             }}
-            title="Sign out"
+            title={t("reader.signOut")}
             type="button"
           >
-            <span>{auth.user?.email ?? "Account"}</span>
+            <span>{auth.user?.email ?? t("common.account")}</span>
             <LogOut aria-hidden="true" size={15} strokeWidth={2} />
           </button>
-          <div className="reader-mode-control" aria-label="Reader mode" role="group">
+          <div className="reader-mode-control" aria-label={t("reader.readerMode")} role="group">
             <button
               aria-label={
                 readerMode === "translate"
-                  ? "Translation mode. Switch to text selection copy mode"
-                  : "Text selection copy mode. Switch to translation mode"
+                  ? t("reader.translationModeSwitch")
+                  : t("reader.copyModeSwitch")
               }
               className={`mode-toggle-button mode-toggle-button--single ${
                 readerMode === "translate" ? "mode-toggle-button--active" : "mode-toggle-button--select"
@@ -1519,8 +1528,8 @@ export function ReaderShell() {
               onClick={() => handleReaderModeChange(readerMode === "translate" ? "select" : "translate")}
               title={
                 readerMode === "translate"
-                  ? "Translation mode. Tap to switch to Select"
-                  : "Select mode. Tap to switch to Translate"
+                  ? t("reader.translationModeTitle")
+                  : t("reader.copyModeSwitch")
               }
               type="button"
             >
@@ -1531,12 +1540,12 @@ export function ReaderShell() {
               )}
             </button>
           </div>
-          <div className="reader-mode-control" aria-label="Selection mode" role="group">
+          <div className="reader-mode-control" aria-label={t("reader.selectionMode")} role="group">
             <button
               aria-label={
                 selectionMode === "continuous"
-                  ? "Continuous drag selection. Switch to cross-region selection"
-                  : "Cross-region selection. Switch to continuous drag selection"
+                  ? t("reader.continuousSelectionSwitch")
+                  : t("reader.crossSelectionSwitch")
               }
               className={`mode-toggle-button mode-toggle-button--single ${
                 selectionMode === "continuous" ? "mode-toggle-button--active" : "mode-toggle-button--cross"
@@ -1544,8 +1553,8 @@ export function ReaderShell() {
               onClick={() => handleSelectionModeChange(selectionMode === "continuous" ? "cross" : "continuous")}
               title={
                 selectionMode === "continuous"
-                  ? "Drag selection. Tap to switch to Cross"
-                  : "Cross selection. Tap to switch to Drag"
+                  ? t("reader.dragSelectionMode")
+                  : t("reader.crossSelectionMode")
               }
               type="button"
             >
@@ -1583,14 +1592,14 @@ export function ReaderShell() {
         <aside
           className={`library-pane ${isLibraryPaneOpen ? "" : "pane--closed"}`}
           aria-hidden={!isLibraryPaneOpen}
-          aria-label="PDF library"
+          aria-label={t("reader.pdfLibrary")}
         >
           {renderLibraryPaneContent(
             <button
-              aria-label="Close library pane"
+              aria-label={t("reader.closeLibraryPane")}
               className="icon-button icon-button--small"
               onClick={() => setIsLibraryPaneOpen(false)}
-              title="Close library"
+              title={t("reader.closeLibrary")}
               type="button"
             >
               <PanelLeftClose aria-hidden="true" size={16} strokeWidth={2} />
@@ -1598,7 +1607,7 @@ export function ReaderShell() {
           )}
         </aside>
         <div
-          aria-label="Resize library pane"
+          aria-label={t("reader.resizeLibraryPane")}
           aria-orientation="vertical"
           className={`pane-resizer pane-resizer--library ${isLibraryPaneOpen ? "" : "pane-resizer--closed"}`}
           aria-hidden={!isLibraryPaneOpen}
@@ -1607,11 +1616,11 @@ export function ReaderShell() {
           onPointerMove={handlePaneResizeMove}
           onPointerUp={handlePaneResizeEnd}
           role="separator"
-          title="Resize library pane"
+          title={t("reader.resizeLibraryPane")}
         />
         <section
           className={`document-stage ${currentEntry ? "document-stage--active" : ""}`}
-          aria-label="PDF reader"
+          aria-label={t("reader.pdfReader")}
         >
           {currentEntry ? (
             <PdfViewer
@@ -1644,14 +1653,14 @@ export function ReaderShell() {
             <div className="empty-reader">
               <PdfImportDropzone isImporting={isImporting} onImport={handleImport} />
               {renderStatusMessage()}
-              <div className="empty-page-frame" aria-label="No document open">
+              <div className="empty-page-frame" aria-label={t("reader.noDocumentOpen")}>
                 <div className="empty-page-line empty-page-line--wide" />
                 <div className="empty-page-line" />
                 <div className="empty-page-line empty-page-line--short" />
               </div>
               {libraryEntries.length > 0 ? (
                 <div className="empty-reader-history">
-                  <div className="pane-heading">Recent</div>
+                  <div className="pane-heading">{t("reader.recent")}</div>
                   <PdfLibrary
                     activeFingerprint={activeFingerprint}
                     entries={libraryEntries}
@@ -1664,7 +1673,7 @@ export function ReaderShell() {
           )}
         </section>
         <div
-          aria-label="Resize annotations pane"
+          aria-label={t("reader.resizeAnnotationsPane")}
           aria-orientation="vertical"
           className={`pane-resizer pane-resizer--pins ${isPinsPaneOpen ? "" : "pane-resizer--closed"}`}
           aria-hidden={!isPinsPaneOpen}
@@ -1673,19 +1682,19 @@ export function ReaderShell() {
           onPointerMove={handlePaneResizeMove}
           onPointerUp={handlePaneResizeEnd}
           role="separator"
-          title="Resize annotations pane"
+          title={t("reader.resizeAnnotationsPane")}
         />
         <aside
           className={`translation-pane ${isPinsPaneOpen ? "" : "pane--closed"}`}
           aria-hidden={!isPinsPaneOpen}
-          aria-label="Annotations"
+          aria-label={t("reader.annotations")}
         >
           {renderPinsPaneContent(
             <button
-              aria-label="Close annotations pane"
+              aria-label={t("reader.closeAnnotationsPane")}
               className="icon-button icon-button--small"
               onClick={() => setIsPinsPaneOpen(false)}
-              title="Close annotations"
+              title={t("reader.closeAnnotations")}
               type="button"
             >
               <PanelRightClose aria-hidden="true" size={16} strokeWidth={2} />
@@ -1701,17 +1710,17 @@ export function ReaderShell() {
           role="presentation"
         >
           <aside
-            aria-label={mobilePanel === "library" ? "PDF library" : "Annotations"}
+            aria-label={mobilePanel === "library" ? t("reader.pdfLibrary") : t("reader.annotations")}
             className={`mobile-panel mobile-panel--${mobilePanel}`}
             onClick={(event) => event.stopPropagation()}
           >
             {mobilePanel === "library"
               ? renderLibraryPaneContent(
                   <button
-                    aria-label="Close library pane"
+                    aria-label={t("reader.closeLibraryPane")}
                     className="icon-button icon-button--small"
                     onClick={() => setMobilePanel(null)}
-                    title="Close library"
+                    title={t("reader.closeLibrary")}
                     type="button"
                   >
                     <PanelLeftClose aria-hidden="true" size={16} strokeWidth={2} />
@@ -1719,10 +1728,10 @@ export function ReaderShell() {
                 )
               : renderPinsPaneContent(
                   <button
-                    aria-label="Close annotations pane"
+                    aria-label={t("reader.closeAnnotationsPane")}
                     className="icon-button icon-button--small"
                     onClick={() => setMobilePanel(null)}
-                    title="Close annotations"
+                    title={t("reader.closeAnnotations")}
                     type="button"
                   >
                     <PanelRightClose aria-hidden="true" size={16} strokeWidth={2} />
@@ -1732,6 +1741,7 @@ export function ReaderShell() {
         </div>
       ) : null}
     </div>
+    </I18nProvider>
   );
 }
 

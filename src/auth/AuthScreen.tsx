@@ -1,5 +1,6 @@
 import { LogIn } from "lucide-react";
 import { FormEvent, useState } from "react";
+import { useI18n } from "../i18n/I18nProvider";
 import { useAuth } from "./AuthProvider";
 import { createInviteTicket } from "./inviteTicketClient";
 
@@ -7,6 +8,7 @@ type AuthMode = "sign-in" | "sign-up";
 
 export function AuthScreen() {
   const auth = useAuth();
+  const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [errorMessage, setErrorMessage] = useState<string>();
   const [inviteCode, setInviteCode] = useState("");
@@ -29,10 +31,10 @@ export function AuthScreen() {
         const inviteTicket = await createInviteTicket(trimmedEmail, inviteCode);
 
         await auth.signUp(trimmedEmail, password, inviteTicket);
-        setStatusMessage("Account created. Check your email if confirmation is enabled.");
+        setStatusMessage(t("auth.accountCreated"));
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Authentication failed.");
+      setErrorMessage(error instanceof Error ? error.message : t("auth.authenticationFailed"));
     } finally {
       setIsSubmitting(false);
     }
@@ -41,14 +43,14 @@ export function AuthScreen() {
   if (auth.status === "misconfigured") {
     return (
       <main className="auth-screen">
-        <section className="auth-panel" aria-label="Supabase setup required">
+        <section className="auth-panel" aria-label={t("auth.supabaseSetupRequired")}>
           <div className="auth-brand">
             <span className="brand-mark">P</span>
-            <span className="brand-text">PDF Translate Reader</span>
+            <span className="brand-text">{t("app.name")}</span>
           </div>
-          <h1>Supabase setup required</h1>
+          <h1>{t("auth.supabaseSetupRequired")}</h1>
           <p className="auth-copy">
-            Configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY before using the reader.
+            {t("auth.configureSupabase")}
           </p>
         </section>
       </main>
@@ -57,15 +59,15 @@ export function AuthScreen() {
 
   return (
     <main className="auth-screen">
-      <section className="auth-panel" aria-label="Sign in">
+      <section className="auth-panel" aria-label={t("auth.signIn")}>
         <div className="auth-brand">
           <span className="brand-mark">P</span>
-          <span className="brand-text">PDF Translate Reader</span>
+          <span className="brand-text">{t("app.name")}</span>
         </div>
-        <h1>{mode === "sign-in" ? "Sign in" : "Create account"}</h1>
+        <h1>{mode === "sign-in" ? t("auth.signIn") : t("auth.createAccount")}</h1>
         <form className="auth-form" onSubmit={handleSubmit}>
           <label className="auth-field">
-            <span>Email</span>
+            <span>{t("auth.email")}</span>
             <input
               autoComplete="email"
               onChange={(event) => setEmail(event.currentTarget.value)}
@@ -75,7 +77,7 @@ export function AuthScreen() {
             />
           </label>
           <label className="auth-field">
-            <span>Password</span>
+            <span>{t("auth.password")}</span>
             <input
               autoComplete={mode === "sign-in" ? "current-password" : "new-password"}
               minLength={6}
@@ -87,7 +89,7 @@ export function AuthScreen() {
           </label>
           {mode === "sign-up" ? (
             <label className="auth-field">
-              <span>Invite code</span>
+              <span>{t("auth.inviteCode")}</span>
               <input
                 autoComplete="one-time-code"
                 onChange={(event) => setInviteCode(event.currentTarget.value)}
@@ -103,10 +105,10 @@ export function AuthScreen() {
             <LogIn aria-hidden="true" size={17} strokeWidth={2} />
             <span>
               {isSubmitting
-                ? "Working..."
+                ? t("auth.working")
                 : mode === "sign-in"
-                  ? "Sign in"
-                  : "Create account"}
+                  ? t("auth.signIn")
+                  : t("auth.createAccount")}
             </span>
           </button>
         </form>
@@ -119,7 +121,7 @@ export function AuthScreen() {
           }}
           type="button"
         >
-          {mode === "sign-in" ? "Create a new account" : "Use an existing account"}
+          {mode === "sign-in" ? t("auth.createNewAccount") : t("auth.useExistingAccount")}
         </button>
       </section>
     </main>

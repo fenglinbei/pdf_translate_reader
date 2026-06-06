@@ -7,6 +7,7 @@ import type {
   TouchEvent as ReactTouchEvent,
 } from "react";
 import type { PinAnnotationInput, PinWriteInput } from "../pins/pinRepository";
+import { useI18n } from "../i18n/I18nProvider";
 import type {
   AnnotationColor,
   AppSettings,
@@ -28,15 +29,7 @@ import { TranslationPopover } from "../translation/TranslationPopover";
 import { getPopoverPlacement, getSelectionBounds, type PageGutters } from "./overlayPlacement";
 
 const DEFAULT_ANNOTATION_COLOR: AnnotationColor = "yellow";
-const ANNOTATION_COLORS: Array<{
-  label: string;
-  value: AnnotationColor;
-}> = [
-  { label: "Yellow", value: "yellow" },
-  { label: "Blue", value: "blue" },
-  { label: "Green", value: "green" },
-  { label: "Red", value: "red" },
-];
+const ANNOTATION_COLORS: AnnotationColor[] = ["yellow", "blue", "green", "red"];
 
 type PageOverlayLayerProps = {
   activeMobilePinnedCardKey?: string;
@@ -115,6 +108,7 @@ export function PageOverlayLayer({
   selection,
   settings,
 }: PageOverlayLayerProps) {
+  const { t } = useI18n();
   const overlayRef = useRef<HTMLDivElement>(null);
   const [pageGutters, setPageGutters] = useState<PageGutters>({ left: 0, right: 0 });
   const selectionKey = selection
@@ -285,7 +279,7 @@ export function PageOverlayLayer({
 
         return markerRects.length > 0 ? (
           <button
-            aria-label={getPinMarkerLabel(marker)}
+            aria-label={getPinMarkerLabel(marker, t)}
             className={`pin-card-marker pin-card-marker--${marker.kind} ${
               marker.kind === "annotation" ? `pin-card-marker--${marker.color}` : ""
             } ${
@@ -310,7 +304,7 @@ export function PageOverlayLayer({
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
             style={getPinMarkerStyle(markerRects, pageWidth, pageHeight)}
-            title={getPinMarkerTitle(marker)}
+            title={getPinMarkerTitle(marker, t)}
             type="button"
           >
             {marker.kind === "annotation" ? (
@@ -352,7 +346,7 @@ export function PageOverlayLayer({
             />
           ))}
           <div className="selection-draft-badge" style={getDraftBadgeStyle(draftRects, pageWidth)}>
-            Selecting {countWords(draftSelection?.targetSentence ?? "")} words
+            {t("pdf.selectingWords", { count: countWords(draftSelection?.targetSentence ?? "") })}
           </div>
         </>
       ) : null}
@@ -395,11 +389,11 @@ export function PageOverlayLayer({
         : null}
       {selection && hasSelection && !hasDraftSelection && isActiveSelectionMobileCollapsed ? (
         <button
-          aria-label="Open collapsed translation"
+          aria-label={t("translation.openCollapsed")}
           className="pinned-card-chip pinned-card-chip--transient"
           onClick={onOpenCollapsedMobileTranslationCard}
           style={getPinnedCardChipStyle(selectionRects, pageWidth, pageHeight)}
-          title="Open translation"
+          title={t("translation.open")}
           type="button"
         >
           <Languages aria-hidden="true" size={13} strokeWidth={2.2} />
@@ -517,12 +511,12 @@ export function PageOverlayLayer({
                 ))}
                 {isMobileViewport && cardRects.length > 0 ? (
                   <button
-                    aria-label="Open pinned translation"
+                    aria-label={t("translation.openPinned")}
                     aria-pressed={isMobileCardOpen}
                     className={`pinned-card-chip ${isMobileCardOpen ? "pinned-card-chip--active" : ""}`}
                     onClick={() => onOpenMobilePinnedCard(card.key, cardSelection)}
                     style={getPinnedCardChipStyle(cardRects, pageWidth, pageHeight)}
-                    title="Open pinned translation"
+                    title={t("translation.openPinned")}
                     type="button"
                   >
                     <Pin aria-hidden="true" size={13} strokeWidth={2.2} />
@@ -612,6 +606,7 @@ function SelectActionPopover({
   selection: SentenceSelection;
   style: CSSProperties;
 }) {
+  const { t } = useI18n();
   const [color, setColor] = useState<AnnotationColor>(DEFAULT_ANNOTATION_COLOR);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [note, setNote] = useState("");
@@ -653,14 +648,16 @@ function SelectActionPopover({
     >
       {!isEditorOpen ? (
         <div className="select-action-command-row">
-          <span className="select-action-word-count">{countWords(selection.targetSentence)} words</span>
+          <span className="select-action-word-count">
+            {t("pdf.wordsSelected", { count: countWords(selection.targetSentence) })}
+          </span>
           <button
             className="select-action-command-button"
             onClick={onCopy}
             type="button"
           >
             <Copy aria-hidden="true" size={15} strokeWidth={2} />
-            <span>Copy</span>
+            <span>{t("common.copy")}</span>
           </button>
           <button
             className="select-action-command-button"
@@ -668,13 +665,13 @@ function SelectActionPopover({
             type="button"
           >
             <StickyNote aria-hidden="true" size={15} strokeWidth={2} />
-            <span>Note</span>
+            <span>{t("annotation.note")}</span>
           </button>
           <button
-            aria-label="Close selection actions"
+            aria-label={t("common.close")}
             className="icon-button icon-button--small pinned-translation-card-action"
             onClick={onClose}
-            title="Close"
+            title={t("common.close")}
             type="button"
           >
             <X aria-hidden="true" size={16} strokeWidth={2} />
@@ -683,37 +680,37 @@ function SelectActionPopover({
       ) : (
         <div className="select-action-note-panel">
           <div className="select-action-note-toolbar">
-            <div className="translation-popover-label">Note</div>
-            <div className="annotation-color-row" aria-label="Annotation color" role="group">
+            <div className="translation-popover-label">{t("annotation.note")}</div>
+            <div className="annotation-color-row" aria-label={t("annotation.color")} role="group">
               {ANNOTATION_COLORS.map((annotationColor) => (
                 <button
-                  aria-label={`${annotationColor.label} annotation color`}
-                  aria-pressed={color === annotationColor.value}
-                  className={`annotation-color-swatch annotation-color-swatch--${annotationColor.value} ${
-                    color === annotationColor.value ? "annotation-color-swatch--active" : ""
+                  aria-label={t("annotation.colorLabel", { color: getAnnotationColorLabel(annotationColor, t) })}
+                  aria-pressed={color === annotationColor}
+                  className={`annotation-color-swatch annotation-color-swatch--${annotationColor} ${
+                    color === annotationColor ? "annotation-color-swatch--active" : ""
                   }`}
-                  key={annotationColor.value}
-                  onClick={() => setColor(annotationColor.value)}
-                  title={annotationColor.label}
+                  key={annotationColor}
+                  onClick={() => setColor(annotationColor)}
+                  title={getAnnotationColorLabel(annotationColor, t)}
                   type="button"
                 />
               ))}
             </div>
             <button
-              aria-label="Save annotation"
+              aria-label={t("annotation.save")}
               className="icon-button icon-button--small pinned-translation-card-action"
               disabled={status === "saving"}
               onClick={() => void handleSave()}
-              title="Save annotation"
+              title={t("annotation.save")}
               type="button"
             >
               <Check aria-hidden="true" size={16} strokeWidth={2} />
             </button>
             <button
-              aria-label="Close annotation panel"
+              aria-label={t("annotation.closeAnnotationPanel")}
               className="icon-button icon-button--small pinned-translation-card-action"
               onClick={onClose}
-              title="Close"
+              title={t("common.close")}
               type="button"
             >
               <X aria-hidden="true" size={16} strokeWidth={2} />
@@ -722,12 +719,12 @@ function SelectActionPopover({
           <textarea
             className="select-action-note-input"
             onChange={(event) => setNote(event.target.value)}
-            placeholder="Add a note"
+            placeholder={t("annotation.addNote")}
             rows={3}
             value={note}
           />
           {status === "error" ? (
-            <div className="select-action-error">Could not save annotation.</div>
+            <div className="select-action-error">{t("annotation.saveFailed")}</div>
           ) : null}
         </div>
       )}
@@ -977,27 +974,46 @@ function getPinMarkerPriority(kind: PinMarkerKind) {
   }
 }
 
-function getPinMarkerLabel(marker: PinMarkerTarget) {
+function getPinMarkerLabel(marker: PinMarkerTarget, t: ReturnType<typeof useI18n>["t"]) {
+  const page = marker.rectSource.pageIndex + 1;
+
   switch (marker.kind) {
     case "annotation":
-      return `Show annotation card for page ${marker.rectSource.pageIndex + 1}`;
+      return t("translation.openAnnotationCardForPage", { page });
     case "favorite":
-      return `Show saved card for page ${marker.rectSource.pageIndex + 1}`;
+      return t("translation.openSavedCardForPage", { page });
     case "pin":
     default:
-      return `Show pinned translation for page ${marker.rectSource.pageIndex + 1}`;
+      return t("translation.openPinnedForPage", { page });
   }
 }
 
-function getPinMarkerTitle(marker: PinMarkerTarget) {
+function getPinMarkerTitle(marker: PinMarkerTarget, t: ReturnType<typeof useI18n>["t"]) {
   switch (marker.kind) {
     case "annotation":
-      return "Show annotation card";
+      return t("translation.openAnnotationCard");
     case "favorite":
-      return "Show saved card";
+      return t("translation.openSavedCard");
     case "pin":
     default:
-      return "Show pinned translation";
+      return t("translation.openPinnedTitle");
+  }
+}
+
+function getAnnotationColorLabel(
+  color: AnnotationColor,
+  t: ReturnType<typeof useI18n>["t"],
+) {
+  switch (color) {
+    case "blue":
+      return t("annotation.blue");
+    case "green":
+      return t("annotation.green");
+    case "red":
+      return t("annotation.red");
+    case "yellow":
+    default:
+      return t("annotation.yellow");
   }
 }
 

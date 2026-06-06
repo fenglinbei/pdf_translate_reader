@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useI18n } from "../i18n/I18nProvider";
 import type {
   AnnotationColor,
   PaperContext,
@@ -70,15 +71,7 @@ type AnnotationDraft = {
   note: string;
 };
 
-const ANNOTATION_COLORS: Array<{
-  label: string;
-  value: AnnotationColor;
-}> = [
-  { label: "Yellow", value: "yellow" },
-  { label: "Blue", value: "blue" },
-  { label: "Green", value: "green" },
-  { label: "Red", value: "red" },
-];
+const ANNOTATION_COLORS: AnnotationColor[] = ["yellow", "blue", "green", "red"];
 
 export function PinnedTranslationsPanel({
   focusRequest,
@@ -90,6 +83,7 @@ export function PinnedTranslationsPanel({
   paperContext,
   pins,
 }: PinnedTranslationsPanelProps) {
+  const { t } = useI18n();
   const abortControllersRef = useRef(new Map<string, AbortController>());
   const cardRefs = useRef(new Map<string, HTMLElement>());
   const focusAnimationTimerRef = useRef<number>();
@@ -515,7 +509,7 @@ export function PinnedTranslationsPanel({
   );
 
   if (pins.length === 0) {
-    return <div className="pins-pane-empty">No annotations yet</div>;
+    return <div className="pins-pane-empty">{t("annotation.noAnnotations")}</div>;
   }
 
   const nextSortMode = getNextPinSortMode(sortMode);
@@ -527,7 +521,7 @@ export function PinnedTranslationsPanel({
           <div className="pins-search-inline">
             <Search aria-hidden="true" size={15} strokeWidth={2} />
             <input
-              aria-label="Search annotations"
+              aria-label={t("annotation.search")}
               className="pins-search-input"
               onChange={(event) => setSearchQuery(event.target.value)}
               onKeyDown={(event) => {
@@ -535,16 +529,16 @@ export function PinnedTranslationsPanel({
                   setSearchQuery("");
                 }
               }}
-              placeholder="Search annotations"
+              placeholder={t("annotation.search")}
               type="search"
               value={searchQuery}
             />
             {searchQuery ? (
               <button
-                aria-label="Clear annotation search"
+                aria-label={t("common.close")}
                 className="icon-button icon-button--small pinned-translation-card-action"
                 onClick={() => setSearchQuery("")}
-                title="Clear search"
+                title={t("common.close")}
                 type="button"
               >
                 <X aria-hidden="true" size={16} strokeWidth={2} />
@@ -553,10 +547,10 @@ export function PinnedTranslationsPanel({
           </div>
         </div>
         <button
-          aria-label={`Switch to ${getPinSortLabel(nextSortMode)} sorting`}
+          aria-label={t("annotation.sort.switchTo", { label: getPinSortLabel(nextSortMode, t) })}
           className="icon-button icon-button--small pins-sort-button"
           onClick={() => setSortMode(nextSortMode)}
-          title={`Sorted by ${getPinSortLabel(sortMode)}`}
+          title={t("annotation.sort.sortedBy", { label: getPinSortLabel(sortMode, t) })}
           type="button"
         >
           {sortMode === "updated" ? (
@@ -569,7 +563,7 @@ export function PinnedTranslationsPanel({
         </button>
       </div>
       {visiblePins.length === 0 ? (
-        <div className="pins-pane-empty pins-pane-empty--filtered">No matching annotations</div>
+        <div className="pins-pane-empty pins-pane-empty--filtered">{t("annotation.noMatches")}</div>
       ) : null}
       <div className="pins-list">
         {visiblePins.map((pin) => {
@@ -608,47 +602,47 @@ export function PinnedTranslationsPanel({
                 {shouldShowTranslation ? (
                   <span className="pinned-translation-card-model">{getModelLabel(pin.model)}</span>
                 ) : null}
-                <span className="pinned-translation-card-page">Page {pin.pageIndex + 1}</span>
+                <span className="pinned-translation-card-page">{t("annotation.page", { page: pin.pageIndex + 1 })}</span>
                 <div className="pinned-translation-card-actions">
                   <button
-                    aria-label={isHighlighted ? "Stop highlighting original" : "Keep original highlighted"}
+                    aria-label={isHighlighted ? t("annotation.stopHighlightingOriginal") : t("annotation.keepOriginalHighlighted")}
                     className={`icon-button icon-button--small pinned-translation-card-action ${
                       isHighlighted ? "icon-button--success" : ""
                     }`}
                     onClick={() => onHighlightPin(pin, !isHighlighted)}
-                    title={isHighlighted ? "Stop highlighting original" : "Keep original highlighted"}
+                    title={isHighlighted ? t("annotation.stopHighlightingOriginal") : t("annotation.keepOriginalHighlighted")}
                     type="button"
                   >
                     <Highlighter aria-hidden="true" size={16} strokeWidth={2} />
                   </button>
                   <button
-                    aria-label="Locate original"
+                    aria-label={t("annotation.locateOriginal")}
                     className="icon-button icon-button--small pinned-translation-card-action"
                     onClick={() => onLocatePin(pin)}
-                    title="Locate original"
+                    title={t("annotation.locateOriginal")}
                     type="button"
                   >
                     <LocateFixed aria-hidden="true" size={16} strokeWidth={2} />
                   </button>
                   {!hasSavedNote && !isEditingAnnotation ? (
                     <button
-                      aria-label="Add note"
+                      aria-label={t("annotation.addNote")}
                       aria-pressed={isEditingAnnotation}
                       className={`icon-button icon-button--small pinned-translation-card-action ${
                         isEditingAnnotation ? "icon-button--success" : ""
                       }`}
                       onClick={() => handleToggleAnnotationEditor(pin.id)}
-                      title="Add note"
+                      title={t("annotation.addNote")}
                       type="button"
                     >
                       <StickyNote aria-hidden="true" size={16} strokeWidth={2} />
                     </button>
                   ) : null}
                   <button
-                    aria-label="Remove annotation"
+                    aria-label={t("annotation.remove")}
                     className="icon-button icon-button--small pinned-translation-card-action"
                     onClick={() => onUnpin(pin)}
-                    title="Remove annotation"
+                    title={t("annotation.remove")}
                     type="button"
                   >
                     <X aria-hidden="true" size={16} strokeWidth={2} />
@@ -671,10 +665,10 @@ export function PinnedTranslationsPanel({
                     <button
                       aria-controls={sourceElementId}
                       aria-expanded={isSourceExpanded}
-                      aria-label={isSourceExpanded ? "Collapse original text" : "Expand original text"}
+                      aria-label={isSourceExpanded ? t("annotation.collapseOriginalText") : t("annotation.expandOriginalText")}
                       className="icon-button icon-button--small pinned-translation-card-action pinned-translation-card-source-toggle"
                       onClick={() => handleToggleSourceExpansion(pin.id)}
-                      title={isSourceExpanded ? "Collapse original" : "Expand original"}
+                      title={isSourceExpanded ? t("annotation.collapseOriginal") : t("annotation.expandOriginal")}
                       type="button"
                     >
                       {isSourceExpanded ? (
@@ -687,24 +681,24 @@ export function PinnedTranslationsPanel({
                 </div>
                 <div className="pinned-translation-card-source-actions">
                   <button
-                    aria-label={shouldShowTranslation ? "Hide translation" : "Show translation"}
+                    aria-label={shouldShowTranslation ? t("annotation.hideTranslation") : t("annotation.showTranslation")}
                     aria-pressed={shouldShowTranslation}
                     className={`icon-button icon-button--small pinned-translation-card-action ${
                       shouldShowTranslation ? "icon-button--success" : ""
                     }`}
                     disabled={isRetranslating}
                     onClick={() => handleToggleTranslation(pin)}
-                    title={shouldShowTranslation ? "Hide translation" : "Show translation"}
+                    title={shouldShowTranslation ? t("annotation.hideTranslation") : t("annotation.showTranslation")}
                     type="button"
                   >
                     <Languages aria-hidden="true" size={16} strokeWidth={2} />
                   </button>
                   <button
-                    aria-label="Retranslate annotation text"
+                    aria-label={t("annotation.retranslateText")}
                     className="icon-button icon-button--small pinned-translation-card-action"
                     disabled={isRetranslating}
                     onClick={() => handleRetranslate(pin)}
-                    title="Retranslate"
+                    title={t("translation.retranslate")}
                     type="button"
                   >
                     <RefreshCw aria-hidden="true" size={16} strokeWidth={2} />
@@ -718,37 +712,37 @@ export function PinnedTranslationsPanel({
                   {isEditingAnnotation ? (
                     <>
                       <div className="pinned-annotation-editor-toolbar">
-                        <div className="translation-popover-label">Note</div>
-                        <div className="annotation-color-row" aria-label="Annotation color" role="group">
+                        <div className="translation-popover-label">{t("annotation.note")}</div>
+                        <div className="annotation-color-row" aria-label={t("annotation.color")} role="group">
                           {ANNOTATION_COLORS.map((color) => (
                             <button
-                              aria-label={`${color.label} annotation color`}
-                              aria-pressed={annotationDraft.color === color.value}
-                              className={`annotation-color-swatch annotation-color-swatch--${color.value} ${
-                                annotationDraft.color === color.value ? "annotation-color-swatch--active" : ""
+                              aria-label={t("annotation.colorLabel", { color: getAnnotationColorLabel(color, t) })}
+                              aria-pressed={annotationDraft.color === color}
+                              className={`annotation-color-swatch annotation-color-swatch--${color} ${
+                                annotationDraft.color === color ? "annotation-color-swatch--active" : ""
                               }`}
-                              key={color.value}
-                              onClick={() => updateAnnotationDraft(pin, { color: color.value })}
-                              title={color.label}
+                              key={color}
+                              onClick={() => updateAnnotationDraft(pin, { color })}
+                              title={getAnnotationColorLabel(color, t)}
                               type="button"
                             />
                           ))}
                         </div>
                         <button
-                          aria-label="Save annotation"
+                          aria-label={t("annotation.save")}
                           className="icon-button icon-button--small pinned-translation-card-action"
                           disabled={!canSaveAnnotation}
                           onClick={() => void handleSaveAnnotation(pin)}
-                          title="Save annotation"
+                          title={t("annotation.save")}
                           type="button"
                         >
                           <Check aria-hidden="true" size={16} strokeWidth={2} />
                         </button>
                         <button
-                          aria-label="Close note editor"
+                          aria-label={t("annotation.closeNoteEditor")}
                           className="icon-button icon-button--small pinned-translation-card-action"
                           onClick={() => handleToggleAnnotationEditor(pin.id)}
-                          title="Close note editor"
+                          title={t("annotation.closeNoteEditor")}
                           type="button"
                         >
                           <X aria-hidden="true" size={16} strokeWidth={2} />
@@ -757,7 +751,7 @@ export function PinnedTranslationsPanel({
                       <textarea
                         className="pinned-annotation-note-input"
                         onChange={(event) => updateAnnotationDraft(pin, { note: event.target.value })}
-                        placeholder="Add a note"
+                        placeholder={t("annotation.addNote")}
                         rows={3}
                         value={annotationDraft.note}
                       />
@@ -765,23 +759,23 @@ export function PinnedTranslationsPanel({
                   ) : (
                     <>
                       <div className="pinned-translation-card-note-header">
-                        <div className="pinned-translation-card-note-label">Note</div>
+                        <div className="pinned-translation-card-note-label">{t("annotation.note")}</div>
                         <div className="pinned-translation-card-note-actions">
                           <button
-                            aria-label="Edit note"
+                            aria-label={t("annotation.editNote")}
                             className="icon-button icon-button--small pinned-translation-card-action"
                             onClick={() => handleToggleAnnotationEditor(pin.id)}
-                            title="Edit note"
+                            title={t("annotation.editNote")}
                             type="button"
                           >
                             <PencilLine aria-hidden="true" size={16} strokeWidth={2} />
                           </button>
                           <button
-                            aria-label="Delete note"
+                            aria-label={t("annotation.deleteNote")}
                             className="icon-button icon-button--small pinned-translation-card-action"
                             disabled={isSavingAnnotation}
                             onClick={() => void handleDeleteAnnotationNote(pin)}
-                            title="Delete note"
+                            title={t("annotation.deleteNote")}
                             type="button"
                           >
                             <Trash2 aria-hidden="true" size={16} strokeWidth={2} />
@@ -798,7 +792,7 @@ export function PinnedTranslationsPanel({
               {shouldShowTranslation ? (
                 <div className={`pinned-translation-card-output pinned-translation-card-output--${runtimeState?.status ?? "success"}`}>
                   {isRetranslating
-                    ? runtimeState?.draftTranslation || "Retranslating..."
+                    ? runtimeState?.draftTranslation || t("annotation.retranslating")
                     : pin.translation}
                 </div>
               ) : null}
@@ -810,7 +804,9 @@ export function PinnedTranslationsPanel({
         })}
       </div>
       <div className="pins-pane-summary">
-        {pins.length} saved annotation{pins.length === 1 ? "" : "s"}
+        {t(pins.length === 1 ? "annotation.savedSummary" : "annotation.savedSummaryPlural", {
+          count: pins.length,
+        })}
       </div>
     </div>
   );
@@ -879,15 +875,32 @@ function getNextPinSortMode(sortMode: PinSortMode): PinSortMode {
   }
 }
 
-function getPinSortLabel(sortMode: PinSortMode) {
+function getPinSortLabel(sortMode: PinSortMode, t: ReturnType<typeof useI18n>["t"]) {
   switch (sortMode) {
     case "updated":
-      return "modified time";
+      return t("annotation.sort.modifiedTime");
     case "content":
-      return "content order";
+      return t("annotation.sort.contentOrder");
     case "alpha":
     default:
-      return "text A-Z";
+      return t("annotation.sort.textAz");
+  }
+}
+
+function getAnnotationColorLabel(
+  color: AnnotationColor,
+  t: ReturnType<typeof useI18n>["t"],
+) {
+  switch (color) {
+    case "blue":
+      return t("annotation.blue");
+    case "green":
+      return t("annotation.green");
+    case "red":
+      return t("annotation.red");
+    case "yellow":
+    default:
+      return t("annotation.yellow");
   }
 }
 

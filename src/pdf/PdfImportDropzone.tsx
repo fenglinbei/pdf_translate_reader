@@ -1,5 +1,6 @@
 import { Upload } from "lucide-react";
 import { useCallback, useId, useState } from "react";
+import { useI18n } from "../i18n/I18nProvider";
 
 type PdfImportDropzoneProps = {
   isImporting: boolean;
@@ -12,10 +13,11 @@ export function PdfImportDropzone({
   onImport,
   variant = "full",
 }: PdfImportDropzoneProps) {
+  const { t } = useI18n();
   const inputId = useId();
   const [isDragging, setIsDragging] = useState(false);
-  const importLabel = variant === "compact" ? "Import" : "Import PDF or Package";
-  const importTitle = "Import PDF or reading package";
+  const importLabel = variant === "compact" ? t("import.compactLabel") : t("import.fullLabel");
+  const importTitle = t("import.title");
 
   const importFirstSupportedFile = useCallback(
     (files: FileList | File[]) => {
@@ -71,9 +73,9 @@ export function PdfImportDropzone({
         title={importTitle}
       >
         <Upload aria-hidden="true" size={18} strokeWidth={2} />
-        <span>{isImporting ? "Importing..." : importLabel}</span>
+        <span>{isImporting ? t("import.importing") : importLabel}</span>
       </label>
-      {variant === "full" ? <p>Choose a PDF or reading package, or drop it here.</p> : null}
+      {variant === "full" ? <p>{t("import.chooseFile")}</p> : null}
     </div>
   );
 }

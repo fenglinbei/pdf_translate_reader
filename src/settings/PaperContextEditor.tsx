@@ -1,5 +1,6 @@
 import { Plus, Save, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useI18n } from "../i18n/I18nProvider";
 import type { PaperContextRecord, PaperContextTerm, PdfLibraryEntry } from "../types/domain";
 import type { PaperContextDraft } from "../translation/paperContext";
 
@@ -18,6 +19,7 @@ export function PaperContextEditor({
   onSave,
   paperContext,
 }: PaperContextEditorProps) {
+  const { t } = useI18n();
   const [abstract, setAbstract] = useState("");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [terms, setTerms] = useState<TermDraft[]>([]);
@@ -26,11 +28,14 @@ export function PaperContextEditor({
   const canSave = Boolean(currentEntry);
   const contextSummary = useMemo(() => {
     if (!paperContext) {
-      return "No paper context stored";
+      return t("paperContext.noContext");
     }
 
-    return `${paperContext.terminology.length} terms · ${paperContext.contextHash}`;
-  }, [paperContext]);
+    return t("paperContext.termsSummary", {
+      count: paperContext.terminology.length,
+      hash: paperContext.contextHash,
+    });
+  }, [paperContext, t]);
 
   useEffect(() => {
     setAbstract(paperContext?.abstract ?? "");
@@ -89,7 +94,7 @@ export function PaperContextEditor({
     <div className="paper-context-editor">
       <div className="paper-context-summary">{contextSummary}</div>
       <label className="settings-field">
-        <span>Title</span>
+        <span>{t("paperContext.title")}</span>
         <input
           disabled={!currentEntry}
           onChange={(event) => {
@@ -100,7 +105,7 @@ export function PaperContextEditor({
         />
       </label>
       <label className="settings-field">
-        <span>Abstract</span>
+        <span>{t("paperContext.abstract")}</span>
         <textarea
           disabled={!currentEntry}
           onChange={(event) => {
@@ -113,7 +118,7 @@ export function PaperContextEditor({
       </label>
       <div className="paper-context-terms">
         <div className="paper-context-terms-header">
-          <span>Terminology</span>
+          <span>{t("paperContext.terminology")}</span>
           <button
             className="icon-button icon-button--small"
             disabled={!currentEntry}
@@ -128,7 +133,7 @@ export function PaperContextEditor({
               ]);
               setSaveStatus("idle");
             }}
-            title="Add term"
+            title={t("paperContext.addTerm")}
             type="button"
           >
             <Plus aria-hidden="true" size={16} strokeWidth={2} />
@@ -141,13 +146,13 @@ export function PaperContextEditor({
                 <input
                   disabled={!currentEntry}
                   onChange={(event) => updateTerm(term.id, { source: event.currentTarget.value })}
-                  placeholder="Source"
+                  placeholder={t("paperContext.source")}
                   value={term.source}
                 />
                 <input
                   disabled={!currentEntry}
                   onChange={(event) => updateTerm(term.id, { target: event.currentTarget.value })}
-                  placeholder="Target"
+                  placeholder={t("paperContext.target")}
                   value={term.target}
                 />
                 <button
@@ -157,7 +162,7 @@ export function PaperContextEditor({
                     setTerms((currentTerms) => currentTerms.filter((currentTerm) => currentTerm.id !== term.id));
                     setSaveStatus("idle");
                   }}
-                  title="Remove term"
+                  title={t("paperContext.removeTerm")}
                   type="button"
                 >
                   <Trash2 aria-hidden="true" size={16} strokeWidth={2} />
@@ -166,16 +171,16 @@ export function PaperContextEditor({
             ))}
           </div>
         ) : (
-          <div className="settings-empty-row">No terms yet</div>
+          <div className="settings-empty-row">{t("paperContext.noTerms")}</div>
         )}
       </div>
       <div className="paper-context-save-row">
-        <span>{formatSaveStatus(saveStatus)}</span>
+        <span>{formatSaveStatus(saveStatus, t)}</span>
         <button
           className="icon-button icon-button--small"
           disabled={!canSave || saveStatus === "saving"}
           onClick={() => void handleSave()}
-          title="Save paper context"
+          title={t("paperContext.save")}
           type="button"
         >
           <Save aria-hidden="true" size={16} strokeWidth={2} />
@@ -185,18 +190,21 @@ export function PaperContextEditor({
   );
 }
 
-function formatSaveStatus(saveStatus: "idle" | "saving" | "saved" | "error") {
+function formatSaveStatus(
+  saveStatus: "idle" | "saving" | "saved" | "error",
+  t: ReturnType<typeof useI18n>["t"],
+) {
   if (saveStatus === "saving") {
-    return "Saving...";
+    return t("paperContext.saving");
   }
 
   if (saveStatus === "saved") {
-    return "Saved";
+    return t("paperContext.saved");
   }
 
   if (saveStatus === "error") {
-    return "Could not save";
+    return t("paperContext.saveFailed");
   }
 
-  return "Manual terms only";
+  return t("paperContext.manualTermsOnly");
 }
