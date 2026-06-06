@@ -179,6 +179,7 @@ const REAL_ZOOM_COMMIT_DELAY_MS = 180;
 const USER_ZOOM_MAX = 2.4;
 const USER_ZOOM_MIN = 0.6;
 const USER_ZOOM_STEP = 0.1;
+const FLOATING_CARD_PAGE_Z_INDEX_OFFSET = 1000;
 
 export function PdfViewer({
   activeTranslationCardZIndex,
@@ -863,6 +864,12 @@ export function PdfViewer({
     [addPageMetricsToSelection],
   );
 
+  const clearActiveSelectionForSelectionMode = useCallback(() => {
+    if (effectiveReaderMode === "select") {
+      onSentenceSelectionChange(undefined);
+    }
+  }, [effectiveReaderMode, onSentenceSelectionChange]);
+
   const addCrossSelectionPart = useCallback(
     (selection: SentenceSelection) => {
       const currentSelections = queuedCrossSelectionsRef.current;
@@ -872,7 +879,7 @@ export function PdfViewer({
 
       if (existingIndex >= 0) {
         setAreSelectionActionsSuppressed(false);
-        onSentenceSelectionChange(undefined);
+        clearActiveSelectionForSelectionMode();
         showSelectionNotice(t("pdf.regionAlreadySelected", { count: existingIndex + 1 }));
         return;
       }
@@ -882,10 +889,10 @@ export function PdfViewer({
       queuedCrossSelectionsRef.current = nextSelections;
       setQueuedCrossSelections(nextSelections);
       setAreSelectionActionsSuppressed(false);
-      onSentenceSelectionChange(undefined);
+      clearActiveSelectionForSelectionMode();
       showSelectionNotice(t("pdf.addedRegion", { count: nextSelections.length }));
     },
-    [onSentenceSelectionChange, showSelectionNotice, t],
+    [clearActiveSelectionForSelectionMode, showSelectionNotice, t],
   );
 
   const handleConfirmCrossSelection = useCallback(() => {
@@ -932,8 +939,8 @@ export function PdfViewer({
     queuedCrossSelectionsRef.current = [];
     setQueuedCrossSelections([]);
     setAreSelectionActionsSuppressed(false);
-    onSentenceSelectionChange(undefined);
-  }, [onSentenceSelectionChange]);
+    clearActiveSelectionForSelectionMode();
+  }, [clearActiveSelectionForSelectionMode]);
 
   const handleTextPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === "touch") {
@@ -949,7 +956,6 @@ export function PdfViewer({
       setMobilePendingSelection(undefined);
       setConfirmedMobileReaderMode(undefined);
       setAreSelectionActionsSuppressed(true);
-      onSentenceSelectionChange(undefined);
       spanDragRef.current = {
         latestHit: pointerHit,
         pointerId: event.pointerId,
@@ -997,7 +1003,6 @@ export function PdfViewer({
     draftSelectionRef.current = undefined;
     setDraftSelection(undefined);
     setAreSelectionActionsSuppressed(true);
-    onSentenceSelectionChange(undefined);
     spanDragRef.current = {
       latestHit: pointerHit,
       pointerId: event.pointerId,
@@ -1010,7 +1015,6 @@ export function PdfViewer({
     event.preventDefault();
   }, [
     isMobileSegmentedSelectionMode,
-    onSentenceSelectionChange,
   ]);
 
   const handleTextPointerMove = useCallback(
@@ -1350,9 +1354,8 @@ export function PdfViewer({
     setDraftSelection(undefined);
     setMobilePendingSelection(undefined);
     setConfirmedMobileReaderMode(undefined);
-    onSentenceSelectionChange(undefined);
     window.getSelection()?.removeAllRanges();
-  }, [onSentenceSelectionChange]);
+  }, []);
 
   const handleMobilePendingTranslate = useCallback(() => {
     if (!mobilePendingSelection) {
@@ -1939,7 +1942,9 @@ function getTranslationCardPageZIndex({
     pageZIndex = Math.max(pageZIndex ?? 0, activeTranslationCardZIndex + 3);
   }
 
-  return pageZIndex;
+  return pageZIndex === undefined
+    ? undefined
+    : FLOATING_CARD_PAGE_Z_INDEX_OFFSET + pageZIndex;
 }
 
 function hasPopoverAnchorOnPage(selection: SentenceSelection | undefined, pageIndex: number) {

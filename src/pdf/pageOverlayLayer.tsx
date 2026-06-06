@@ -290,14 +290,24 @@ export function PageOverlayLayer({
   const activeSelectionActionPlacement = suppressSelectionActions
     ? undefined
     : actionPopoverPlacement ?? popoverPlacement;
-  const activeSelectionTranslationPlacement = suppressSelectionActions
-    ? undefined
-    : activePinnedCard
+  const activeSelectionTranslationPlacement =
+    activePinnedCard
       ? {
           placement: activePinnedCard.placement,
           style: activePinnedCard.style,
         }
       : popoverPlacement;
+  const shouldShowActiveSelectionAction = Boolean(
+    readerMode === "select" &&
+      activeSelectionActionPlacement &&
+      !hasDraftSelection &&
+      !isActiveSelectionMobileCollapsed,
+  );
+  const shouldShowActiveTranslationPopover = Boolean(
+    readerMode !== "select" &&
+      activeSelectionTranslationPlacement &&
+      !isActiveSelectionMobileCollapsed,
+  );
   const foregroundActionZIndex = activeTranslationCardZIndex + 2;
 
   return (
@@ -471,8 +481,8 @@ export function PageOverlayLayer({
           <Languages aria-hidden="true" size={13} strokeWidth={2.2} />
         </button>
       ) : null}
-      {selection && activePopoverSelection && activeSelectionActionPlacement && !hasDraftSelection && !isActiveSelectionMobileCollapsed
-        ? readerMode === "select" ? (
+      {selection && activePopoverSelection
+        ? shouldShowActiveSelectionAction && activeSelectionActionPlacement ? (
             <SelectActionPopover
               key={selectionKey}
               onClose={onClearSelection}
@@ -487,7 +497,7 @@ export function PageOverlayLayer({
                 zIndex: foregroundActionZIndex,
               }}
             />
-          ) : activeSelectionTranslationPlacement ? (
+          ) : shouldShowActiveTranslationPopover && activeSelectionTranslationPlacement ? (
             <TranslationPopover
               annotationColor={selectionPin?.color}
               annotationNote={selectionPin?.note}
