@@ -863,6 +863,28 @@ export function TranslationPopover({
         title={isMobileSheet ? t("translation.dragToResize") : t("translation.dragToMove")}
       />
       <div className="translation-popover-toolbar translation-popover-toolbar--actions-only">
+        <div className="translation-popover-scale-actions">
+          <button
+            aria-label={t("translation.zoomOutContent")}
+            className="icon-button icon-button--small pinned-translation-card-action translation-popover-action"
+            disabled={contentScale <= CONTENT_SCALE_MIN}
+            onClick={() => handleContentScaleChange(-1)}
+            title={t("translation.zoomOutContent")}
+            type="button"
+          >
+            <ZoomOut aria-hidden="true" size={16} strokeWidth={2} />
+          </button>
+          <button
+            aria-label={t("translation.zoomInContent")}
+            className="icon-button icon-button--small pinned-translation-card-action translation-popover-action"
+            disabled={contentScale >= CONTENT_SCALE_MAX}
+            onClick={() => handleContentScaleChange(1)}
+            title={t("translation.zoomInContent")}
+            type="button"
+          >
+            <ZoomIn aria-hidden="true" size={16} strokeWidth={2} />
+          </button>
+        </div>
         <div className="translation-popover-actions">
           <button
             aria-label={isCardPinned ? t("translation.unpinCard") : t("translation.pinCard")}
@@ -922,26 +944,6 @@ export function TranslationPopover({
             type="button"
           >
             <RefreshCw aria-hidden="true" size={16} strokeWidth={2} />
-          </button>
-          <button
-            aria-label={t("translation.zoomOutContent")}
-            className="icon-button icon-button--small pinned-translation-card-action translation-popover-action"
-            disabled={contentScale <= CONTENT_SCALE_MIN}
-            onClick={() => handleContentScaleChange(-1)}
-            title={t("translation.zoomOutContent")}
-            type="button"
-          >
-            <ZoomOut aria-hidden="true" size={16} strokeWidth={2} />
-          </button>
-          <button
-            aria-label={t("translation.zoomInContent")}
-            className="icon-button icon-button--small pinned-translation-card-action translation-popover-action"
-            disabled={contentScale >= CONTENT_SCALE_MAX}
-            onClick={() => handleContentScaleChange(1)}
-            title={t("translation.zoomInContent")}
-            type="button"
-          >
-            <ZoomIn aria-hidden="true" size={16} strokeWidth={2} />
           </button>
           {isMobileSheet && onCollapse ? (
             <button

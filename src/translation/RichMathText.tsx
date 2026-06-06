@@ -36,7 +36,7 @@ const DISPLAY_ENVIRONMENTS = [
   "multline*",
 ];
 const HEADING_PATTERN = /^\\(section|subsection|subsubsection|paragraph)\*?\{([^{}]*)\}\s*/;
-const OVERFLOW_TOLERANCE_PX = 1;
+const OVERFLOW_TOLERANCE_PX = 4;
 
 export function RichMathText({ className, scale, text }: RichMathTextProps) {
   const tokens = tokenizeRichMathText(text);
@@ -120,7 +120,9 @@ function OverflowAwareSpan({
     }
 
     const updateOverflowState = () => {
-      setIsOverflowing(element.scrollWidth > element.clientWidth + OVERFLOW_TOLERANCE_PX);
+      const contentWidth = getContentWidth(element);
+
+      setIsOverflowing(contentWidth > element.clientWidth + OVERFLOW_TOLERANCE_PX);
     };
     const resizeObserver = new ResizeObserver(updateOverflowState);
 
@@ -142,6 +144,16 @@ function OverflowAwareSpan({
       {dangerouslySetInnerHTML ? undefined : children}
     </span>
   );
+}
+
+function getContentWidth(element: HTMLElement) {
+  const renderedMath = element.querySelector<HTMLElement>(".katex-html");
+
+  if (renderedMath) {
+    return renderedMath.scrollWidth;
+  }
+
+  return element.scrollWidth;
 }
 
 function tokenizeRichMathText(input: string): RichMathToken[] {

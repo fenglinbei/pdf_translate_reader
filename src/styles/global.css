@@ -1621,6 +1621,21 @@ button {
   margin: 0;
 }
 
+.rich-math-text-math--display.rich-math-text-math--overflowing .katex-display {
+  width: max-content;
+  min-width: 100%;
+  padding-right: 18px;
+}
+
+.rich-math-text-math--display.rich-math-text-math--overflowing .katex-display > .katex {
+  text-align: left;
+}
+
+.rich-math-text-math--display.rich-math-text-math--overflowing .katex-display > .katex > .katex-html {
+  display: inline-block;
+  padding-right: 3em;
+}
+
 .rich-math-text-math--display.rich-math-text-math--overflowing:hover,
 .rich-math-text-math--display.rich-math-text-math--overflowing:focus {
   scrollbar-width: thin;
@@ -2008,6 +2023,14 @@ button {
   flex-wrap: wrap;
   justify-content: end;
   gap: 0;
+}
+
+.translation-popover-scale-actions {
+  display: flex;
+  align-items: center;
+  justify-content: start;
+  gap: 0;
+  min-width: max-content;
 }
 
 .model-segment--compact {
@@ -2835,8 +2858,8 @@ button {
 }
 
 .translation-popover-toolbar--actions-only {
-  grid-template-columns: minmax(0, 1fr);
-  justify-items: end;
+  grid-template-columns: auto minmax(0, 1fr);
+  justify-items: stretch;
 }
 
 @media (max-width: 920px) {
