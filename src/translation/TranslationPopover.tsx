@@ -189,6 +189,8 @@ export function TranslationPopover({
       stream: true,
       targetLang: settings.targetLang,
       targetSentence: selection.targetSentence,
+      textSource: selection.textSource,
+      mathpixOptionsHash: selection.mathpixOptionsHash,
     };
   }, [
     selection.localContextAfter,
@@ -196,6 +198,8 @@ export function TranslationPopover({
     selection.cloudDocumentId,
     selection.pdfFingerprint,
     selection.targetSentence,
+    selection.textSource,
+    selection.mathpixOptionsHash,
     paperContext,
     settings.contextWindowN,
     settings.defaultModel,
@@ -299,6 +303,8 @@ export function TranslationPopover({
         promptVersion: request.promptVersion,
         sourceLang: request.sourceLang,
         targetLang: request.targetLang,
+        textSource: request.textSource,
+        mathpixOptionsHash: request.mathpixOptionsHash,
       });
 
       setStatus("loading");
@@ -393,6 +399,8 @@ export function TranslationPopover({
             promptVersion: request.promptVersion,
             sourceLang: request.sourceLang,
             targetLang: request.targetLang,
+            textSource: request.textSource,
+            mathpixOptionsHash: request.mathpixOptionsHash,
             translation: streamedTranslation,
             usage: streamedUsage,
           }).catch(() => {

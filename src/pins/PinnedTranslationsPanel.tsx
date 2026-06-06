@@ -340,6 +340,8 @@ export function PinnedTranslationsPanel({
         stream: true,
         targetLang,
         targetSentence: pin.targetSentence,
+        textSource: pin.textSource,
+        mathpixOptionsHash: pin.mathpixOptionsHash,
       };
       const cacheKey = createTranslationCacheKey({
         contextWindowN: request.contextWindowN,
@@ -351,6 +353,8 @@ export function PinnedTranslationsPanel({
         promptVersion: request.promptVersion,
         sourceLang,
         targetLang,
+        textSource: request.textSource,
+        mathpixOptionsHash: request.mathpixOptionsHash,
       });
 
       setRuntimeByPinId((state) => ({
@@ -424,6 +428,8 @@ export function PinnedTranslationsPanel({
           promptVersion: request.promptVersion,
           sourceLang,
           targetLang,
+          textSource: request.textSource,
+          mathpixOptionsHash: request.mathpixOptionsHash,
           translation: streamedTranslation,
           usage: streamedUsage,
         }).catch(() => undefined);

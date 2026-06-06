@@ -9,6 +9,13 @@ export type MobileInteractionMode = "pan" | "segmented";
 export type SourceLanguage = TranslationLanguage;
 export type TargetLanguage = TranslationLanguage;
 export type AnnotationColor = "yellow" | "blue" | "green" | "red";
+export type TextExtractionSource = "pdfjs" | "mathpix-v3-pdf";
+export type MathpixParseStatus =
+  | "submitted"
+  | "processing"
+  | "completed"
+  | "error"
+  | "deleted";
 
 export type DOMRectLike = {
   x: number;
@@ -65,8 +72,11 @@ export type SelectionRegion = {
   pageIndex: number;
   pageHeight?: number;
   pageWidth?: number;
+  mathpixConfidence?: number;
+  mathpixOptionsHash?: string;
   selectedText: string;
   targetSentence: string;
+  textSource?: TextExtractionSource;
   normalizedSentence: string;
   rectsOnPage: DOMRectLike[];
   textSpan: {
@@ -82,8 +92,11 @@ export type SentenceSelection = {
   anchorRegionIndex?: number;
   pageHeight?: number;
   pageWidth?: number;
+  mathpixConfidence?: number;
+  mathpixOptionsHash?: string;
   selectedText: string;
   targetSentence: string;
+  textSource?: TextExtractionSource;
   normalizedSentence: string;
   localContextBefore: string[];
   localContextAfter: string[];
@@ -121,6 +134,8 @@ export type TranslationRequest = {
   pdfFingerprint: string;
   sourceLang: SourceLanguage;
   targetLang: TargetLanguage;
+  textSource?: TextExtractionSource;
+  mathpixOptionsHash?: string;
   model: TranslationModel;
   targetSentence: string;
   localContextBefore: string[];
@@ -147,6 +162,8 @@ export type TranslationCacheEntry = {
   normalizedSentence: string;
   sourceLang: SourceLanguage;
   targetLang: TargetLanguage;
+  textSource?: TextExtractionSource;
+  mathpixOptionsHash?: string;
   model: TranslationModel;
   contextWindowN: number;
   longContextEnabled: boolean;
@@ -173,6 +190,9 @@ export type TranslationPin = {
   localContextAfter: string[];
   rectsOnPage: DOMRectLike[];
   regions?: SelectionRegion[];
+  textSource?: TextExtractionSource;
+  mathpixOptionsHash?: string;
+  mathpixConfidence?: number;
   translation: string;
   sourceLang: SourceLanguage;
   model: TranslationModel;
@@ -196,6 +216,8 @@ export type ApiCallLog = {
   model: TranslationModel;
   sourceLang: SourceLanguage;
   targetLang: TargetLanguage;
+  textSource?: TextExtractionSource;
+  mathpixOptionsHash?: string;
   requestStartedAt: number;
   requestFinishedAt?: number;
   status: "success" | "error" | "aborted";
@@ -218,4 +240,59 @@ export type AppSettings = {
   sourceLang: SourceLanguage;
   targetLang: TargetLanguage;
   uiLocale: UiLocale;
+};
+
+export type MathpixLineRegion = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type MathpixParsedLine = {
+  confidence?: number;
+  confidenceRate?: number;
+  cnt?: Array<[number, number]>;
+  isHandwritten?: boolean;
+  isPrinted?: boolean;
+  lineIndex: number;
+  region?: MathpixLineRegion;
+  text: string;
+};
+
+export type MathpixParsedPage = {
+  cloudDocumentId?: string;
+  lineCount: number;
+  lines: MathpixParsedLine[];
+  mathpixOptionsHash: string;
+  minConfidence?: number;
+  pageHeight?: number;
+  pageIndex: number;
+  pageMmd: string;
+  pageText: string;
+  pageWidth?: number;
+  pdfFingerprint: string;
+  source: "mathpix-v3-pdf";
+  updatedAt: number;
+};
+
+export type MathpixDocumentRecord = {
+  cloudDocumentId?: string;
+  completedAt?: number;
+  contentSha256?: string;
+  deleteRemoteAfterCache?: boolean;
+  errorMessage?: string;
+  fileName: string;
+  fileSize: number;
+  fullMmd?: string;
+  mathpixOptionsHash: string;
+  mathpixPdfId?: string;
+  numPages?: number;
+  numPagesCompleted?: number;
+  pdfFingerprint: string;
+  percentDone?: number;
+  remoteDeletedAt?: number;
+  status: MathpixParseStatus;
+  submittedAt?: number;
+  updatedAt: number;
 };

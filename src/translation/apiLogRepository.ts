@@ -34,6 +34,8 @@ export async function putApiCallLog(input: ApiCallLogWriteInput) {
     sourceLang: input.request.sourceLang,
     status: input.status,
     targetLang: input.request.targetLang,
+    textSource: input.request.textSource,
+    mathpixOptionsHash: input.request.mathpixOptionsHash,
     totalTokens: input.usage?.totalTokens,
   };
 

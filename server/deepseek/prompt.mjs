@@ -28,6 +28,7 @@ export function buildTranslationMessages(requestBody) {
         `Only translate the target sentence into ${targetLanguage}.`,
         "Use the requested target-language conventions consistently, including Simplified or Traditional Chinese script when applicable.",
         "Preserve formulas, citations, variables, method names, dataset names, and technical abbreviations.",
+        "Preserve LaTeX math delimited by \\( \\), \\[ \\], or $$ $$ exactly, including equation tags.",
         "Do not add commentary, explanation, markdown, or quotation marks.",
       ].join("\n"),
     },

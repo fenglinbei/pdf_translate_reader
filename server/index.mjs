@@ -3,6 +3,7 @@ import { config as loadDotenv } from "dotenv";
 import { writeJson } from "./http/json.mjs";
 import { handleInviteTicket } from "./routes/auth.mjs";
 import { handleHealth } from "./routes/health.mjs";
+import { handleMathpixRoute } from "./routes/mathpix.mjs";
 import { handleTranslateStream } from "./routes/translate.mjs";
 import { requireAuthenticatedUser, SupabaseAuthError } from "./supabase/auth.mjs";
 
@@ -54,6 +55,25 @@ const server = createServer(async (request, response) => {
     return;
   }
 
+  if (url.pathname.startsWith("/api/mathpix/")) {
+    try {
+      await requireAuthenticatedUser(request);
+    } catch (error) {
+      const statusCode = error instanceof SupabaseAuthError ? error.statusCode : 500;
+
+      writeJson(response, statusCode, {
+        error: {
+          code: error instanceof SupabaseAuthError ? error.code : "auth_error",
+          message: error instanceof Error ? error.message : "Authentication failed.",
+        },
+      });
+      return;
+    }
+
+    await handleMathpixRoute(request, response, url);
+    return;
+  }
+
   writeJson(response, 404, {
     error: {
       code: "not_found",
@@ -68,6 +88,6 @@ server.listen(port, () => {
 
 function applyCorsHeaders(request, response) {
   response.setHeader("Access-Control-Allow-Origin", request.headers.origin ?? "http://localhost:5173");
-  response.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  response.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+  response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-PDF-File-Name");
 }

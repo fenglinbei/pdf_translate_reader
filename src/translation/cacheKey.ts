@@ -1,10 +1,17 @@
-import type { SourceLanguage, TargetLanguage, TranslationModel } from "../types/domain";
+import type {
+  SourceLanguage,
+  TargetLanguage,
+  TextExtractionSource,
+  TranslationModel,
+} from "../types/domain";
 
 export type TranslationCacheKeyInput = {
   pdfFingerprint: string;
   normalizedSentence: string;
   sourceLang: SourceLanguage;
   targetLang: TargetLanguage;
+  textSource?: TextExtractionSource;
+  mathpixOptionsHash?: string;
   model: TranslationModel;
   contextWindowN: number;
   longContextEnabled: boolean;
@@ -18,6 +25,8 @@ export function createTranslationCacheKey(input: TranslationCacheKeyInput) {
     normalizedSentence: input.normalizedSentence,
     sourceLang: input.sourceLang,
     targetLang: input.targetLang,
+    textSource: input.textSource ?? "pdfjs",
+    mathpixOptionsHash: input.mathpixOptionsHash ?? "",
     model: input.model,
     contextWindowN: input.contextWindowN,
     longContextEnabled: input.longContextEnabled,

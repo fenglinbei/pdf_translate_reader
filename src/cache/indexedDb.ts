@@ -1,6 +1,8 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type {
   ApiCallLog,
+  MathpixDocumentRecord,
+  MathpixParsedPage,
   PaperContextRecord,
   PdfLibraryEntry,
   TranslationCacheEntry,
@@ -9,7 +11,7 @@ import type {
 import type { StoredPinnedTranslationCard } from "../translation/floatingCardTypes";
 
 const DB_NAME = "pdf-translate-reader";
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 
 export interface PdfTranslateReaderDatabase extends DBSchema {
   pdfLibrary: {
@@ -64,6 +66,23 @@ export interface PdfTranslateReaderDatabase extends DBSchema {
     key: string;
     value: unknown;
   };
+  mathpixDocuments: {
+    key: string;
+    value: MathpixDocumentRecord;
+    indexes: {
+      "by-cloud-document": string;
+      "by-status": MathpixDocumentRecord["status"];
+      "by-updated-at": number;
+    };
+  };
+  mathpixParsedPages: {
+    key: [string, number];
+    value: MathpixParsedPage;
+    indexes: {
+      "by-pdf": string;
+      "by-updated-at": number;
+    };
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<PdfTranslateReaderDatabase>> | undefined;
@@ -110,6 +129,19 @@ export function getAppDb() {
       if (!db.objectStoreNames.contains("settings")) {
         db.createObjectStore("settings");
       }
+
+      if (!db.objectStoreNames.contains("mathpixDocuments")) {
+        const store = db.createObjectStore("mathpixDocuments", { keyPath: "pdfFingerprint" });
+        store.createIndex("by-cloud-document", "cloudDocumentId");
+        store.createIndex("by-status", "status");
+        store.createIndex("by-updated-at", "updatedAt");
+      }
+
+      if (!db.objectStoreNames.contains("mathpixParsedPages")) {
+        const store = db.createObjectStore("mathpixParsedPages", { keyPath: ["pdfFingerprint", "pageIndex"] });
+        store.createIndex("by-pdf", "pdfFingerprint");
+        store.createIndex("by-updated-at", "updatedAt");
+      }
     },
   });
 
@@ -126,6 +158,8 @@ export async function resetAppDb() {
     "paperContexts",
     "pinnedTranslationCards",
     "settings",
+    "mathpixDocuments",
+    "mathpixParsedPages",
   ] as const;
   const transaction = db.transaction(stores, "readwrite");
 

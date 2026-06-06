@@ -99,6 +99,9 @@ export async function putPin(input: PinWriteInput) {
     sourceLang: input.sourceLang,
     targetLang: input.targetLang,
     targetSentence: input.selection.targetSentence,
+    textSource: input.selection.textSource,
+    mathpixOptionsHash: input.selection.mathpixOptionsHash,
+    mathpixConfidence: input.selection.mathpixConfidence,
     translation: hasTranslationInput ? input.translation : existing?.translation ?? input.translation,
     translationVisible:
       input.translationVisible ??

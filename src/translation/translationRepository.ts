@@ -1,6 +1,7 @@
 import type {
   SourceLanguage,
   TargetLanguage,
+  TextExtractionSource,
   TokenUsage,
   TranslationCacheEntry,
   TranslationModel,
@@ -20,6 +21,8 @@ export type TranslationCacheWriteInput = {
   normalizedSentence: string;
   sourceLang: SourceLanguage;
   targetLang: TargetLanguage;
+  textSource?: TextExtractionSource;
+  mathpixOptionsHash?: string;
   model: TranslationModel;
   contextWindowN: number;
   longContextEnabled: boolean;
@@ -46,6 +49,8 @@ export async function putTranslationCacheEntry(input: TranslationCacheWriteInput
     normalizedSentence: input.normalizedSentence,
     sourceLang: input.sourceLang,
     targetLang: input.targetLang,
+    textSource: input.textSource,
+    mathpixOptionsHash: input.mathpixOptionsHash,
     model: input.model,
     contextWindowN: input.contextWindowN,
     longContextEnabled: input.longContextEnabled,

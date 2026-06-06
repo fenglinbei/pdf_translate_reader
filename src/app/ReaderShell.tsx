@@ -82,6 +82,7 @@ import type {
   CloudPdfLibraryEntry,
   MobileBaseMode,
   MobileInteractionMode,
+  MathpixParsedPage,
   PaperContextRecord,
   PdfLibraryEntry,
   ReaderMode,
@@ -110,6 +111,9 @@ import {
 import { clearTranslationCache } from "../translation/translationRepository";
 import { getStorageErrorMessage } from "../translation/errors";
 import { TRANSLATION_PROMPT_VERSION } from "../translation/defaults";
+import { runMathpixParsePipeline } from "../mathpix/mathpixPipeline";
+import { mapPagesByIndex } from "../mathpix/mathpixRepository";
+import { resolveMathpixSelectionText } from "../mathpix/mathpixSelectionResolver";
 import {
   clearReaderSessionDocument,
   getReaderSession,
@@ -190,6 +194,9 @@ export function ReaderShell() {
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const [pinsPaneWidth, setPinsPaneWidth] = useState(PINS_PANE_DEFAULT_WIDTH);
   const [paperContext, setPaperContext] = useState<PaperContextRecord>();
+  const [mathpixParsedPages, setMathpixParsedPages] = useState<Map<number, MathpixParsedPage>>(
+    () => new Map(),
+  );
   const [pins, setPins] = useState<TranslationPin[]>([]);
   const [pinnedTranslationCards, setPinnedTranslationCards] = useState<PinnedTranslationCard[]>([]);
   const [readerMode, setReaderMode] = useState<ReaderMode>("translate");
@@ -217,6 +224,7 @@ export function ReaderShell() {
   const pinsRef = useRef<TranslationPin[]>([]);
   const pinnedTranslationCardSaveTimersRef = useRef(new Map<string, number>());
   const pinnedTranslationCardsRef = useRef<PinnedTranslationCard[]>([]);
+  const mathpixParsedPagesRef = useRef(new Map<number, MathpixParsedPage>());
   const translationCardZIndexRef = useRef(TRANSLATION_CARD_BASE_Z_INDEX);
   const activeFingerprint = currentEntry?.fingerprint;
   const currentFileName = currentEntry?.fileName;
@@ -243,6 +251,13 @@ export function ReaderShell() {
   const applyPinnedTranslationCards = useCallback((nextCards: PinnedTranslationCard[]) => {
     pinnedTranslationCardsRef.current = nextCards;
     setPinnedTranslationCards(nextCards);
+  }, []);
+
+  const applyMathpixParsedPages = useCallback((pages: MathpixParsedPage[]) => {
+    const nextPages = mapPagesByIndex(pages);
+
+    mathpixParsedPagesRef.current = nextPages;
+    setMathpixParsedPages(nextPages);
   }, []);
 
   const updatePinnedTranslationCards = useCallback(
@@ -494,7 +509,9 @@ export function ReaderShell() {
   useEffect(() => {
     if (!activeFingerprint) {
       paperContextPageTextsRef.current = new Map();
+      mathpixParsedPagesRef.current = new Map();
       setPaperContext(undefined);
+      setMathpixParsedPages(new Map());
       setPins([]);
       applyPinnedTranslationCards([]);
       setIsConfirmingClearPins(false);
@@ -502,6 +519,8 @@ export function ReaderShell() {
     }
 
     paperContextPageTextsRef.current = new Map();
+    mathpixParsedPagesRef.current = new Map();
+    setMathpixParsedPages(new Map());
     applyPinnedTranslationCards([]);
     setIsConfirmingClearPins(false);
     let cancelled = false;
@@ -562,6 +581,76 @@ export function ReaderShell() {
       cancelled = true;
     };
   }, [activeFingerprint, applyPinnedTranslationCards]);
+
+  useEffect(() => {
+    if (!currentEntry) {
+      return undefined;
+    }
+
+    const abortController = new AbortController();
+
+    void runMathpixParsePipeline({
+      entry: currentEntry,
+      onPages: (pages) => {
+        if (abortController.signal.aborted || currentEntry.fingerprint !== activeFingerprint) {
+          return;
+        }
+
+        applyMathpixParsedPages(pages);
+
+        const pageTexts = pages
+          .slice(0, PROJECT_CONFIG.paperContext.maxScanPages)
+          .map((page) => page.pageText)
+          .filter((text) => text.trim().length > 0);
+
+        if (pageTexts.length > 0) {
+          void updatePaperContextFromPageTexts({
+            fileName: currentEntry.fileName,
+            metadataTitle: currentEntry.pdfMetadata?.title,
+            pageTexts,
+            cloudDocumentId: currentEntry.cloudDocumentId,
+            pdfFingerprint: currentEntry.fingerprint,
+          })
+            .then((record) => {
+              setPaperContext((currentRecord) =>
+                currentRecord?.pdfFingerprint === record.pdfFingerprint &&
+                currentRecord.contextHash === record.contextHash
+                  ? currentRecord
+                  : record,
+              );
+            })
+            .catch(() => undefined);
+        }
+      },
+      signal: abortController.signal,
+    }).catch((error) => {
+      if (isAbortError(error)) {
+        return;
+      }
+
+      if (!abortController.signal.aborted && currentEntry.fingerprint === activeFingerprint) {
+        setStatusMessage(
+          error instanceof Error
+            ? `Mathpix parsing failed. Using PDF text fallback. ${error.message}`
+            : "Mathpix parsing failed. Using PDF text fallback.",
+        );
+      }
+    });
+
+    return () => {
+      abortController.abort();
+    };
+  }, [
+    activeFingerprint,
+    applyMathpixParsedPages,
+    currentEntry?.blob,
+    currentEntry?.cloudDocumentId,
+    currentEntry?.contentSha256,
+    currentEntry?.fileName,
+    currentEntry?.fileSize,
+    currentEntry?.fingerprint,
+    currentEntry?.pdfMetadata?.title,
+  ]);
 
   const handleImport = useCallback(
     async (file: File) => {
@@ -856,9 +945,16 @@ export function ReaderShell() {
   );
 
   const handleSentenceSelectionChange = useCallback((selection: SentenceSelection | undefined) => {
-    setSentenceSelection(selection);
+    const resolvedSelection = selection
+      ? resolveMathpixSelectionText({
+          parsedPages: mathpixParsedPagesRef.current,
+          selection,
+        })
+      : undefined;
 
-    if (!selection) {
+    setSentenceSelection(resolvedSelection);
+
+    if (!resolvedSelection) {
       return;
     }
 
@@ -867,6 +963,25 @@ export function ReaderShell() {
     translationCardZIndexRef.current = nextZIndex;
     setActiveTranslationCardZIndex(nextZIndex);
   }, []);
+
+  useEffect(() => {
+    if (
+      !sentenceSelection ||
+      sentenceSelection.textSource === "mathpix-v3-pdf" ||
+      mathpixParsedPages.size === 0
+    ) {
+      return;
+    }
+
+    const resolvedSelection = resolveMathpixSelectionText({
+      parsedPages: mathpixParsedPages,
+      selection: sentenceSelection,
+    });
+
+    if (resolvedSelection.textSource === "mathpix-v3-pdf") {
+      setSentenceSelection(resolvedSelection);
+    }
+  }, [mathpixParsedPages, sentenceSelection]);
 
   const handleReaderModeChange = useCallback((nextMode: ReaderMode) => {
     setReaderMode(nextMode);
@@ -2025,6 +2140,10 @@ function hasReadingPosition(position: ReadingPositionUpdate) {
     typeof position.lastScrollTop === "number" ||
     typeof position.lastZoom === "number"
   );
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
 function getLatestLibraryEntry(entries: CloudPdfLibraryEntry[]) {
