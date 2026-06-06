@@ -38,6 +38,7 @@ type PageOverlayLayerProps = {
   copyNotice?: string;
   copySelection?: SentenceSelection;
   draftSelection?: SentenceSelection;
+  emphasizedPinnedCardKey?: string;
   isMobileViewport: boolean;
   locatedPinId?: string;
   onActivateTranslationCard: (selection: SentenceSelection) => void;
@@ -56,6 +57,7 @@ type PageOverlayLayerProps = {
     action: TranslationFavoriteAction,
   ) => Promise<void>;
   onRevealPinCard: (pin: TranslationPin) => void;
+  onRevealPinnedTranslationCard: (card: PinnedTranslationCard) => void;
   onOpenCollapsedMobileTranslationCard: () => void;
   onOpenMobilePinnedCard: (cardKey: string, selection: SentenceSelection) => void;
   onTranslationCardViewChange: (
@@ -82,6 +84,7 @@ export function PageOverlayLayer({
   copyNotice,
   copySelection,
   draftSelection,
+  emphasizedPinnedCardKey,
   isMobileViewport,
   locatedPinId,
   onActivateTranslationCard,
@@ -94,6 +97,7 @@ export function PageOverlayLayer({
   onPinnedTranslationRefresh,
   onPinTranslation,
   onRevealPinCard,
+  onRevealPinnedTranslationCard,
   onOpenCollapsedMobileTranslationCard,
   onOpenMobilePinnedCard,
   onTranslationCardViewChange,
@@ -288,17 +292,17 @@ export function PageOverlayLayer({
             key={marker.key}
             onClick={(event) => {
               event.stopPropagation();
-              if (marker.pin) {
-                onRevealPinCard(marker.pin);
-                return;
-              }
-
               if (marker.card) {
                 if (isMobileViewport) {
                   onOpenMobilePinnedCard(marker.card.key, marker.card.selection);
                 } else {
-                  onActivateTranslationCard(marker.card.selection);
+                  onRevealPinnedTranslationCard(marker.card);
                 }
+                return;
+              }
+
+              if (marker.pin) {
+                onRevealPinCard(marker.pin);
               }
             }}
             onMouseDown={(event) => event.stopPropagation()}
@@ -417,6 +421,7 @@ export function PageOverlayLayer({
               annotationColor={selectionPin?.color}
               annotationNote={selectionPin?.note}
               isCardPinned={Boolean(activePinnedCard)}
+              isEmphasized={Boolean(activePinnedCard && activePinnedCard.key === emphasizedPinnedCardKey)}
               isFavorited={selectionPinned}
               onActivate={() => onActivateTranslationCard(selection)}
               onAnnotationSave={(payload, annotation) =>
@@ -527,6 +532,7 @@ export function PageOverlayLayer({
                     annotationColor={cardPin?.color}
                     annotationNote={cardPin?.note}
                     isCardPinned={true}
+                    isEmphasized={card.key === emphasizedPinnedCardKey}
                     isFavorited={Boolean(cardPin)}
                     onActivate={() => onActivateTranslationCard(cardSelection)}
                     onAnnotationSave={(payload, annotation) =>
@@ -977,6 +983,10 @@ function getPinMarkerPriority(kind: PinMarkerKind) {
 function getPinMarkerLabel(marker: PinMarkerTarget, t: ReturnType<typeof useI18n>["t"]) {
   const page = marker.rectSource.pageIndex + 1;
 
+  if (marker.card) {
+    return t("translation.openPinnedForPage", { page });
+  }
+
   switch (marker.kind) {
     case "annotation":
       return t("translation.openAnnotationCardForPage", { page });
@@ -989,6 +999,10 @@ function getPinMarkerLabel(marker: PinMarkerTarget, t: ReturnType<typeof useI18n
 }
 
 function getPinMarkerTitle(marker: PinMarkerTarget, t: ReturnType<typeof useI18n>["t"]) {
+  if (marker.card) {
+    return t("translation.openPinnedTitle");
+  }
+
   switch (marker.kind) {
     case "annotation":
       return t("translation.openAnnotationCard");

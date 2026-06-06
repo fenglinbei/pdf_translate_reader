@@ -1,4 +1,9 @@
-import type { ReaderMode, SelectionMode } from "../types/domain";
+import type {
+  MobileBaseMode,
+  MobileInteractionMode,
+  ReaderMode,
+  SelectionMode,
+} from "../types/domain";
 
 const READER_SESSION_STORAGE_KEY = "pdf-translate-reader-session-v1";
 
@@ -8,6 +13,8 @@ export type ReaderSession = {
   isLibraryPaneOpen?: boolean;
   isPinsPaneOpen?: boolean;
   libraryPaneWidth?: number;
+  mobileBaseMode?: MobileBaseMode;
+  mobileInteractionMode?: MobileInteractionMode;
   pinsPaneWidth?: number;
   readerMode?: ReaderMode;
   selectionMode?: SelectionMode;
@@ -110,12 +117,18 @@ function normalizeReaderSession(input: unknown): ReaderSession | undefined {
     return undefined;
   }
 
+  const mobileBaseMode = getMobileBaseMode(input.mobileBaseMode);
+  const mobileInteractionMode =
+    mobileBaseMode === "browse" ? "pan" : getMobileInteractionMode(input.mobileInteractionMode);
+
   return {
     activeCloudDocumentId: getOptionalString(input.activeCloudDocumentId),
     activeFingerprint: getOptionalString(input.activeFingerprint),
     isLibraryPaneOpen: getOptionalBoolean(input.isLibraryPaneOpen),
     isPinsPaneOpen: getOptionalBoolean(input.isPinsPaneOpen),
     libraryPaneWidth: getOptionalNumber(input.libraryPaneWidth),
+    mobileBaseMode,
+    mobileInteractionMode,
     pinsPaneWidth: getOptionalNumber(input.pinsPaneWidth),
     readerMode:
       input.readerMode === "select"
@@ -132,6 +145,16 @@ function normalizeReaderSession(input: unknown): ReaderSession | undefined {
     updatedAt: getOptionalNumber(input.updatedAt) ?? Date.now(),
     userId: input.userId,
   };
+}
+
+function getMobileBaseMode(value: unknown): MobileBaseMode | undefined {
+  return value === "browse" || value === "translate" || value === "select"
+    ? value
+    : undefined;
+}
+
+function getMobileInteractionMode(value: unknown): MobileInteractionMode | undefined {
+  return value === "segmented" || value === "pan" ? value : undefined;
 }
 
 function getOptionalString(value: unknown) {

@@ -1780,6 +1780,31 @@ button {
   will-change: transform;
 }
 
+.translation-popover--emphasized {
+  animation: translation-popover-reminder 1.45s ease-out;
+}
+
+@keyframes translation-popover-reminder {
+  0% {
+    border-color: rgba(37, 99, 235, 0.78);
+    box-shadow:
+      0 0 0 0 rgba(37, 99, 235, 0.28),
+      0 18px 46px rgba(23, 32, 45, 0.22);
+  }
+
+  34% {
+    border-color: rgba(37, 99, 235, 0.86);
+    box-shadow:
+      0 0 0 7px rgba(37, 99, 235, 0.14),
+      0 20px 48px rgba(23, 32, 45, 0.25);
+  }
+
+  100% {
+    border-color: rgba(184, 192, 204, 0.92);
+    box-shadow: 0 18px 46px rgba(23, 32, 45, 0.22);
+  }
+}
+
 .translation-popover-resize-hook {
   position: absolute;
   right: 5px;
@@ -2324,6 +2349,10 @@ button {
   background: rgba(255, 255, 255, 0.58);
 }
 
+.reader-mode-control--mobile {
+  display: none;
+}
+
 .mode-toggle-button {
   display: inline-flex;
   align-items: center;
@@ -2360,16 +2389,35 @@ button {
   background: rgba(37, 99, 235, 0.08);
 }
 
+.mode-toggle-button--browse {
+  border-color: rgba(103, 112, 122, 0.28);
+  color: var(--text-muted);
+  background: rgba(103, 112, 122, 0.08);
+}
+
 .mode-toggle-button--cross {
   border-color: rgba(199, 130, 18, 0.34);
   color: #8a5b0e;
   background: rgba(199, 130, 18, 0.1);
 }
 
+.mode-toggle-button--pan {
+  border-color: rgba(103, 112, 122, 0.26);
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.62);
+}
+
 .mode-toggle-button--select {
   border-color: rgba(22, 163, 74, 0.32);
   color: var(--success);
   background: rgba(22, 163, 74, 0.08);
+}
+
+.mode-toggle-button:disabled {
+  color: var(--text-muted);
+  background: rgba(238, 240, 236, 0.64);
+  cursor: not-allowed;
+  opacity: 0.72;
 }
 
 .settings-backdrop {
@@ -2720,6 +2768,14 @@ button {
 
   .reader-mode-control {
     flex: 0 0 auto;
+  }
+
+  .reader-mode-control--desktop {
+    display: none;
+  }
+
+  .reader-mode-control--mobile {
+    display: inline-flex;
   }
 
   .mode-toggle-button {

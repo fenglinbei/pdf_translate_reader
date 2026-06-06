@@ -50,6 +50,7 @@ type TranslationPopoverProps = {
   annotationColor?: AnnotationColor;
   annotationNote?: string;
   isCardPinned?: boolean;
+  isEmphasized?: boolean;
   isFavorited?: boolean;
   onActivate?: () => void;
   onAnnotationSave?: (
@@ -118,6 +119,7 @@ export function TranslationPopover({
   annotationColor,
   annotationNote,
   isCardPinned = false,
+  isEmphasized = false,
   isFavorited = false,
   onActivate,
   onAnnotationSave,
@@ -793,6 +795,8 @@ export function TranslationPopover({
     <div
       className={`translation-popover translation-popover--${placement} ${
         isMobileSheet ? "translation-popover--mobile-sheet" : ""
+      } ${
+        isEmphasized ? "translation-popover--emphasized" : ""
       }`}
       onFocusCapture={onActivate}
       onMouseDown={stopEvent}

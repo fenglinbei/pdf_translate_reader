@@ -6,6 +6,8 @@ import {
   Check,
   Combine,
   Download,
+  Eye,
+  Hand,
   Languages,
   LogOut,
   MousePointer2,
@@ -78,6 +80,8 @@ import {
 import type {
   AppSettings,
   CloudPdfLibraryEntry,
+  MobileBaseMode,
+  MobileInteractionMode,
   PaperContextRecord,
   PdfLibraryEntry,
   ReaderMode,
@@ -190,6 +194,9 @@ export function ReaderShell() {
   const [pinnedTranslationCards, setPinnedTranslationCards] = useState<PinnedTranslationCard[]>([]);
   const [readerMode, setReaderMode] = useState<ReaderMode>("translate");
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("continuous");
+  const [mobileBaseMode, setMobileBaseMode] = useState<MobileBaseMode>("browse");
+  const [mobileInteractionMode, setMobileInteractionMode] =
+    useState<MobileInteractionMode>("pan");
   const [sentenceSelection, setSentenceSelection] = useState<SentenceSelection>();
   const [activeTranslationCardZIndex, setActiveTranslationCardZIndex] = useState(
     TRANSLATION_CARD_BASE_Z_INDEX,
@@ -333,8 +340,16 @@ export function ReaderShell() {
     ));
     setReaderMode(savedSession?.readerMode ?? "translate");
     setSelectionMode(savedSession?.selectionMode ?? "continuous");
+    setMobileBaseMode(savedSession?.mobileBaseMode ?? "browse");
+    setMobileInteractionMode(savedSession?.mobileInteractionMode ?? "pan");
     setReaderSessionHydratedUserId(readerSessionUserId);
   }, [applyPinnedTranslationCards, readerSessionUserId]);
+
+  useEffect(() => {
+    if (mobileBaseMode === "browse" && mobileInteractionMode !== "pan") {
+      setMobileInteractionMode("pan");
+    }
+  }, [mobileBaseMode, mobileInteractionMode]);
 
   useEffect(() => {
     if (
@@ -348,6 +363,8 @@ export function ReaderShell() {
       isLibraryPaneOpen,
       isPinsPaneOpen,
       libraryPaneWidth,
+      mobileBaseMode,
+      mobileInteractionMode,
       pinsPaneWidth,
       readerMode,
       selectionMode,
@@ -356,6 +373,8 @@ export function ReaderShell() {
     isLibraryPaneOpen,
     isPinsPaneOpen,
     libraryPaneWidth,
+    mobileBaseMode,
+    mobileInteractionMode,
     pinsPaneWidth,
     readerMode,
     readerSessionHydratedUserId,
@@ -860,6 +879,38 @@ export function ReaderShell() {
     setSentenceSelection(undefined);
     window.getSelection()?.removeAllRanges();
   }, []);
+
+  const handleMobileBaseModeCycle = useCallback(() => {
+    setMobileBaseMode((currentMode) => {
+      const nextMode =
+        currentMode === "browse"
+          ? "translate"
+          : currentMode === "translate"
+            ? "select"
+            : "browse";
+
+      if (nextMode === "browse") {
+        setMobileInteractionMode("pan");
+      }
+
+      return nextMode;
+    });
+    setSentenceSelection(undefined);
+    window.getSelection()?.removeAllRanges();
+  }, []);
+
+  const handleMobileInteractionModeToggle = useCallback(() => {
+    if (mobileBaseMode === "browse") {
+      setMobileInteractionMode("pan");
+      return;
+    }
+
+    setMobileInteractionMode((currentMode) =>
+      currentMode === "pan" ? "segmented" : "pan",
+    );
+    setSentenceSelection(undefined);
+    window.getSelection()?.removeAllRanges();
+  }, [mobileBaseMode]);
 
   const handlePinTranslation = useCallback(async (
     input: PinWriteInput,
@@ -1464,6 +1515,77 @@ export function ReaderShell() {
       </button>
     </div>
   );
+  const renderMobileModeControls = () => {
+    const baseModeClass =
+      mobileBaseMode === "browse"
+        ? "mode-toggle-button--browse"
+        : mobileBaseMode === "translate"
+          ? "mode-toggle-button--active"
+          : "mode-toggle-button--select";
+    const baseModeLabel =
+      mobileBaseMode === "browse"
+        ? t("reader.mobileBrowseMode")
+        : mobileBaseMode === "translate"
+          ? t("reader.mobileTranslateMode")
+          : t("reader.mobileSelectMode");
+    const interactionModeLabel =
+      mobileBaseMode === "browse"
+        ? t("reader.mobilePanModeLocked")
+        : mobileInteractionMode === "pan"
+          ? t("reader.mobilePanMode")
+          : t("reader.mobileSegmentedMode");
+
+    return (
+      <>
+        <div
+          className="reader-mode-control reader-mode-control--mobile"
+          aria-label={t("reader.mobileBaseMode")}
+          role="group"
+        >
+          <button
+            aria-label={baseModeLabel}
+            className={`mode-toggle-button mode-toggle-button--single ${baseModeClass}`}
+            onClick={handleMobileBaseModeCycle}
+            title={baseModeLabel}
+            type="button"
+          >
+            {mobileBaseMode === "browse" ? (
+              <Eye aria-hidden="true" size={16} strokeWidth={2} />
+            ) : mobileBaseMode === "translate" ? (
+              <Languages aria-hidden="true" size={16} strokeWidth={2} />
+            ) : (
+              <TextSelect aria-hidden="true" size={16} strokeWidth={2} />
+            )}
+          </button>
+        </div>
+        <div
+          className="reader-mode-control reader-mode-control--mobile"
+          aria-label={t("reader.mobileInteractionMode")}
+          role="group"
+        >
+          <button
+            aria-disabled={mobileBaseMode === "browse"}
+            aria-label={interactionModeLabel}
+            className={`mode-toggle-button mode-toggle-button--single ${
+              mobileInteractionMode === "segmented"
+                ? "mode-toggle-button--cross"
+                : "mode-toggle-button--pan"
+            }`}
+            disabled={mobileBaseMode === "browse"}
+            onClick={handleMobileInteractionModeToggle}
+            title={interactionModeLabel}
+            type="button"
+          >
+            {mobileInteractionMode === "segmented" ? (
+              <Combine aria-hidden="true" size={16} strokeWidth={2} />
+            ) : (
+              <Hand aria-hidden="true" size={16} strokeWidth={2} />
+            )}
+          </button>
+        </div>
+      </>
+    );
+  };
 
   return (
     <I18nProvider locale={settings.uiLocale}>
@@ -1515,7 +1637,7 @@ export function ReaderShell() {
             <span>{auth.user?.email ?? t("common.account")}</span>
             <LogOut aria-hidden="true" size={15} strokeWidth={2} />
           </button>
-          <div className="reader-mode-control" aria-label={t("reader.readerMode")} role="group">
+          <div className="reader-mode-control reader-mode-control--desktop" aria-label={t("reader.readerMode")} role="group">
             <button
               aria-label={
                 readerMode === "translate"
@@ -1540,7 +1662,7 @@ export function ReaderShell() {
               )}
             </button>
           </div>
-          <div className="reader-mode-control" aria-label={t("reader.selectionMode")} role="group">
+          <div className="reader-mode-control reader-mode-control--desktop" aria-label={t("reader.selectionMode")} role="group">
             <button
               aria-label={
                 selectionMode === "continuous"
@@ -1565,6 +1687,7 @@ export function ReaderShell() {
               )}
             </button>
           </div>
+          {renderMobileModeControls()}
           <SettingsButton isOpen={isSettingsOpen} onClick={() => setIsSettingsOpen(true)} />
         </div>
       </header>
@@ -1645,6 +1768,8 @@ export function ReaderShell() {
               pinnedTranslationCards={pinnedTranslationCards}
               paperContext={paperContext}
               pins={pins}
+              mobileBaseMode={mobileBaseMode}
+              mobileInteractionMode={mobileInteractionMode}
               readerMode={readerMode}
               selectionMode={selectionMode}
               settings={settings}
