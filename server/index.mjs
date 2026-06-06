@@ -1,12 +1,16 @@
 import { createServer } from "node:http";
 import { config as loadDotenv } from "dotenv";
 import { writeJson } from "./http/json.mjs";
+import { handleInviteTicket } from "./routes/auth.mjs";
 import { handleHealth } from "./routes/health.mjs";
 import { handleTranslateStream } from "./routes/translate.mjs";
 import { requireAuthenticatedUser, SupabaseAuthError } from "./supabase/auth.mjs";
 
+const processEnvOverrides = { ...process.env };
+
 loadDotenv({ path: ".env" });
 loadDotenv({ path: ".env.local", override: true });
+Object.assign(process.env, processEnvOverrides);
 
 const port = Number(process.env.PORT ?? 8787);
 
@@ -23,6 +27,11 @@ const server = createServer(async (request, response) => {
 
   if (request.method === "GET" && url.pathname === "/api/health") {
     handleHealth(response);
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/auth/invite-ticket") {
+    await handleInviteTicket(request, response);
     return;
   }
 

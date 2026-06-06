@@ -14,6 +14,7 @@ export function handleHealth(response) {
     },
     supabase: {
       configured: supabase.configured,
+      serviceRoleConfigured: supabase.serviceRoleConfigured,
     },
   });
 }

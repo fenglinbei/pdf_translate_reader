@@ -1,6 +1,7 @@
 import { LogIn } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { useAuth } from "./AuthProvider";
+import { createInviteTicket } from "./inviteTicketClient";
 
 type AuthMode = "sign-in" | "sign-up";
 
@@ -8,6 +9,7 @@ export function AuthScreen() {
   const auth = useAuth();
   const [email, setEmail] = useState("");
   const [errorMessage, setErrorMessage] = useState<string>();
+  const [inviteCode, setInviteCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [mode, setMode] = useState<AuthMode>("sign-in");
   const [password, setPassword] = useState("");
@@ -23,7 +25,10 @@ export function AuthScreen() {
       if (mode === "sign-in") {
         await auth.signIn(email.trim(), password);
       } else {
-        await auth.signUp(email.trim(), password);
+        const trimmedEmail = email.trim();
+        const inviteTicket = await createInviteTicket(trimmedEmail, inviteCode);
+
+        await auth.signUp(trimmedEmail, password, inviteTicket);
         setStatusMessage("Account created. Check your email if confirmation is enabled.");
       }
     } catch (error) {
@@ -80,6 +85,18 @@ export function AuthScreen() {
               value={password}
             />
           </label>
+          {mode === "sign-up" ? (
+            <label className="auth-field">
+              <span>Invite code</span>
+              <input
+                autoComplete="one-time-code"
+                onChange={(event) => setInviteCode(event.currentTarget.value)}
+                required
+                type="text"
+                value={inviteCode}
+              />
+            </label>
+          ) : null}
           {errorMessage ? <div className="auth-status auth-status--error">{errorMessage}</div> : null}
           {statusMessage ? <div className="auth-status">{statusMessage}</div> : null}
           <button className="auth-submit" disabled={isSubmitting} type="submit">

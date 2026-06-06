@@ -14,7 +14,7 @@ type AuthContextValue = {
   session?: Session;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string, inviteTicket: string) => Promise<void>;
   status: AuthStatus;
   user?: User;
 };
@@ -124,9 +124,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearAuthSessionSnapshot();
       applySession(null);
     },
-    signUp: async (email: string, password: string) => {
+    signUp: async (email: string, password: string, inviteTicket: string) => {
       const client = requireSupabaseClient();
-      const { data, error } = await client.auth.signUp({ email, password });
+      const { data, error } = await client.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            invite_ticket: inviteTicket,
+          },
+        },
+      });
 
       if (error) {
         throw error;

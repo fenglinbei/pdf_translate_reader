@@ -73,6 +73,7 @@ VITE_API_BASE_URL=/api
 VITE_API_PROXY_TARGET=http://localhost:8787
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 ```
 
 Build:
@@ -118,6 +119,7 @@ VITE_API_BASE_URL=/api
 VITE_API_PROXY_TARGET=http://localhost:8787
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 ```
 
 ## Supabase setup
@@ -133,44 +135,70 @@ The browser uses `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for login and
 Storage access. The Node API proxy reads the same values from `.env.local`, or
 `SUPABASE_URL` and `SUPABASE_ANON_KEY` if those are set by the host.
 
-### Signup allowlist hook
+### Invite code signup hook
 
-`supabase/schema.sql` also creates `public.signup_email_allowlist` and the
-`public.hook_restrict_signup_by_email_allowlist(event jsonb)` auth hook
-function. To make registration invite-only by email:
+`supabase/schema.sql` creates an invite-code registration flow with:
+
+- `public.signup_invites`: hashed invite codes, usage limits, expiry, and notes.
+- `public.signup_invite_tickets`: 10-minute registration tickets created by the
+  Node API after an invite code is checked.
+- `public.signup_invite_redemptions`: invite redemption audit records.
+- `public.create_signup_invite_ticket(signup_email text, invite_code text)`: a
+  service-role-only RPC used by `POST /api/auth/invite-ticket`.
+- `public.hook_restrict_signup_by_invite_ticket(event jsonb)`: the Supabase Auth
+  Before User Created hook that consumes a ticket before a user is created.
+
+To make registration invite-only by code:
 
 1. Run `supabase/schema.sql` in the Supabase SQL editor.
-2. In Supabase Dashboard, go to Authentication -> Hooks.
-3. Enable Before User Created.
-4. Choose the Postgres function
-   `public.hook_restrict_signup_by_email_allowlist`.
-5. Keep "Allow new users to sign up" enabled if users should self-register after
-   being added to the allowlist.
+2. Set `SUPABASE_SERVICE_ROLE_KEY` in the Node API process environment. Do not
+   expose this value with a `VITE_` prefix.
+3. In Supabase Dashboard, go to Authentication -> Hooks.
+4. Enable Before User Created.
+5. Choose the Postgres function
+   `public.hook_restrict_signup_by_invite_ticket`.
+6. Keep "Allow new users to sign up" enabled so invited users can self-register.
 
-Authorize an email address:
+Create a single-use invite code:
 
 ```sql
-insert into public.signup_email_allowlist (email, note)
-values ('someone@example.com', 'approved')
-on conflict (email) do update
-set active = true,
-    note = excluded.note,
-    updated_at = now();
+insert into public.signup_invites (code_hash, note, max_uses, expires_at)
+values (
+  public.hash_signup_invite_code('PDF-2026-ABCD'),
+  'first beta invite',
+  1,
+  now() + interval '14 days'
+);
 ```
 
-Revoke signup access without deleting the audit note:
+Create a reusable invite code:
 
 ```sql
-update public.signup_email_allowlist
+insert into public.signup_invites (code_hash, note, max_uses, expires_at)
+values (
+  public.hash_signup_invite_code('LAB-TEAM-2026'),
+  'lab team invite',
+  20,
+  now() + interval '60 days'
+);
+```
+
+Revoke an invite code without deleting its audit history:
+
+```sql
+update public.signup_invites
 set active = false,
     updated_at = now()
-where email = 'someone@example.com';
+where code_hash = public.hash_signup_invite_code('PDF-2026-ABCD');
 ```
 
-Emails are normalized to lowercase on insert and update. The allowlist table has
-RLS enabled and no public policies, so browser clients cannot read or modify it.
-If an admin invite/create flow also creates users through Supabase Auth, add the
-email to the allowlist before creating the user.
+The browser never receives the Supabase service role key. It sends the entered
+invite code to the Node API, receives a short-lived ticket, and passes only that
+ticket to Supabase Auth signup metadata. Invite and ticket tables have RLS
+enabled and no public policies, so browser clients cannot read or modify them.
+The older `signup_email_allowlist` table and
+`hook_restrict_signup_by_email_allowlist` function remain in the schema for
+migration safety, but new deployments should use the invite-ticket hook above.
 
 ### One-command nginx deployment
 
@@ -315,6 +343,9 @@ DEEPSEEK_API_KEY=your_key_here
 PORT=8787
 VITE_API_BASE_URL=/api
 VITE_API_PROXY_TARGET=http://localhost:8787
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 ```
 
 Build:
