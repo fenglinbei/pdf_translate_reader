@@ -1280,12 +1280,7 @@ export function PdfViewer({
       return;
     }
 
-    const shouldCloseForSelection =
-      Boolean(activeSelection) ||
-      Boolean(draftSelection) ||
-      Boolean(mobilePendingSelection);
-
-    if (shouldCloseForSelection) {
+    if (activeSelection) {
       setActiveMobilePinnedCardKey(undefined);
       return;
     }
@@ -1296,8 +1291,6 @@ export function PdfViewer({
   }, [
     activeMobilePinnedCardKey,
     activeSelection,
-    draftSelection,
-    mobilePendingSelection,
     pinnedTranslationCards,
   ]);
 

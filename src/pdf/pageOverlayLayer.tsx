@@ -577,7 +577,6 @@ export function PageOverlayLayer({
             const shouldShowCardPopover =
               cardSelection.pageIndex === pageIndex &&
               cardSelection.rectsOnPage.length > 0 &&
-              !hasDraftSelection &&
               (!isMobileViewport || isMobileCardOpen);
 
             return (
