@@ -34,7 +34,8 @@ import {
 
 const DEFAULT_ANNOTATION_COLOR: AnnotationColor = "yellow";
 const ANNOTATION_COLORS: AnnotationColor[] = ["yellow", "blue", "green", "red"];
-const TRANSLATION_CARD_PORTAL_Z_INDEX_OFFSET = 10;
+const TRANSLATION_CARD_PORTAL_Z_INDEX_MIN = 20;
+const TRANSLATION_CARD_PORTAL_Z_INDEX_MAX = 39;
 
 type PageViewportRect = {
   bottom: number;
@@ -350,6 +351,10 @@ export function PageOverlayLayer({
       !isActiveSelectionMobileCollapsed,
   );
   const foregroundActionZIndex = activeTranslationCardZIndex + 2;
+  const portalZIndexSource = [
+    activeTranslationCardZIndex,
+    ...pinnedTranslationCards.map((card) => card.zIndex),
+  ];
 
   return (
     <div className="pdf-page-overlay" ref={overlayRef}>
@@ -608,7 +613,10 @@ export function PageOverlayLayer({
               zIndex={
                 isMobileViewport
                   ? activePinnedCard?.zIndex ?? activeTranslationCardZIndex
-                  : getTranslationCardPortalZIndex(activePinnedCard?.zIndex ?? activeTranslationCardZIndex)
+                  : getTranslationCardPortalZIndex(
+                      activePinnedCard?.zIndex ?? activeTranslationCardZIndex,
+                      portalZIndexSource,
+                    )
               }
             />
           ) : null
@@ -725,7 +733,7 @@ export function PageOverlayLayer({
                     zIndex={
                       isMobileViewport
                         ? card.zIndex
-                        : getTranslationCardPortalZIndex(card.zIndex)
+                        : getTranslationCardPortalZIndex(card.zIndex, portalZIndexSource)
                     }
                   />
                 ) : null}
@@ -1297,8 +1305,22 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function getTranslationCardPortalZIndex(zIndex: number) {
-  return Math.max(1, TRANSLATION_CARD_PORTAL_Z_INDEX_OFFSET + zIndex);
+function getTranslationCardPortalZIndex(zIndex: number, zIndexSource: number[]) {
+  const orderedZIndexes = Array.from(new Set([...zIndexSource, zIndex]))
+    .sort((left, right) => left - right);
+  const zIndexRank = orderedZIndexes.indexOf(zIndex);
+
+  if (zIndexRank < 0) {
+    return TRANSLATION_CARD_PORTAL_Z_INDEX_MIN;
+  }
+
+  const rankFromTop = orderedZIndexes.length - 1 - zIndexRank;
+
+  return clamp(
+    TRANSLATION_CARD_PORTAL_Z_INDEX_MAX - rankFromTop,
+    TRANSLATION_CARD_PORTAL_Z_INDEX_MIN,
+    TRANSLATION_CARD_PORTAL_Z_INDEX_MAX,
+  );
 }
 
 function getViewportPopoverStyle(
