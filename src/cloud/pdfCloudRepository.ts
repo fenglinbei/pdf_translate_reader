@@ -123,7 +123,7 @@ export async function openCloudPdfDocument(documentId: string): Promise<PdfLibra
   });
   const localEntry = await getPdfLibraryEntry(openedRow.pdf_fingerprint);
 
-  if (localEntry?.blob instanceof Blob) {
+  if (localEntry?.blob instanceof Blob && await canReadBlob(localEntry.blob)) {
     return saveCloudPdfLocalCache(localEntry.blob, rowToFingerprint(openedRow), openedRow);
   }
 
@@ -136,7 +136,7 @@ export async function openCloudPdfDocument(documentId: string): Promise<PdfLibra
     throw error;
   }
 
-  return saveCloudPdfLocalCache(data, rowToFingerprint(openedRow), openedRow);
+  return saveCloudPdfLocalCache(data, rowToFingerprint(openedRow), openedRow, { replaceBlob: true });
 }
 
 export async function deleteCloudPdfDocument(documentId: string) {
@@ -235,6 +235,7 @@ async function saveCloudPdfLocalCache(
   blob: Blob,
   identity: PdfFingerprint,
   row: UserDocumentRow,
+  options: { replaceBlob?: boolean } = {},
 ) {
   const entry = await saveImportedPdf({
     blob,
@@ -245,6 +246,7 @@ async function saveCloudPdfLocalCache(
     fingerprint: row.pdf_fingerprint || identity.fingerprint,
     modifiedAt: identity.modifiedAt,
     pdfMetadata: row.pdf_metadata ?? identity.pdfMetadata,
+    replaceBlob: options.replaceBlob,
     storagePath: row.storage_path,
   });
 
@@ -263,6 +265,15 @@ async function saveCloudPdfLocalCache(
   }
 
   return mergeCloudFields(entry, row);
+}
+
+async function canReadBlob(blob: Blob) {
+  try {
+    await blob.slice(0, Math.min(blob.size, 1)).arrayBuffer();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function mapCloudLibraryEntryWithCacheState(row: UserDocumentRow) {

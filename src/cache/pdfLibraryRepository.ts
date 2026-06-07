@@ -4,6 +4,7 @@ import { getAppDb } from "./indexedDb";
 type ImportedPdfInput = PdfFingerprint & {
   blob: Blob;
   cloudDocumentId?: string;
+  replaceBlob?: boolean;
   storagePath?: string;
 };
 
@@ -44,7 +45,7 @@ export async function saveImportedPdf(input: ImportedPdfInput) {
         fileName: input.fileName,
         fileSize: input.fileSize,
         mimeType: "application/pdf",
-        blob: existing.deletedAt ? input.blob : existing.blob,
+        blob: existing.deletedAt || input.replaceBlob ? input.blob : existing.blob,
         lastOpenedAt: now,
         openCount: existing.openCount + 1,
         pdfMetadata: input.pdfMetadata ?? existing.pdfMetadata,
