@@ -2,9 +2,7 @@ import type { TranslationLanguage } from "../config/translationLanguages";
 import type { UiLocale } from "../i18n/uiLocales";
 
 export type TranslationModel = "deepseek-v4-flash" | "deepseek-v4-pro";
-export type ReaderMode = "translate" | "select";
 export type SelectionMode = "continuous" | "cross";
-export type MobileBaseMode = "browse" | "translate" | "select";
 export type MobileInteractionMode = "pan" | "segmented";
 export type SourceLanguage = TranslationLanguage;
 export type TargetLanguage = TranslationLanguage;

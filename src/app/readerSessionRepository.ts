@@ -1,7 +1,5 @@
 import type {
-  MobileBaseMode,
   MobileInteractionMode,
-  ReaderMode,
   SelectionMode,
 } from "../types/domain";
 
@@ -13,10 +11,8 @@ export type ReaderSession = {
   isLibraryPaneOpen?: boolean;
   isPinsPaneOpen?: boolean;
   libraryPaneWidth?: number;
-  mobileBaseMode?: MobileBaseMode;
   mobileInteractionMode?: MobileInteractionMode;
   pinsPaneWidth?: number;
-  readerMode?: ReaderMode;
   selectionMode?: SelectionMode;
   updatedAt: number;
   userId: string;
@@ -117,9 +113,7 @@ function normalizeReaderSession(input: unknown): ReaderSession | undefined {
     return undefined;
   }
 
-  const mobileBaseMode = getMobileBaseMode(input.mobileBaseMode);
-  const mobileInteractionMode =
-    mobileBaseMode === "browse" ? "pan" : getMobileInteractionMode(input.mobileInteractionMode);
+  const mobileInteractionMode = getMobileInteractionMode(input.mobileInteractionMode);
 
   return {
     activeCloudDocumentId: getOptionalString(input.activeCloudDocumentId),
@@ -127,15 +121,8 @@ function normalizeReaderSession(input: unknown): ReaderSession | undefined {
     isLibraryPaneOpen: getOptionalBoolean(input.isLibraryPaneOpen),
     isPinsPaneOpen: getOptionalBoolean(input.isPinsPaneOpen),
     libraryPaneWidth: getOptionalNumber(input.libraryPaneWidth),
-    mobileBaseMode,
     mobileInteractionMode,
     pinsPaneWidth: getOptionalNumber(input.pinsPaneWidth),
-    readerMode:
-      input.readerMode === "select"
-        ? "select"
-        : input.readerMode === "translate"
-          ? "translate"
-          : undefined,
     selectionMode:
       input.selectionMode === "cross"
         ? "cross"
@@ -145,12 +132,6 @@ function normalizeReaderSession(input: unknown): ReaderSession | undefined {
     updatedAt: getOptionalNumber(input.updatedAt) ?? Date.now(),
     userId: input.userId,
   };
-}
-
-function getMobileBaseMode(value: unknown): MobileBaseMode | undefined {
-  return value === "browse" || value === "translate" || value === "select"
-    ? value
-    : undefined;
 }
 
 function getMobileInteractionMode(value: unknown): MobileInteractionMode | undefined {

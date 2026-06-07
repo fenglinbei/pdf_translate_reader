@@ -13,11 +13,9 @@ import { useI18n } from "../i18n/I18nProvider";
 import type { PinAnnotationInput, PinWriteInput } from "../pins/pinRepository";
 import type {
   AppSettings,
-  MobileBaseMode,
   MobileInteractionMode,
   PaperContext,
   PdfLibraryEntry,
-  ReaderMode,
   SelectionMode,
   SelectionRegion,
   SentenceSelection,
@@ -80,12 +78,10 @@ type PdfViewerProps = {
     viewChange: TranslationCardViewChange,
     options?: TranslationCardViewChangeOptions,
   ) => void;
-  mobileBaseMode: MobileBaseMode;
   mobileInteractionMode: MobileInteractionMode;
   pinnedTranslationCards: PinnedTranslationCard[];
   paperContext?: PaperContext;
   pins: TranslationPin[];
-  readerMode: ReaderMode;
   selectionMode: SelectionMode;
   settings: AppSettings;
 };
@@ -200,12 +196,10 @@ export function PdfViewer({
   onRevealPinCard,
   onSentenceSelectionChange,
   onTranslationCardViewChange,
-  mobileBaseMode,
   mobileInteractionMode,
   pinnedTranslationCards,
   paperContext,
   pins,
-  readerMode,
   selectionMode,
   settings,
 }: PdfViewerProps) {
@@ -239,7 +233,7 @@ export function PdfViewer({
   const [areSelectionActionsSuppressed, setAreSelectionActionsSuppressed] = useState(false);
   const [copyNotice, setCopyNotice] = useState<string>();
   const [copiedSelection, setCopiedSelection] = useState<SentenceSelection>();
-  const [confirmedMobileReaderMode, setConfirmedMobileReaderMode] = useState<ReaderMode>();
+  const [confirmedMobileReaderMode, setConfirmedMobileReaderMode] = useState<"translate">();
   const [collapsedMobileSelectionKey, setCollapsedMobileSelectionKey] = useState<string>();
   const [activeMobilePinnedCardKey, setActiveMobilePinnedCardKey] = useState<string>();
   const [emphasizedPinnedCardKey, setEmphasizedPinnedCardKey] = useState<string>();
@@ -253,14 +247,12 @@ export function PdfViewer({
   const [renderZoom, setRenderZoom] = useState(1);
   const [userZoom, setUserZoom] = useState(1);
   const isMobileSegmentedSelectionMode =
-    isMobileViewport &&
-    mobileBaseMode !== "browse" &&
-    mobileInteractionMode === "segmented";
+    isMobileViewport && mobileInteractionMode === "segmented";
   const isRegionSelectionMode =
     isMobileSegmentedSelectionMode || (!isMobileViewport && selectionMode === "cross");
-  const activeReaderMode: ReaderMode =
-    isMobileViewport && mobileBaseMode === "select" ? "select" : "translate";
-  const effectiveReaderMode = isMobileViewport ? activeReaderMode : readerMode;
+  const effectiveReaderMode: "select" | "translate" = isMobileViewport
+    ? confirmedMobileReaderMode ?? "select"
+    : "select";
 
   useEffect(() => {
     userZoomRef.current = userZoom;
@@ -489,18 +481,6 @@ export function PdfViewer({
     setCopiedSelection(undefined);
     setDraftSelection(undefined);
     setAreSelectionActionsSuppressed(false);
-    window.getSelection()?.removeAllRanges();
-  }, [readerMode]);
-
-  useEffect(() => {
-    spanDragRef.current = undefined;
-    draftSelectionRef.current = undefined;
-    setMobilePendingSelection(undefined);
-    setConfirmedMobileReaderMode(undefined);
-    setCopyNotice(undefined);
-    setCopiedSelection(undefined);
-    setDraftSelection(undefined);
-    setAreSelectionActionsSuppressed(false);
     if (selectionMode !== "cross") {
       queuedCrossSelectionsRef.current = [];
       setQueuedCrossSelections([]);
@@ -533,15 +513,11 @@ export function PdfViewer({
       setQueuedCrossSelections([]);
     }
 
-    if (mobileBaseMode === "browse") {
-      onSentenceSelectionChange(undefined);
-    }
-
+    onSentenceSelectionChange(undefined);
     window.getSelection()?.removeAllRanges();
   }, [
     isMobileSegmentedSelectionMode,
     isMobileViewport,
-    mobileBaseMode,
     mobileInteractionMode,
     onSentenceSelectionChange,
   ]);
@@ -865,10 +841,8 @@ export function PdfViewer({
   );
 
   const clearActiveSelectionForSelectionMode = useCallback(() => {
-    if (effectiveReaderMode === "select") {
-      onSentenceSelectionChange(undefined);
-    }
-  }, [effectiveReaderMode, onSentenceSelectionChange]);
+    onSentenceSelectionChange(undefined);
+  }, [onSentenceSelectionChange]);
 
   const addCrossSelectionPart = useCallback(
     (selection: SentenceSelection) => {
@@ -909,15 +883,9 @@ export function PdfViewer({
     queuedCrossSelectionsRef.current = [];
     setQueuedCrossSelections([]);
     setAreSelectionActionsSuppressed(false);
-    if (effectiveReaderMode === "select") {
-      onSentenceSelectionChange(addPageMetricsToSelection(selection));
-      return;
-    }
-
-    onSentenceSelectionChange(selection);
+    onSentenceSelectionChange(addPageMetricsToSelection(selection));
   }, [
     addPageMetricsToSelection,
-    copySelectedText,
     entry.cloudDocumentId,
     entry.fingerprint,
     onSentenceSelectionChange,
@@ -1371,6 +1339,15 @@ export function PdfViewer({
     clearMobilePendingSelection();
   }, [clearMobilePendingSelection, copySelectedText, mobilePendingSelection]);
 
+  const handleMobilePendingAnnotate = useCallback(() => {
+    if (!mobilePendingSelection) {
+      return;
+    }
+
+    void onCreateAnnotation(mobilePendingSelection, { color: "yellow", note: "" });
+    clearMobilePendingSelection();
+  }, [clearMobilePendingSelection, mobilePendingSelection, onCreateAnnotation]);
+
   const handleMobilePendingAddCrossSelection = useCallback(() => {
     if (!mobilePendingSelection) {
       return;
@@ -1534,6 +1511,13 @@ export function PdfViewer({
                 </button>
                 <button
                   className="mobile-selection-confirm-button"
+                  onClick={handleMobilePendingAnnotate}
+                  type="button"
+                >
+                  {t("annotation.note")}
+                </button>
+                <button
+                  className="mobile-selection-confirm-button"
                   onClick={handleMobilePendingCopy}
                   type="button"
                 >
@@ -1563,7 +1547,7 @@ export function PdfViewer({
               onClick={handleConfirmCrossSelection}
               type="button"
             >
-              {effectiveReaderMode === "select" ? t("common.confirm") : t("pdf.translate")}
+              {t("common.confirm")}
             </button>
             <button
               className="mobile-selection-confirm-button"
@@ -1676,7 +1660,7 @@ const PdfPageView = memo(function PdfPageView({
   paperContext?: PaperContext;
   pins: TranslationPin[];
   queuedCrossSelections: SentenceSelection[];
-  readerMode: ReaderMode;
+  readerMode: "select" | "translate";
   renderScale: number;
   shouldRender: boolean;
   textContentCacheRef: { current: Map<number, CachedPageText> };

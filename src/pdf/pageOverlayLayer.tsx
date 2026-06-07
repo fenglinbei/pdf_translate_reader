@@ -13,7 +13,6 @@ import type {
   AppSettings,
   DOMRectLike,
   PaperContext,
-  ReaderMode,
   SelectionRegion,
   SentenceSelection,
   TranslationPin,
@@ -90,7 +89,7 @@ type PageOverlayLayerProps = {
   pinnedTranslationCards: PinnedTranslationCard[];
   pins: TranslationPin[];
   queuedSelections?: SentenceSelection[];
-  readerMode: ReaderMode;
+  readerMode: "select" | "translate";
   selection?: SentenceSelection;
   settings: AppSettings;
   suppressSelectionActions?: boolean;
@@ -331,14 +330,24 @@ export function PageOverlayLayer({
           style: activePinnedCard.style,
         }
       : popoverPlacement;
+  const [isTranslationTriggered, setIsTranslationTriggered] = useState(false);
+
+  // Reset translate trigger when selection changes
+  const selectionIdentity = selection
+    ? `${selection.pageIndex}:${selection.normalizedSentence}`
+    : undefined;
+  useEffect(() => {
+    setIsTranslationTriggered(false);
+  }, [selectionIdentity]);
+
   const shouldShowActiveSelectionAction = Boolean(
-    readerMode === "select" &&
+    !isTranslationTriggered &&
       activeSelectionActionPlacement &&
       !hasDraftSelection &&
       !isActiveSelectionMobileCollapsed,
   );
   const shouldShowActiveTranslationPopover = Boolean(
-    readerMode !== "select" &&
+    (isTranslationTriggered || readerMode === "translate") &&
       activeSelectionTranslationPlacement &&
       !isActiveSelectionMobileCollapsed,
   );
@@ -439,7 +448,6 @@ export function PageOverlayLayer({
           onConfirm={onConfirmQueuedSelections}
           onUndo={onUndoQueuedSelection}
           placement={queuedActionPlacement.placement}
-          readerMode={readerMode}
           style={{
             ...queuedActionPlacement.style,
             zIndex: foregroundActionZIndex,
@@ -524,6 +532,7 @@ export function PageOverlayLayer({
               onCreateAnnotation={(annotation) =>
                 onCreateAnnotation(activePopoverSelection, annotation)
               }
+              onTranslate={() => setIsTranslationTriggered(true)}
               placement={activeSelectionActionPlacement.placement}
               selection={activePopoverSelection}
               style={{
@@ -733,6 +742,7 @@ function SelectActionPopover({
   onClose,
   onCopy,
   onCreateAnnotation,
+  onTranslate,
   placement,
   selection,
   style,
@@ -740,6 +750,7 @@ function SelectActionPopover({
   onClose: () => void;
   onCopy: () => void;
   onCreateAnnotation: (annotation: PinAnnotationInput) => Promise<void>;
+  onTranslate: () => void;
   placement: string;
   selection: SentenceSelection;
   style: CSSProperties;
@@ -790,12 +801,12 @@ function SelectActionPopover({
             {t("pdf.wordsSelected", { count: countWords(selection.targetSentence) })}
           </span>
           <button
-            className="select-action-command-button"
-            onClick={onCopy}
+            className="select-action-command-button select-action-command-button--primary"
+            onClick={onTranslate}
             type="button"
           >
-            <Copy aria-hidden="true" size={15} strokeWidth={2} />
-            <span>{t("common.copy")}</span>
+            <Languages aria-hidden="true" size={15} strokeWidth={2} />
+            <span>{t("pdf.translate")}</span>
           </button>
           <button
             className="select-action-command-button"
@@ -804,6 +815,14 @@ function SelectActionPopover({
           >
             <StickyNote aria-hidden="true" size={15} strokeWidth={2} />
             <span>{t("annotation.note")}</span>
+          </button>
+          <button
+            className="select-action-command-button"
+            onClick={onCopy}
+            type="button"
+          >
+            <Copy aria-hidden="true" size={15} strokeWidth={2} />
+            <span>{t("common.copy")}</span>
           </button>
           <button
             aria-label={t("common.close")}
@@ -876,7 +895,6 @@ function QueuedSelectionActionPopover({
   onConfirm,
   onUndo,
   placement,
-  readerMode,
   style,
 }: {
   count: number;
@@ -884,12 +902,10 @@ function QueuedSelectionActionPopover({
   onConfirm: () => void;
   onUndo: () => void;
   placement: string;
-  readerMode: ReaderMode;
   style: CSSProperties;
 }) {
   const { t } = useI18n();
-  const confirmLabel =
-    readerMode === "select" ? t("pdf.useSelectedRegions") : t("pdf.translateSelectedRegions");
+  const confirmLabel = t("pdf.useSelectedRegions");
 
   function stopEvent(
     event:
