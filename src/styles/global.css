@@ -640,6 +640,211 @@ button {
   overflow: hidden;
 }
 
+.document-reader-stack {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.mathpix-process {
+  position: relative;
+  z-index: 64;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 16px;
+  border-bottom: 1px solid #c9d0d9;
+  color: var(--text);
+  background: rgba(255, 253, 250, 0.92);
+}
+
+.mathpix-process--active {
+  border-bottom-color: rgba(37, 99, 235, 0.24);
+  background: rgba(240, 247, 255, 0.94);
+}
+
+.mathpix-process--success {
+  border-bottom-color: rgba(31, 138, 91, 0.24);
+  background: rgba(244, 252, 247, 0.94);
+}
+
+.mathpix-process--error {
+  border-bottom-color: rgba(194, 65, 58, 0.22);
+  background: rgba(255, 240, 238, 0.94);
+}
+
+.mathpix-process-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid rgba(37, 99, 235, 0.24);
+  border-radius: 7px;
+  color: var(--accent-strong);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.mathpix-process--active .mathpix-process-icon svg {
+  animation: mathpix-process-spin 1.1s linear infinite;
+}
+
+.mathpix-process--success .mathpix-process-icon {
+  border-color: rgba(31, 138, 91, 0.26);
+  color: var(--success);
+}
+
+.mathpix-process--error .mathpix-process-icon {
+  border-color: rgba(194, 65, 58, 0.26);
+  color: var(--danger);
+}
+
+.mathpix-process-main {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.mathpix-process-copy {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mathpix-process-label {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 780;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.mathpix-process-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 760;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mathpix-process-detail {
+  flex: 1 1 220px;
+  min-width: 80px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mathpix-process-progress-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.mathpix-process-progress {
+  position: relative;
+  height: 6px;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.13);
+}
+
+.mathpix-process-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 220ms ease;
+}
+
+.mathpix-process--success .mathpix-process-progress {
+  background: rgba(31, 138, 91, 0.13);
+}
+
+.mathpix-process--success .mathpix-process-progress span {
+  background: var(--success);
+}
+
+.mathpix-process--error .mathpix-process-progress {
+  background: rgba(194, 65, 58, 0.13);
+}
+
+.mathpix-process--error .mathpix-process-progress span {
+  background: var(--danger);
+}
+
+.mathpix-process-steps {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: max-content;
+}
+
+.mathpix-process-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 720;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.mathpix-process-step-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(103, 112, 122, 0.34);
+}
+
+.mathpix-process-step--active {
+  color: var(--accent-strong);
+}
+
+.mathpix-process-step--active .mathpix-process-step-dot {
+  background: var(--accent);
+  animation: sync-status-pulse 900ms ease-in-out infinite;
+}
+
+.mathpix-process-step--done {
+  color: var(--success);
+}
+
+.mathpix-process-step--done .mathpix-process-step-dot {
+  background: var(--success);
+}
+
+.mathpix-process-step--error {
+  color: var(--danger);
+}
+
+.mathpix-process-step--error .mathpix-process-step-dot {
+  background: var(--danger);
+}
+
+@keyframes mathpix-process-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .empty-reader {
   display: grid;
   gap: 18px;
@@ -3066,6 +3271,42 @@ button {
     padding: 0;
   }
 
+  .mathpix-process {
+    grid-template-columns: 26px minmax(0, 1fr);
+    gap: 8px;
+    padding:
+      8px max(10px, env(safe-area-inset-left))
+      8px max(10px, env(safe-area-inset-right));
+  }
+
+  .mathpix-process-icon {
+    width: 26px;
+    height: 26px;
+  }
+
+  .mathpix-process-copy {
+    display: grid;
+    gap: 2px;
+  }
+
+  .mathpix-process-title,
+  .mathpix-process-detail {
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .mathpix-process-progress-row {
+    gap: 8px;
+  }
+
+  .mathpix-process-steps {
+    gap: 6px;
+  }
+
+  .mathpix-process-step {
+    font-size: 10px;
+  }
+
   .library-pane,
   .translation-pane,
   .pane-resizer {
@@ -3385,6 +3626,26 @@ button {
     padding:
       4px max(8px, env(safe-area-inset-left))
       4px max(8px, env(safe-area-inset-right));
+  }
+
+  .mathpix-process {
+    grid-template-columns: 24px minmax(0, 1fr);
+    padding:
+      7px max(8px, env(safe-area-inset-left))
+      7px max(8px, env(safe-area-inset-right));
+  }
+
+  .mathpix-process-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .mathpix-process-progress-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mathpix-process-steps {
+    display: none;
   }
 
   .pdf-viewer-actions {

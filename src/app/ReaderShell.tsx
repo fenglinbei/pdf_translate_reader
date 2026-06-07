@@ -4,9 +4,11 @@ import {
   Activity,
   Archive,
   Check,
+  CircleAlert,
   Combine,
   Download,
   Hand,
+  LoaderCircle,
   LogOut,
   MousePointer2,
   PanelLeftClose,
@@ -79,6 +81,7 @@ import type {
   AppSettings,
   CloudPdfLibraryEntry,
   MobileInteractionMode,
+  MathpixDocumentRecord,
   MathpixParsedPage,
   PaperContextRecord,
   PdfLibraryEntry,
@@ -108,7 +111,8 @@ import { clearTranslationCache } from "../translation/translationRepository";
 import { getStorageErrorMessage } from "../translation/errors";
 import { TRANSLATION_PROMPT_VERSION } from "../translation/defaults";
 import { runMathpixParsePipeline } from "../mathpix/mathpixPipeline";
-import { mapPagesByIndex } from "../mathpix/mathpixRepository";
+import { getMathpixDocumentRecord, mapPagesByIndex } from "../mathpix/mathpixRepository";
+import { MATHPIX_OPTIONS_HASH } from "../mathpix/options";
 import { resolveMathpixSelectionText } from "../mathpix/mathpixSelectionResolver";
 import {
   clearReaderSessionDocument,
@@ -128,6 +132,17 @@ type VisibleCloudSyncStatus =
   | "checking"
   | "cloud-missing"
   | "offline";
+type MathpixPipelineState = "idle" | "scheduled" | "running";
+type MathpixProcessTone = "active" | "error" | "success";
+type MathpixProcessStepState = "active" | "done" | "error" | "pending";
+type MathpixProcessView = {
+  activeStepIndex: number;
+  detail: string;
+  progressPercent: number;
+  stepStates: MathpixProcessStepState[];
+  title: string;
+  tone: MathpixProcessTone;
+};
 
 const LIBRARY_PANE_DEFAULT_WIDTH = 240;
 const LIBRARY_PANE_MAX_WIDTH = 380;
@@ -170,6 +185,183 @@ function getVisibleCloudSyncMessage(
   }
 }
 
+function getMathpixProcessView({
+  formatNumber,
+  pipelineState,
+  record,
+  runtimeError,
+  t,
+}: {
+  formatNumber: (value: number, options?: Intl.NumberFormatOptions) => string;
+  pipelineState: MathpixPipelineState;
+  record?: MathpixDocumentRecord;
+  runtimeError?: string;
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+}): MathpixProcessView | undefined {
+  if (runtimeError) {
+    return {
+      activeStepIndex: 1,
+      detail: t("mathpix.failedDetailWithMessage", { message: runtimeError }),
+      progressPercent: 100,
+      stepStates: createMathpixStepStates(1, "error"),
+      title: t("mathpix.failed"),
+      tone: "error",
+    };
+  }
+
+  if (!record) {
+    if (pipelineState === "idle") {
+      return undefined;
+    }
+
+    return {
+      activeStepIndex: 0,
+      detail: pipelineState === "scheduled"
+        ? t("mathpix.startingDetail")
+        : t("mathpix.uploadingDetail"),
+      progressPercent: pipelineState === "scheduled" ? 4 : 8,
+      stepStates: createMathpixStepStates(0, "active"),
+      title: pipelineState === "scheduled" ? t("mathpix.starting") : t("mathpix.uploading"),
+      tone: "active",
+    };
+  }
+
+  if (record.status === "deleted") {
+    return undefined;
+  }
+
+  if (record.status === "error") {
+    return {
+      activeStepIndex: 1,
+      detail: record.errorMessage
+        ? t("mathpix.failedDetailWithMessage", { message: record.errorMessage })
+        : t("mathpix.failedDetail"),
+      progressPercent: getMathpixRecordProgressPercent(record) ?? 100,
+      stepStates: createMathpixStepStates(1, "error"),
+      title: t("mathpix.failed"),
+      tone: "error",
+    };
+  }
+
+  if (record.status === "completed") {
+    const isCaching = pipelineState === "running";
+
+    return {
+      activeStepIndex: isCaching ? 2 : 3,
+      detail: isCaching
+        ? t("mathpix.cachingDetail")
+        : record.remoteDeletedAt
+          ? t("mathpix.readyRemoteDeletedDetail")
+          : t("mathpix.readyDetail"),
+      progressPercent: isCaching ? 94 : 100,
+      stepStates: createMathpixStepStates(isCaching ? 2 : 3, isCaching ? "active" : "success"),
+      title: isCaching ? t("mathpix.caching") : t("mathpix.ready"),
+      tone: isCaching ? "active" : "success",
+    };
+  }
+
+  if (record.status === "processing") {
+    const progressPercent = getMathpixRecordProgressPercent(record) ?? 34;
+
+    return {
+      activeStepIndex: 1,
+      detail: getMathpixProgressDetail(record, progressPercent, formatNumber, t),
+      progressPercent,
+      stepStates: createMathpixStepStates(1, "active"),
+      title: t("mathpix.processing"),
+      tone: "active",
+    };
+  }
+
+  const hasMathpixPdfId = Boolean(record.mathpixPdfId);
+
+  return {
+    activeStepIndex: hasMathpixPdfId ? 1 : 0,
+    detail: hasMathpixPdfId ? t("mathpix.waitingDetail") : t("mathpix.uploadingDetail"),
+    progressPercent: getMathpixRecordProgressPercent(record) ?? (hasMathpixPdfId ? 18 : 10),
+    stepStates: createMathpixStepStates(hasMathpixPdfId ? 1 : 0, "active"),
+    title: hasMathpixPdfId ? t("mathpix.waiting") : t("mathpix.uploading"),
+    tone: "active",
+  };
+}
+
+function getMathpixProgressDetail(
+  record: MathpixDocumentRecord,
+  progressPercent: number,
+  formatNumber: (value: number, options?: Intl.NumberFormatOptions) => string,
+  t: (key: MessageKey, values?: Record<string, number | string>) => string,
+) {
+  if (
+    typeof record.numPages === "number" &&
+    record.numPages > 0 &&
+    typeof record.numPagesCompleted === "number"
+  ) {
+    return t("mathpix.processingPages", {
+      completed: formatNumber(Math.min(record.numPagesCompleted, record.numPages)),
+      total: formatNumber(record.numPages),
+    });
+  }
+
+  return t("mathpix.processingPercent", {
+    percent: formatNumber(Math.round(progressPercent)),
+  });
+}
+
+function getMathpixRecordProgressPercent(record: MathpixDocumentRecord) {
+  if (record.status === "completed") {
+    return 100;
+  }
+
+  const normalizedPercent = normalizeMathpixPercent(record.percentDone);
+
+  if (typeof normalizedPercent === "number") {
+    return normalizedPercent;
+  }
+
+  if (
+    typeof record.numPages === "number" &&
+    record.numPages > 0 &&
+    typeof record.numPagesCompleted === "number"
+  ) {
+    return clamp((record.numPagesCompleted / record.numPages) * 100, 0, 100);
+  }
+
+  return undefined;
+}
+
+function normalizeMathpixPercent(value: number | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+
+  return clamp(value <= 1 ? value * 100 : value, 0, 100);
+}
+
+function createMathpixStepStates(
+  activeStepIndex: number,
+  tone: MathpixProcessTone,
+): MathpixProcessStepState[] {
+  return [0, 1, 2, 3].map((stepIndex) => {
+    if (tone === "success") {
+      return "done";
+    }
+
+    if (tone === "error" && stepIndex === activeStepIndex) {
+      return "error";
+    }
+
+    if (stepIndex < activeStepIndex) {
+      return "done";
+    }
+
+    if (stepIndex === activeStepIndex) {
+      return "active";
+    }
+
+    return "pending";
+  });
+}
+
 export function ReaderShell() {
   const auth = useAuth();
   const readerSessionUserId = auth.user?.id;
@@ -209,10 +401,15 @@ export function ReaderShell() {
   const [isExporting, setIsExporting] = useState(false);
   const [cloudSyncMessage, setCloudSyncMessage] = useState("");
   const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>("idle");
-  const { t } = useMemo(() => createI18n(settings.uiLocale), [settings.uiLocale]);
+  const { formatNumber, t } = useMemo(() => createI18n(settings.uiLocale), [settings.uiLocale]);
   const [damagedLibraryFingerprint, setDamagedLibraryFingerprint] = useState<string>();
+  const [mathpixRecord, setMathpixRecord] = useState<MathpixDocumentRecord>();
+  const [mathpixPipelineState, setMathpixPipelineState] =
+    useState<MathpixPipelineState>("idle");
+  const [mathpixRuntimeError, setMathpixRuntimeError] = useState<string>();
   const [readerSessionHydratedUserId, setReaderSessionHydratedUserId] = useState<string>();
   const activeReaderSessionUserIdRef = useRef<string>();
+  const activeFingerprintRef = useRef<string>();
   const autoRestoreUserIdRef = useRef<string>();
   const locateRequestIdRef = useRef(0);
   const paneResizeStateRef = useRef<PaneResizeState>();
@@ -243,6 +440,17 @@ export function ReaderShell() {
     apiStatus,
     syncMessage: visibleCloudSyncMessage,
   });
+  const mathpixProcessView = getMathpixProcessView({
+    formatNumber,
+    pipelineState: mathpixPipelineState,
+    record: mathpixRecord,
+    runtimeError: mathpixRuntimeError,
+    t,
+  });
+
+  useEffect(() => {
+    activeFingerprintRef.current = activeFingerprint;
+  }, [activeFingerprint]);
 
   const applyPinnedTranslationCards = useCallback((nextCards: PinnedTranslationCard[]) => {
     pinnedTranslationCardsRef.current = nextCards;
@@ -496,6 +704,9 @@ export function ReaderShell() {
       mathpixParsedPagesRef.current = new Map();
       setPaperContext(undefined);
       setMathpixParsedPages(new Map());
+      setMathpixPipelineState("idle");
+      setMathpixRecord(undefined);
+      setMathpixRuntimeError(undefined);
       setPins([]);
       applyPinnedTranslationCards([]);
       setIsConfirmingClearPins(false);
@@ -505,11 +716,21 @@ export function ReaderShell() {
     paperContextPageTextsRef.current = new Map();
     mathpixParsedPagesRef.current = new Map();
     setMathpixParsedPages(new Map());
+    setMathpixRecord(undefined);
+    setMathpixRuntimeError(undefined);
     applyPinnedTranslationCards([]);
     setIsConfirmingClearPins(false);
     let cancelled = false;
 
     if (currentEntry) {
+      void getMathpixDocumentRecord(activeFingerprint)
+        .then((record) => {
+          if (!cancelled && record && isMathpixRecordCurrentForEntry(record, currentEntry)) {
+            setMathpixRecord(record);
+          }
+        })
+        .catch(() => undefined);
+
       void ensurePaperContextForEntry(currentEntry)
         .then((record) => {
           if (!cancelled) {
@@ -564,7 +785,16 @@ export function ReaderShell() {
     return () => {
       cancelled = true;
     };
-  }, [activeFingerprint, applyPinnedTranslationCards]);
+  }, [
+    activeFingerprint,
+    applyPinnedTranslationCards,
+    currentEntry?.cloudDocumentId,
+    currentEntry?.contentSha256,
+    currentEntry?.fileName,
+    currentEntry?.fileSize,
+    currentEntry?.fingerprint,
+    currentEntry?.pdfMetadata?.title,
+  ]);
 
   useEffect(() => {
     if (!currentEntry) {
@@ -572,11 +802,18 @@ export function ReaderShell() {
     }
 
     const abortController = new AbortController();
+    setMathpixPipelineState("scheduled");
+    setMathpixRuntimeError(undefined);
     const parseTimer = window.setTimeout(() => {
+      if (abortController.signal.aborted || currentEntry.fingerprint !== activeFingerprintRef.current) {
+        return;
+      }
+
+      setMathpixPipelineState("running");
       void runMathpixParsePipeline({
         entry: currentEntry,
         onPages: (pages) => {
-          if (abortController.signal.aborted || currentEntry.fingerprint !== activeFingerprint) {
+          if (abortController.signal.aborted || currentEntry.fingerprint !== activeFingerprintRef.current) {
             return;
           }
 
@@ -606,25 +843,44 @@ export function ReaderShell() {
               .catch(() => undefined);
           }
         },
-        signal: abortController.signal,
-      }).catch((error) => {
-        if (isAbortError(error)) {
-          return;
-        }
+        onRecord: (record) => {
+          if (abortController.signal.aborted || record.pdfFingerprint !== activeFingerprintRef.current) {
+            return;
+          }
 
-        if (!abortController.signal.aborted && currentEntry.fingerprint === activeFingerprint) {
-          setStatusMessage(
-            error instanceof Error
-              ? `Mathpix parsing failed. Using PDF text fallback. ${error.message}`
-              : "Mathpix parsing failed. Using PDF text fallback.",
-          );
-        }
-      });
+          setMathpixRuntimeError(undefined);
+          setMathpixRecord(record);
+        },
+        signal: abortController.signal,
+      })
+        .catch((error) => {
+          if (isAbortError(error)) {
+            return;
+          }
+
+          if (!abortController.signal.aborted && currentEntry.fingerprint === activeFingerprintRef.current) {
+            const message =
+              error instanceof Error
+                ? error.message
+                : "MathPix parsing failed.";
+
+            setMathpixRuntimeError(message);
+            setStatusMessage(`MathPix parsing failed. Using PDF text fallback. ${message}`);
+          }
+        })
+        .finally(() => {
+          if (currentEntry.fingerprint === activeFingerprintRef.current) {
+            setMathpixPipelineState("idle");
+          }
+        });
     }, MATHPIX_BACKGROUND_PARSE_DELAY_MS);
 
     return () => {
       window.clearTimeout(parseTimer);
       abortController.abort();
+      if (currentEntry.fingerprint === activeFingerprintRef.current) {
+        setMathpixPipelineState("idle");
+      }
     };
   }, [
     activeFingerprint,
@@ -1459,6 +1715,60 @@ export function ReaderShell() {
         ) : null}
       </div>
     ) : null;
+  const renderMathpixProcessBanner = () =>
+    mathpixProcessView ? (
+      <div
+        aria-label={t("mathpix.statusLabel")}
+        aria-live="polite"
+        className={`mathpix-process mathpix-process--${mathpixProcessView.tone}`}
+        role="status"
+      >
+        <div className="mathpix-process-icon" aria-hidden="true">
+          {mathpixProcessView.tone === "success" ? (
+            <Check size={16} strokeWidth={2.4} />
+          ) : mathpixProcessView.tone === "error" ? (
+            <CircleAlert size={16} strokeWidth={2.2} />
+          ) : (
+            <LoaderCircle size={16} strokeWidth={2.2} />
+          )}
+        </div>
+        <div className="mathpix-process-main">
+          <div className="mathpix-process-copy">
+            <span className="mathpix-process-label">{t("mathpix.label")}</span>
+            <span className="mathpix-process-title">{mathpixProcessView.title}</span>
+            <span className="mathpix-process-detail">{mathpixProcessView.detail}</span>
+          </div>
+          <div className="mathpix-process-progress-row">
+            <div
+              aria-label={t("mathpix.progressLabel")}
+              aria-valuemax={100}
+              aria-valuemin={0}
+              aria-valuenow={Math.round(mathpixProcessView.progressPercent)}
+              className="mathpix-process-progress"
+              role="progressbar"
+            >
+              <span style={{ width: `${mathpixProcessView.progressPercent}%` }} />
+            </div>
+            <div className="mathpix-process-steps" aria-hidden="true">
+              {[
+                t("mathpix.step.submit"),
+                t("mathpix.step.process"),
+                t("mathpix.step.cache"),
+                t("mathpix.step.ready"),
+              ].map((stepLabel, index) => (
+                <span
+                  className={`mathpix-process-step mathpix-process-step--${mathpixProcessView.stepStates[index]}`}
+                  key={stepLabel}
+                >
+                  <span className="mathpix-process-step-dot" />
+                  <span>{stepLabel}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    ) : null;
   const renderLibraryPaneContent = (closeButton: ReactNode) => (
     <>
       <div className="library-pane-header">
@@ -1806,32 +2116,35 @@ export function ReaderShell() {
           aria-label={t("reader.pdfReader")}
         >
           {currentEntry ? (
-            <PdfViewer
-              activeTranslationCardZIndex={activeTranslationCardZIndex}
-              activeSelection={sentenceSelection}
-              entry={currentEntry}
-              headerControls={renderDocumentHeaderControls()}
-              locateRequest={locateRequest}
-              onActivateTranslationCard={handleActivateTranslationCard}
-              onCreateAnnotation={handleCreateAnnotation}
-              onCloseTranslationCard={handleCloseTranslationCard}
-              onPinTranslationCard={handlePinTranslationCard}
-              onPinnedTranslationRefresh={handlePinnedTranslationRefresh}
-              onPinTranslation={handlePinTranslation}
-              onRevealPinCard={handleRevealPinCard}
-              onDocumentLoadError={handleDocumentLoadError}
-              onRemoveLocalRecord={handleDeletePdfData}
-              onPageTextReadyForPaperContext={handlePageTextReadyForPaperContext}
-              onReadingPositionChange={handleReadingPositionChange}
-              onSentenceSelectionChange={handleSentenceSelectionChange}
-              onTranslationCardViewChange={handleTranslationCardViewChange}
-              pinnedTranslationCards={pinnedTranslationCards}
-              paperContext={paperContext}
-              pins={pins}
-              mobileInteractionMode={mobileInteractionMode}
-              selectionMode={selectionMode}
-              settings={settings}
-            />
+            <div className="document-reader-stack">
+              {renderMathpixProcessBanner()}
+              <PdfViewer
+                activeTranslationCardZIndex={activeTranslationCardZIndex}
+                activeSelection={sentenceSelection}
+                entry={currentEntry}
+                headerControls={renderDocumentHeaderControls()}
+                locateRequest={locateRequest}
+                onActivateTranslationCard={handleActivateTranslationCard}
+                onCreateAnnotation={handleCreateAnnotation}
+                onCloseTranslationCard={handleCloseTranslationCard}
+                onPinTranslationCard={handlePinTranslationCard}
+                onPinnedTranslationRefresh={handlePinnedTranslationRefresh}
+                onPinTranslation={handlePinTranslation}
+                onRevealPinCard={handleRevealPinCard}
+                onDocumentLoadError={handleDocumentLoadError}
+                onRemoveLocalRecord={handleDeletePdfData}
+                onPageTextReadyForPaperContext={handlePageTextReadyForPaperContext}
+                onReadingPositionChange={handleReadingPositionChange}
+                onSentenceSelectionChange={handleSentenceSelectionChange}
+                onTranslationCardViewChange={handleTranslationCardViewChange}
+                pinnedTranslationCards={pinnedTranslationCards}
+                paperContext={paperContext}
+                pins={pins}
+                mobileInteractionMode={mobileInteractionMode}
+                selectionMode={selectionMode}
+                settings={settings}
+              />
+            </div>
           ) : (
             <div className="empty-reader">
               <PdfImportDropzone isImporting={isImporting} onImport={handleImport} />
@@ -2123,6 +2436,16 @@ function hasReadingPosition(position: ReadingPositionUpdate) {
 
 function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
+}
+
+function isMathpixRecordCurrentForEntry(
+  record: MathpixDocumentRecord,
+  entry: PdfLibraryEntry,
+) {
+  return (
+    record.mathpixOptionsHash === MATHPIX_OPTIONS_HASH &&
+    (!entry.contentSha256 || !record.contentSha256 || entry.contentSha256 === record.contentSha256)
+  );
 }
 
 function getLatestLibraryEntry(entries: CloudPdfLibraryEntry[]) {
