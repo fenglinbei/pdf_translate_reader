@@ -1433,8 +1433,9 @@ button {
 .select-action-popover {
   position: absolute;
   display: grid;
+  width: max-content;
   min-width: 224px;
-  max-width: min(var(--selection-action-popover-width, 260px), 72vw);
+  max-width: min(var(--selection-action-popover-width, 380px), calc(100vw - 24px));
   padding: 8px;
   border: 1px solid rgba(184, 192, 204, 0.92);
   border-radius: 8px;
@@ -1455,29 +1456,30 @@ button {
 }
 
 .select-action-command-row {
-  display: grid;
-  grid-template-columns: auto auto auto auto;
+  display: inline-flex;
   align-items: center;
+  flex-wrap: nowrap;
   gap: 5px;
+  width: max-content;
+  max-width: 100%;
 }
 
 .queued-selection-command-row {
-  grid-template-columns: auto auto auto auto;
+  width: max-content;
 }
 
 .select-action-word-count {
-  min-width: 0;
-  overflow: hidden;
+  flex: 0 0 auto;
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 720;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .select-action-command-button {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
   justify-content: center;
   gap: 5px;
   min-height: 28px;
@@ -3325,7 +3327,6 @@ button {
   }
 
   .select-action-command-row {
-    grid-template-columns: minmax(0, 1fr) auto auto auto;
     gap: 6px;
   }
 
