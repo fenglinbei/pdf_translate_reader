@@ -237,6 +237,7 @@ export type AppSettings = {
   maxDraggedWords: number;
   sourceLang: SourceLanguage;
   targetLang: TargetLanguage;
+  textSelectionMode: "mathpix" | "original";
   uiLocale: UiLocale;
 };
 

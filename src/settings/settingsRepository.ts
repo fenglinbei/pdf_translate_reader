@@ -22,6 +22,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   maxDraggedWords: PROJECT_CONFIG.selection.defaultMaxDraggedWords,
   sourceLang: DEFAULT_SOURCE_LANG,
   targetLang: DEFAULT_TARGET_LANG,
+  textSelectionMode: "mathpix",
   uiLocale: detectBrowserUiLocale(),
 };
 
@@ -120,6 +121,10 @@ export function normalizeAppSettings(input: unknown): AppSettings {
     maxDraggedWords,
     sourceLang,
     targetLang,
+    textSelectionMode:
+      value.textSelectionMode === "original" || value.textSelectionMode === "mathpix"
+        ? value.textSelectionMode
+        : DEFAULT_APP_SETTINGS.textSelectionMode,
     uiLocale: normalizeUiLocale(value.uiLocale, DEFAULT_APP_SETTINGS.uiLocale),
   };
 }

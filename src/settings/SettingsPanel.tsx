@@ -285,6 +285,21 @@ export function SettingsPanel({
         <section className="settings-section" aria-label={t("settings.selectionSettings")}>
           <div className="settings-section-heading">{t("settings.selection")}</div>
           <label className="settings-field">
+            <span>{t("settings.textSelectionMode")}</span>
+            <select
+              value={settings.textSelectionMode}
+              onChange={(event) =>
+                void updateSettings({
+                  textSelectionMode: event.currentTarget.value as AppSettings["textSelectionMode"],
+                })
+              }
+            >
+              <option value="mathpix">{t("settings.textSelectionModeMathpix")}</option>
+              <option value="original">{t("settings.textSelectionModeOriginal")}</option>
+            </select>
+            <small className="settings-field-hint">{t("settings.textSelectionModeHint")}</small>
+          </label>
+          <label className="settings-field">
             <span>{t("settings.draggedWords")}</span>
             <input
               max={MAX_DRAGGED_WORDS_LIMIT}

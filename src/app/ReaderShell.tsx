@@ -307,6 +307,23 @@ function getMathpixProgressDetail(
   });
 }
 
+function getCompactMathpixStatusLabel(
+  view: MathpixProcessView,
+  t: (key: MessageKey, values?: Record<string, number | string>) => string,
+) {
+  if (view.tone === "success") {
+    return t("mathpix.compact.ready");
+  }
+
+  if (view.tone === "error") {
+    return t("mathpix.compact.failed");
+  }
+
+  return t("mathpix.compact.progress", {
+    percent: Math.round(view.progressPercent),
+  });
+}
+
 function getMathpixRecordProgressPercent(record: MathpixDocumentRecord) {
   if (record.status === "completed") {
     return 100;
@@ -1229,12 +1246,12 @@ export function ReaderShell() {
   );
 
   const handleSentenceSelectionChange = useCallback((selection: SentenceSelection | undefined) => {
-    const resolvedSelection = selection
+    const resolvedSelection = selection && settings.textSelectionMode === "mathpix"
       ? resolveMathpixSelectionText({
           parsedPages: mathpixParsedPagesRef.current,
           selection,
         })
-      : undefined;
+      : selection;
 
     setSentenceSelection(resolvedSelection);
 
@@ -1246,10 +1263,11 @@ export function ReaderShell() {
 
     translationCardZIndexRef.current = nextZIndex;
     setActiveTranslationCardZIndex(nextZIndex);
-  }, []);
+  }, [settings.textSelectionMode]);
 
   useEffect(() => {
     if (
+      settings.textSelectionMode !== "mathpix" ||
       !sentenceSelection ||
       sentenceSelection.textSource === "mathpix-v3-pdf" ||
       mathpixParsedPages.size === 0
@@ -1265,7 +1283,7 @@ export function ReaderShell() {
     if (resolvedSelection.textSource === "mathpix-v3-pdf") {
       setSentenceSelection(resolvedSelection);
     }
-  }, [mathpixParsedPages, sentenceSelection]);
+  }, [mathpixParsedPages, sentenceSelection, settings.textSelectionMode]);
 
   const handleSelectionModeChange = useCallback((nextMode: SelectionMode) => {
     setSelectionMode(nextMode);
@@ -1700,6 +1718,9 @@ export function ReaderShell() {
   } as CSSProperties;
   const isLibraryControlOpen = isNarrowViewport ? mobilePanel === "library" : isLibraryPaneOpen;
   const isPinsControlOpen = isNarrowViewport ? mobilePanel === "pins" : isPinsPaneOpen;
+  const compactMathpixStatusLabel = mathpixProcessView
+    ? getCompactMathpixStatusLabel(mathpixProcessView, t)
+    : undefined;
   const renderStatusMessage = () =>
     statusMessage ? (
       <div className="pane-status">
@@ -1715,59 +1736,29 @@ export function ReaderShell() {
         ) : null}
       </div>
     ) : null;
-  const renderMathpixProcessBanner = () =>
-    mathpixProcessView ? (
-      <div
+  const renderCompactMathpixStatus = () =>
+    mathpixProcessView && compactMathpixStatusLabel ? (
+      <span
         aria-label={t("mathpix.statusLabel")}
         aria-live="polite"
-        className={`mathpix-process mathpix-process--${mathpixProcessView.tone}`}
-        role="status"
+        className={`mathpix-compact-status mathpix-compact-status--${mathpixProcessView.tone}`}
+        title={`${mathpixProcessView.title}. ${mathpixProcessView.detail}`}
       >
-        <div className="mathpix-process-icon" aria-hidden="true">
-          {mathpixProcessView.tone === "success" ? (
-            <Check size={16} strokeWidth={2.4} />
-          ) : mathpixProcessView.tone === "error" ? (
-            <CircleAlert size={16} strokeWidth={2.2} />
-          ) : (
-            <LoaderCircle size={16} strokeWidth={2.2} />
-          )}
-        </div>
-        <div className="mathpix-process-main">
-          <div className="mathpix-process-copy">
-            <span className="mathpix-process-label">{t("mathpix.label")}</span>
-            <span className="mathpix-process-title">{mathpixProcessView.title}</span>
-            <span className="mathpix-process-detail">{mathpixProcessView.detail}</span>
-          </div>
-          <div className="mathpix-process-progress-row">
-            <div
-              aria-label={t("mathpix.progressLabel")}
-              aria-valuemax={100}
-              aria-valuemin={0}
-              aria-valuenow={Math.round(mathpixProcessView.progressPercent)}
-              className="mathpix-process-progress"
-              role="progressbar"
-            >
-              <span style={{ width: `${mathpixProcessView.progressPercent}%` }} />
-            </div>
-            <div className="mathpix-process-steps" aria-hidden="true">
-              {[
-                t("mathpix.step.submit"),
-                t("mathpix.step.process"),
-                t("mathpix.step.cache"),
-                t("mathpix.step.ready"),
-              ].map((stepLabel, index) => (
-                <span
-                  className={`mathpix-process-step mathpix-process-step--${mathpixProcessView.stepStates[index]}`}
-                  key={stepLabel}
-                >
-                  <span className="mathpix-process-step-dot" />
-                  <span>{stepLabel}</span>
-                </span>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+        {mathpixProcessView.tone === "success" ? (
+          <Check aria-hidden="true" size={13} strokeWidth={2.4} />
+        ) : mathpixProcessView.tone === "error" ? (
+          <CircleAlert aria-hidden="true" size={13} strokeWidth={2.2} />
+        ) : (
+          <LoaderCircle aria-hidden="true" size={13} strokeWidth={2.2} />
+        )}
+        <span>{t("mathpix.label")}</span>
+        <strong>{compactMathpixStatusLabel}</strong>
+        <span
+          aria-hidden="true"
+          className="mathpix-compact-progress"
+          style={{ width: `${mathpixProcessView.progressPercent}%` }}
+        />
+      </span>
     ) : null;
   const renderLibraryPaneContent = (closeButton: ReactNode) => (
     <>
@@ -1978,6 +1969,7 @@ export function ReaderShell() {
         </div>
         <div className="topbar-actions">
           {currentEntry ? null : renderSidebarToggleButtons()}
+          {renderCompactMathpixStatus()}
           <span className={`api-health api-health--${apiStatus}`} title={t("reader.apiStatusTitle", { status: apiStatus })}>
             {t("reader.api")}
           </span>
@@ -2116,35 +2108,32 @@ export function ReaderShell() {
           aria-label={t("reader.pdfReader")}
         >
           {currentEntry ? (
-            <div className="document-reader-stack">
-              {renderMathpixProcessBanner()}
-              <PdfViewer
-                activeTranslationCardZIndex={activeTranslationCardZIndex}
-                activeSelection={sentenceSelection}
-                entry={currentEntry}
-                headerControls={renderDocumentHeaderControls()}
-                locateRequest={locateRequest}
-                onActivateTranslationCard={handleActivateTranslationCard}
-                onCreateAnnotation={handleCreateAnnotation}
-                onCloseTranslationCard={handleCloseTranslationCard}
-                onPinTranslationCard={handlePinTranslationCard}
-                onPinnedTranslationRefresh={handlePinnedTranslationRefresh}
-                onPinTranslation={handlePinTranslation}
-                onRevealPinCard={handleRevealPinCard}
-                onDocumentLoadError={handleDocumentLoadError}
-                onRemoveLocalRecord={handleDeletePdfData}
-                onPageTextReadyForPaperContext={handlePageTextReadyForPaperContext}
-                onReadingPositionChange={handleReadingPositionChange}
-                onSentenceSelectionChange={handleSentenceSelectionChange}
-                onTranslationCardViewChange={handleTranslationCardViewChange}
-                pinnedTranslationCards={pinnedTranslationCards}
-                paperContext={paperContext}
-                pins={pins}
-                mobileInteractionMode={mobileInteractionMode}
-                selectionMode={selectionMode}
-                settings={settings}
-              />
-            </div>
+            <PdfViewer
+              activeTranslationCardZIndex={activeTranslationCardZIndex}
+              activeSelection={sentenceSelection}
+              entry={currentEntry}
+              headerControls={renderDocumentHeaderControls()}
+              locateRequest={locateRequest}
+              onActivateTranslationCard={handleActivateTranslationCard}
+              onCreateAnnotation={handleCreateAnnotation}
+              onCloseTranslationCard={handleCloseTranslationCard}
+              onPinTranslationCard={handlePinTranslationCard}
+              onPinnedTranslationRefresh={handlePinnedTranslationRefresh}
+              onPinTranslation={handlePinTranslation}
+              onRevealPinCard={handleRevealPinCard}
+              onDocumentLoadError={handleDocumentLoadError}
+              onRemoveLocalRecord={handleDeletePdfData}
+              onPageTextReadyForPaperContext={handlePageTextReadyForPaperContext}
+              onReadingPositionChange={handleReadingPositionChange}
+              onSentenceSelectionChange={handleSentenceSelectionChange}
+              onTranslationCardViewChange={handleTranslationCardViewChange}
+              pinnedTranslationCards={pinnedTranslationCards}
+              paperContext={paperContext}
+              pins={pins}
+              mobileInteractionMode={mobileInteractionMode}
+              selectionMode={selectionMode}
+              settings={settings}
+            />
           ) : (
             <div className="empty-reader">
               <PdfImportDropzone isImporting={isImporting} onImport={handleImport} />
