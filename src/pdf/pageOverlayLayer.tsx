@@ -279,6 +279,15 @@ export function PageOverlayLayer({
     selectionKey,
   ]);
 
+  const [isTranslationTriggered, setIsTranslationTriggered] = useState(false);
+  const selectionIdentity = selection
+    ? `${selection.pageIndex}:${selection.normalizedSentence}`
+    : undefined;
+
+  useEffect(() => {
+    setIsTranslationTriggered(false);
+  }, [selectionIdentity]);
+
   if (
     !hasSelection &&
     !hasCopySelection &&
@@ -330,16 +339,6 @@ export function PageOverlayLayer({
           style: activePinnedCard.style,
         }
       : popoverPlacement;
-  const [isTranslationTriggered, setIsTranslationTriggered] = useState(false);
-
-  // Reset translate trigger when selection changes
-  const selectionIdentity = selection
-    ? `${selection.pageIndex}:${selection.normalizedSentence}`
-    : undefined;
-  useEffect(() => {
-    setIsTranslationTriggered(false);
-  }, [selectionIdentity]);
-
   const shouldShowActiveSelectionAction = Boolean(
     !isTranslationTriggered &&
       activeSelectionActionPlacement &&
