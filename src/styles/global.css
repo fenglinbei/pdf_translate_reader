@@ -251,6 +251,14 @@ button {
   transition: grid-template-columns 220ms cubic-bezier(0.2, 0, 0, 1);
 }
 
+.reader-workspace--resizing {
+  transition: none;
+}
+
+.reader-workspace--resizing .pane-resizer {
+  transition: background-color 180ms ease, opacity 160ms ease;
+}
+
 .mobile-panel-backdrop {
   display: none;
 }
@@ -313,6 +321,7 @@ button {
 
 .pane-resizer {
   position: relative;
+  z-index: 45;
   min-width: 7px;
   min-height: 0;
   border: 0;
@@ -348,6 +357,77 @@ button {
 
 .pane-resizer--closed::after {
   opacity: 0;
+}
+
+.pane-resizer-toggle {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: rgba(255, 253, 250, 0.92);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateX(-50%);
+  transition: opacity 160ms ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.pane-resizer:hover .pane-resizer-toggle,
+.pane-resizer-toggle:hover,
+.pane-resizer-toggle:focus-visible {
+  opacity: 1;
+}
+
+.pane-resizer-toggle:hover {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.pane-reopen-tab {
+  position: fixed;
+  top: 50%;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 64px;
+  padding: 0;
+  border: 1px solid var(--border);
+  background: rgba(255, 253, 250, 0.94);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.55;
+  transform: translateY(-50%);
+  transition: opacity 160ms ease;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+}
+
+.pane-reopen-tab--library {
+  left: 0;
+  border-left: 0;
+  border-radius: 0 6px 6px 0;
+}
+
+.pane-reopen-tab--pins {
+  right: 0;
+  border-right: 0;
+  border-radius: 6px 0 0 6px;
+}
+
+.pane-reopen-tab:hover {
+  opacity: 1;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
 }
 
 .pins-pane-summary {
@@ -1964,14 +2044,14 @@ button {
 
 .translation-popover-resize-hook {
   position: absolute;
-  right: 5px;
-  bottom: 5px;
+  right: 0;
+  bottom: 0;
   display: block;
-  width: 14px;
-  height: 14px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: 0 0 4px 0;
   background:
     linear-gradient(135deg, transparent 44%, rgba(103, 112, 122, 0.72) 45%, rgba(103, 112, 122, 0.72) 55%, transparent 56%),
     linear-gradient(135deg, transparent 62%, rgba(103, 112, 122, 0.42) 63%, rgba(103, 112, 122, 0.42) 73%, transparent 74%);
@@ -1988,9 +2068,9 @@ button {
 .translation-popover-drag-handle {
   position: relative;
   justify-self: center;
-  width: 84px;
-  height: 18px;
-  margin: -6px 0 -4px;
+  width: 140px;
+  height: 28px;
+  margin: -4px 0 -4px;
   border-radius: 999px;
   background: transparent;
   cursor: grab;
@@ -1999,13 +2079,14 @@ button {
 
 .translation-popover-drag-handle::after {
   position: absolute;
-  top: 6px;
-  left: 15px;
+  top: 50%;
+  left: 50%;
   width: 54px;
   height: 5px;
   border-radius: 999px;
   background: rgba(103, 112, 122, 0.36);
   content: "";
+  transform: translate(-50%, -50%);
 }
 
 .translation-popover-drag-handle:hover::after {

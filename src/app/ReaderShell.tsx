@@ -195,6 +195,7 @@ export function ReaderShell() {
   const [locateRequest, setLocateRequest] = useState<PinLocateRequest>();
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const [pinsPaneWidth, setPinsPaneWidth] = useState(PINS_PANE_DEFAULT_WIDTH);
+  const [isPaneResizing, setIsPaneResizing] = useState(false);
   const [paperContext, setPaperContext] = useState<PaperContextRecord>();
   const [mathpixParsedPages, setMathpixParsedPages] = useState<Map<number, MathpixParsedPage>>(
     () => new Map(),
@@ -1434,6 +1435,7 @@ export function ReaderShell() {
 
   const handlePaneResizeStart = useCallback(
     (pane: PaneResizeState["pane"], event: ReactPointerEvent<HTMLDivElement>) => {
+      setIsPaneResizing(true);
       paneResizeStateRef.current = {
         pane,
         startWidth: pane === "library" ? libraryPaneWidth : pinsPaneWidth,
@@ -1478,6 +1480,7 @@ export function ReaderShell() {
       paneResizeStateRef.current = undefined;
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
+    setIsPaneResizing(false);
   }, []);
 
   const workspaceStyle = {
@@ -1610,35 +1613,30 @@ export function ReaderShell() {
     </>
   );
   const renderDocumentHeaderControls = () => (
-    <>
-      <div className="pdf-sidebar-toolbar pdf-sidebar-toolbar--pane-toggles" aria-label={t("reader.sidePanels")}>
-        {renderSidebarToggleButtons()}
-      </div>
-      <div className="pdf-export-toolbar" aria-label={t("reader.exportControls")}>
-        <button
-          aria-label={t("reader.exportPdf")}
-          className="icon-button"
-          disabled={isExporting}
-          onClick={handleExportPdf}
-          title={t("reader.exportPdf")}
-          type="button"
-        >
-          <Download aria-hidden="true" size={17} strokeWidth={2} />
-        </button>
-        <button
-          aria-label={t("reader.exportPackage")}
-          className="icon-button"
-          disabled={isExporting}
-          onClick={() => {
-            void handleExportReadingPackage();
-          }}
-          title={t("reader.exportPackage")}
-          type="button"
-        >
-          <Archive aria-hidden="true" size={17} strokeWidth={2} />
-        </button>
-      </div>
-    </>
+    <div className="pdf-export-toolbar" aria-label={t("reader.exportControls")}>
+      <button
+        aria-label={t("reader.exportPdf")}
+        className="icon-button"
+        disabled={isExporting}
+        onClick={handleExportPdf}
+        title={t("reader.exportPdf")}
+        type="button"
+      >
+        <Download aria-hidden="true" size={17} strokeWidth={2} />
+      </button>
+      <button
+        aria-label={t("reader.exportPackage")}
+        className="icon-button"
+        disabled={isExporting}
+        onClick={() => {
+          void handleExportReadingPackage();
+        }}
+        title={t("reader.exportPackage")}
+        type="button"
+      >
+        <Archive aria-hidden="true" size={17} strokeWidth={2} />
+      </button>
+    </div>
   );
   const renderMobileReaderSideDock = () => (
     <div className="mobile-reader-side-dock" aria-label={t("reader.sidePanels")}>
@@ -1872,7 +1870,7 @@ export function ReaderShell() {
         />
       ) : null}
 
-      <main className="reader-workspace" style={workspaceStyle}>
+      <main className={`reader-workspace ${isPaneResizing ? "reader-workspace--resizing" : ""}`} style={workspaceStyle}>
         <aside
           className={`library-pane ${isLibraryPaneOpen ? "" : "pane--closed"}`}
           aria-hidden={!isLibraryPaneOpen}
@@ -1901,7 +1899,21 @@ export function ReaderShell() {
           onPointerUp={handlePaneResizeEnd}
           role="separator"
           title={t("reader.resizeLibraryPane")}
-        />
+        >
+          <button
+            aria-label={isLibraryPaneOpen ? t("reader.closeLibraryPane") : t("reader.openLibraryPane")}
+            className="pane-resizer-toggle"
+            onClick={handleLibraryPaneToggle}
+            title={isLibraryPaneOpen ? t("reader.closeLibrary") : t("reader.openLibrary")}
+            type="button"
+          >
+            {isLibraryPaneOpen ? (
+              <PanelLeftClose aria-hidden="true" size={14} strokeWidth={2.5} />
+            ) : (
+              <PanelLeftOpen aria-hidden="true" size={14} strokeWidth={2.5} />
+            )}
+          </button>
+        </div>
         <section
           className={`document-stage ${currentEntry ? "document-stage--active" : ""}`}
           aria-label={t("reader.pdfReader")}
@@ -1969,7 +1981,21 @@ export function ReaderShell() {
           onPointerUp={handlePaneResizeEnd}
           role="separator"
           title={t("reader.resizeAnnotationsPane")}
-        />
+        >
+          <button
+            aria-label={isPinsPaneOpen ? t("reader.closeAnnotationsPane") : t("reader.openAnnotationsPane")}
+            className="pane-resizer-toggle"
+            onClick={handlePinsPaneToggle}
+            title={isPinsPaneOpen ? t("reader.closeAnnotations") : t("reader.openAnnotations")}
+            type="button"
+          >
+            {isPinsPaneOpen ? (
+              <PanelRightClose aria-hidden="true" size={14} strokeWidth={2.5} />
+            ) : (
+              <PanelRightOpen aria-hidden="true" size={14} strokeWidth={2.5} />
+            )}
+          </button>
+        </div>
         <aside
           className={`translation-pane ${isPinsPaneOpen ? "" : "pane--closed"}`}
           aria-hidden={!isPinsPaneOpen}
@@ -1988,6 +2014,28 @@ export function ReaderShell() {
           )}
         </aside>
       </main>
+      {!isNarrowViewport && !isLibraryPaneOpen && (
+        <button
+          aria-label={t("reader.openLibraryPane")}
+          className="pane-reopen-tab pane-reopen-tab--library"
+          onClick={handleLibraryPaneToggle}
+          title={t("reader.openLibrary")}
+          type="button"
+        >
+          <PanelLeftOpen aria-hidden="true" size={16} strokeWidth={2} />
+        </button>
+      )}
+      {!isNarrowViewport && !isPinsPaneOpen && (
+        <button
+          aria-label={t("reader.openAnnotationsPane")}
+          className="pane-reopen-tab pane-reopen-tab--pins"
+          onClick={handlePinsPaneToggle}
+          title={t("reader.openAnnotations")}
+          type="button"
+        >
+          <PanelRightOpen aria-hidden="true" size={16} strokeWidth={2} />
+        </button>
+      )}
       {currentEntry ? renderMobileReaderSideDock() : null}
       {mobilePanel ? (
         <div
