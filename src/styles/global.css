@@ -2047,30 +2047,47 @@ button {
   right: 0;
   bottom: 0;
   display: block;
-  width: 12px;
-  height: 12px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   border: 0;
-  border-radius: 0 0 4px 0;
-  background:
-    linear-gradient(135deg, transparent 44%, rgba(103, 112, 122, 0.72) 45%, rgba(103, 112, 122, 0.72) 55%, transparent 56%),
-    linear-gradient(135deg, transparent 62%, rgba(103, 112, 122, 0.42) 63%, rgba(103, 112, 122, 0.42) 73%, transparent 74%);
+  border-radius: 0 0 8px 0;
+  background: transparent;
   cursor: nwse-resize;
   z-index: 2;
 }
 
-.translation-popover-resize-hook:hover {
+.translation-popover-resize-hook::before {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  width: 14px;
+  height: 14px;
+  border-radius: 0 0 3px 0;
   background:
-    linear-gradient(135deg, transparent 44%, var(--accent-strong) 45%, var(--accent-strong) 55%, transparent 56%),
-    linear-gradient(135deg, transparent 62%, rgba(15, 76, 207, 0.48) 63%, rgba(15, 76, 207, 0.48) 73%, transparent 74%);
+    linear-gradient(135deg, transparent 43%, rgba(103, 112, 122, 0.72) 44%, rgba(103, 112, 122, 0.72) 53%, transparent 54%),
+    linear-gradient(135deg, transparent 61%, rgba(103, 112, 122, 0.42) 62%, rgba(103, 112, 122, 0.42) 71%, transparent 72%);
+  content: "";
+}
+
+.translation-popover-resize-hook:hover::before,
+.translation-popover-resize-hook:focus-visible::before {
+  background:
+    linear-gradient(135deg, transparent 43%, var(--accent-strong) 44%, var(--accent-strong) 53%, transparent 54%),
+    linear-gradient(135deg, transparent 61%, rgba(15, 76, 207, 0.48) 62%, rgba(15, 76, 207, 0.48) 71%, transparent 72%);
+}
+
+.translation-popover-resize-hook:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.24);
+  outline-offset: -6px;
 }
 
 .translation-popover-drag-handle {
   position: relative;
   justify-self: center;
-  width: 140px;
-  height: 28px;
-  margin: -4px 0 -4px;
+  width: min(220px, calc(100% - 64px));
+  height: 36px;
+  margin: -10px 0 -12px;
   border-radius: 999px;
   background: transparent;
   cursor: grab;
@@ -2079,14 +2096,14 @@ button {
 
 .translation-popover-drag-handle::after {
   position: absolute;
-  top: 50%;
+  top: 9px;
   left: 50%;
-  width: 54px;
+  width: 64px;
   height: 5px;
   border-radius: 999px;
   background: rgba(103, 112, 122, 0.36);
   content: "";
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
 }
 
 .translation-popover-drag-handle:hover::after {
