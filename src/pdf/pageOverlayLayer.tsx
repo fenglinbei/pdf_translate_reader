@@ -35,7 +35,6 @@ import {
 const DEFAULT_ANNOTATION_COLOR: AnnotationColor = "yellow";
 const ANNOTATION_COLORS: AnnotationColor[] = ["yellow", "blue", "green", "red"];
 const TRANSLATION_CARD_PORTAL_Z_INDEX_OFFSET = 10;
-const TRANSLATION_CARD_PORTAL_Z_INDEX_MAX = 39;
 
 type PageViewportRect = {
   bottom: number;
@@ -1299,11 +1298,7 @@ function clamp(value: number, min: number, max: number) {
 }
 
 function getTranslationCardPortalZIndex(zIndex: number) {
-  return clamp(
-    TRANSLATION_CARD_PORTAL_Z_INDEX_OFFSET + zIndex,
-    1,
-    TRANSLATION_CARD_PORTAL_Z_INDEX_MAX,
-  );
+  return Math.max(1, TRANSLATION_CARD_PORTAL_Z_INDEX_OFFSET + zIndex);
 }
 
 function getViewportPopoverStyle(

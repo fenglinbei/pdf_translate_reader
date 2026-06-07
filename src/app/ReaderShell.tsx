@@ -153,6 +153,24 @@ const PINS_PANE_MIN_WIDTH = 300;
 const TRANSLATION_CARD_BASE_Z_INDEX = 20;
 const MATHPIX_BACKGROUND_PARSE_DELAY_MS = 2000;
 
+function getHighestTranslationCardZIndex(
+  cards: PinnedTranslationCard[],
+  fallback = TRANSLATION_CARD_BASE_Z_INDEX,
+) {
+  return Math.max(
+    TRANSLATION_CARD_BASE_Z_INDEX,
+    fallback,
+    ...cards.map((card) => card.zIndex),
+  );
+}
+
+function getNextTranslationCardZIndex(
+  cards: PinnedTranslationCard[],
+  currentZIndex: number,
+) {
+  return getHighestTranslationCardZIndex(cards, currentZIndex) + 1;
+}
+
 const CLOUD_SYNC_STATUS_LABEL_KEYS: Record<VisibleCloudSyncStatus, MessageKey> = {
   "cloud-missing": "cloud.setup",
   "local-only": "cloud.localOnly",
@@ -474,6 +492,14 @@ export function ReaderShell() {
     setPinnedTranslationCards(nextCards);
   }, []);
 
+  const replacePinnedTranslationCards = useCallback((nextCards: PinnedTranslationCard[]) => {
+    const nextZIndex = getHighestTranslationCardZIndex(nextCards);
+
+    translationCardZIndexRef.current = nextZIndex;
+    setActiveTranslationCardZIndex(nextZIndex);
+    applyPinnedTranslationCards(nextCards);
+  }, [applyPinnedTranslationCards]);
+
   const applyMathpixParsedPages = useCallback((pages: MathpixParsedPage[]) => {
     const nextPages = mapPagesByIndex(pages);
 
@@ -553,7 +579,7 @@ export function ReaderShell() {
       autoRestoreUserIdRef.current = undefined;
       setCurrentEntry(undefined);
       setSentenceSelection(undefined);
-      applyPinnedTranslationCards([]);
+      replacePinnedTranslationCards([]);
       setPins([]);
       setLibraryEntries([]);
       setIsLibraryLoaded(false);
@@ -577,7 +603,7 @@ export function ReaderShell() {
     setSelectionMode(savedSession?.selectionMode ?? "continuous");
     setMobileInteractionMode(savedSession?.mobileInteractionMode ?? "pan");
     setReaderSessionHydratedUserId(readerSessionUserId);
-  }, [applyPinnedTranslationCards, readerSessionUserId]);
+  }, [readerSessionUserId, replacePinnedTranslationCards]);
 
   useEffect(() => {
     if (
@@ -725,7 +751,7 @@ export function ReaderShell() {
       setMathpixRecord(undefined);
       setMathpixRuntimeError(undefined);
       setPins([]);
-      applyPinnedTranslationCards([]);
+      replacePinnedTranslationCards([]);
       setIsConfirmingClearPins(false);
       return undefined;
     }
@@ -735,7 +761,7 @@ export function ReaderShell() {
     setMathpixParsedPages(new Map());
     setMathpixRecord(undefined);
     setMathpixRuntimeError(undefined);
-    applyPinnedTranslationCards([]);
+    replacePinnedTranslationCards([]);
     setIsConfirmingClearPins(false);
     let cancelled = false;
 
@@ -782,19 +808,12 @@ export function ReaderShell() {
     void listPinnedTranslationCardsByPdf(activeFingerprint)
       .then((loadedCards) => {
         if (!cancelled) {
-          const nextZIndex = Math.max(
-            TRANSLATION_CARD_BASE_Z_INDEX,
-            ...loadedCards.map((card) => card.zIndex),
-          );
-
-          translationCardZIndexRef.current = nextZIndex;
-          setActiveTranslationCardZIndex(nextZIndex);
-          applyPinnedTranslationCards(loadedCards);
+          replacePinnedTranslationCards(loadedCards);
         }
       })
       .catch(() => {
         if (!cancelled) {
-          applyPinnedTranslationCards([]);
+          replacePinnedTranslationCards([]);
           setStatusMessage("Could not read pinned translation cards for this PDF.");
         }
       });
@@ -804,13 +823,13 @@ export function ReaderShell() {
     };
   }, [
     activeFingerprint,
-    applyPinnedTranslationCards,
     currentEntry?.cloudDocumentId,
     currentEntry?.contentSha256,
     currentEntry?.fileName,
     currentEntry?.fileSize,
     currentEntry?.fingerprint,
     currentEntry?.pdfMetadata?.title,
+    replacePinnedTranslationCards,
   ]);
 
   useEffect(() => {
@@ -978,7 +997,7 @@ export function ReaderShell() {
         setCurrentEntry(entry);
         setSentenceSelection(undefined);
         setMobilePanel(null);
-        applyPinnedTranslationCards([]);
+        replacePinnedTranslationCards([]);
         setPins([]);
         void refreshLibrary().catch(() => {
           setStatusMessage("Could not refresh the PDF library.");
@@ -989,7 +1008,7 @@ export function ReaderShell() {
         setIsImporting(false);
       }
     },
-    [applyPinnedTranslationCards, refreshLibrary],
+    [refreshLibrary, replacePinnedTranslationCards],
   );
 
   const handleOpenHistory = useCallback(
@@ -1003,7 +1022,7 @@ export function ReaderShell() {
         setCurrentEntry(openedEntry);
         setSentenceSelection(undefined);
         setMobilePanel(null);
-        applyPinnedTranslationCards([]);
+        replacePinnedTranslationCards([]);
         setPins([]);
         void refreshLibrary().catch(() => {
           setStatusMessage("Could not refresh the PDF library.");
@@ -1028,7 +1047,7 @@ export function ReaderShell() {
                   state.pins,
                 ),
               );
-              applyPinnedTranslationCards(state.pinnedTranslationCards);
+              replacePinnedTranslationCards(state.pinnedTranslationCards);
             })
             .catch(() => {
               setStatusMessage("Could not sync cloud document state.");
@@ -1043,7 +1062,7 @@ export function ReaderShell() {
         );
       }
     },
-    [applyPinnedTranslationCards, refreshLibrary],
+    [refreshLibrary, replacePinnedTranslationCards],
   );
 
   useEffect(() => {
@@ -1164,11 +1183,10 @@ export function ReaderShell() {
       return;
     }
 
-    const nextZIndex =
-      Math.max(
-        translationCardZIndexRef.current,
-        ...currentCards.map((card) => card.zIndex),
-      ) + 1;
+    const nextZIndex = getNextTranslationCardZIndex(
+      currentCards,
+      translationCardZIndexRef.current,
+    );
     const nextCard: PinnedTranslationCard = {
       ...input,
       cloudDocumentId: input.cloudDocumentId ?? input.selection.cloudDocumentId ?? currentEntry?.cloudDocumentId,
@@ -1187,7 +1205,10 @@ export function ReaderShell() {
   ]);
 
   const handleActivateTranslationCard = useCallback((selection: SentenceSelection) => {
-    const nextZIndex = translationCardZIndexRef.current + 1;
+    const nextZIndex = getNextTranslationCardZIndex(
+      pinnedTranslationCardsRef.current,
+      translationCardZIndexRef.current,
+    );
     let updatedCard: PinnedTranslationCard | undefined;
 
     translationCardZIndexRef.current = nextZIndex;
@@ -1209,8 +1230,9 @@ export function ReaderShell() {
 
     if (updatedCard) {
       clearPinnedTranslationCardSaveTimer(updatedCard.key);
+      persistPinnedTranslationCard(updatedCard, { debounce: true });
     }
-  }, [clearPinnedTranslationCardSaveTimer, updatePinnedTranslationCards]);
+  }, [clearPinnedTranslationCardSaveTimer, persistPinnedTranslationCard, updatePinnedTranslationCards]);
 
   const handleTranslationCardViewChange = useCallback(
     (
@@ -1259,7 +1281,10 @@ export function ReaderShell() {
       return;
     }
 
-    const nextZIndex = translationCardZIndexRef.current + 1;
+    const nextZIndex = getNextTranslationCardZIndex(
+      pinnedTranslationCardsRef.current,
+      translationCardZIndexRef.current,
+    );
 
     translationCardZIndexRef.current = nextZIndex;
     setActiveTranslationCardZIndex(nextZIndex);
@@ -1580,7 +1605,7 @@ export function ReaderShell() {
         }
         setCurrentEntry(undefined);
         setSentenceSelection(undefined);
-        applyPinnedTranslationCards([]);
+        replacePinnedTranslationCards([]);
         setPins([]);
         setIsConfirmingClearPins(false);
       }
@@ -1591,11 +1616,11 @@ export function ReaderShell() {
       activeFingerprint,
       currentEntry,
       damagedLibraryFingerprint,
-      applyPinnedTranslationCards,
       clearPinnedTranslationCardSaveTimer,
       libraryEntries,
       readerSessionUserId,
       refreshLibrary,
+      replacePinnedTranslationCards,
     ],
   );
 
