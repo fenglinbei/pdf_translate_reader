@@ -421,6 +421,13 @@ set public = excluded.public,
     file_size_limit = excluded.file_size_limit,
     allowed_mime_types = excluded.allowed_mime_types;
 
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('user-mathpix', 'user-mathpix', false, 104857600, array['application/json', 'text/plain'])
+on conflict (id) do update
+set public = excluded.public,
+    file_size_limit = excluded.file_size_limit,
+    allowed_mime_types = excluded.allowed_mime_types;
+
 create table if not exists public.user_documents (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -515,6 +522,46 @@ create policy "Users can delete their PDFs"
   for delete
   using (
     bucket_id = 'user-pdfs'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "Users can read their Mathpix cache" on storage.objects;
+create policy "Users can read their Mathpix cache"
+  on storage.objects
+  for select
+  using (
+    bucket_id = 'user-mathpix'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "Users can upload their Mathpix cache" on storage.objects;
+create policy "Users can upload their Mathpix cache"
+  on storage.objects
+  for insert
+  with check (
+    bucket_id = 'user-mathpix'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "Users can update their Mathpix cache" on storage.objects;
+create policy "Users can update their Mathpix cache"
+  on storage.objects
+  for update
+  using (
+    bucket_id = 'user-mathpix'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  )
+  with check (
+    bucket_id = 'user-mathpix'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "Users can delete their Mathpix cache" on storage.objects;
+create policy "Users can delete their Mathpix cache"
+  on storage.objects
+  for delete
+  using (
+    bucket_id = 'user-mathpix'
     and (storage.foldername(name))[1] = auth.uid()::text
   );
 
@@ -634,6 +681,53 @@ create policy "Users can manage their pinned translation cards"
       select 1 from public.user_documents documents
       where documents.id = user_document_id
         and documents.user_id = auth.uid()
+    )
+  );
+
+create table if not exists public.user_mathpix_documents (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  content_sha256 text not null check (content_sha256 ~ '^sha256-[0-9a-f]{64}$'),
+  mathpix_options_hash text not null,
+  user_document_id uuid not null references public.user_documents(id) on delete cascade,
+  pdf_fingerprint text not null,
+  file_name text not null,
+  file_size bigint not null check (file_size > 0),
+  status text not null check (status in ('submitted', 'processing', 'completed', 'error', 'deleted')),
+  mathpix_pdf_id text,
+  delete_remote_after_cache boolean,
+  num_pages integer,
+  num_pages_completed integer,
+  percent_done double precision,
+  pages_storage_path text,
+  full_mmd_storage_path text,
+  error_message text,
+  submitted_at timestamptz,
+  completed_at timestamptz,
+  remote_deleted_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz,
+  primary key (user_id, content_sha256, mathpix_options_hash)
+);
+
+create index if not exists user_mathpix_documents_user_document_idx
+  on public.user_mathpix_documents (user_id, user_document_id, updated_at desc)
+  where deleted_at is null;
+
+alter table public.user_mathpix_documents enable row level security;
+
+drop policy if exists "Users can manage their Mathpix documents" on public.user_mathpix_documents;
+create policy "Users can manage their Mathpix documents"
+  on public.user_mathpix_documents
+  for all
+  using (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1 from public.user_documents documents
+      where documents.id = user_document_id
+        and documents.user_id = auth.uid()
+        and documents.content_sha256 = user_mathpix_documents.content_sha256
     )
   );
 

@@ -309,12 +309,15 @@ export type MathpixDocumentRecord = {
   fileName: string;
   fileSize: number;
   fullMmd?: string;
+  fullMmdStoragePath?: string;
   mathpixOptionsHash: string;
   mathpixPdfId?: string;
   numPages?: number;
   numPagesCompleted?: number;
+  pagesStoragePath?: string;
   pdfFingerprint: string;
   percentDone?: number;
+  cloudMathpixSyncedAt?: number;
   remoteDeletedAt?: number;
   status: MathpixParseStatus;
   submittedAt?: number;
