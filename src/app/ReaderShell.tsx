@@ -8,6 +8,7 @@ import {
   Combine,
   Download,
   Hand,
+  Languages,
   LoaderCircle,
   LogOut,
   MousePointer2,
@@ -108,8 +109,10 @@ import {
   putPinnedTranslationCard,
 } from "../translation/pinnedTranslationCardRepository";
 import { clearTranslationCache } from "../translation/translationRepository";
+import { FreeTranslationPanel } from "../translation/FreeTranslationPanel";
 import { getStorageErrorMessage } from "../translation/errors";
 import { TRANSLATION_PROMPT_VERSION } from "../translation/defaults";
+import { getEffectiveTranslationStyle } from "../translation/translationStyle";
 import { runMathpixParsePipeline } from "../mathpix/mathpixPipeline";
 import { getMathpixDocumentRecord, mapPagesByIndex } from "../mathpix/mathpixRepository";
 import { MATHPIX_OPTIONS_HASH } from "../mathpix/options";
@@ -407,6 +410,7 @@ export function ReaderShell() {
   const [isLibraryLoaded, setIsLibraryLoaded] = useState(false);
   const [currentEntry, setCurrentEntry] = useState<PdfLibraryEntry>();
   const [isImporting, setIsImporting] = useState(false);
+  const [isFreeTranslationOpen, setIsFreeTranslationOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLibraryPaneOpen, setIsLibraryPaneOpen] = useState(true);
   const [isPinsPaneOpen, setIsPinsPaneOpen] = useState(true);
@@ -743,6 +747,7 @@ export function ReaderShell() {
 
   useEffect(() => {
     if (!activeFingerprint) {
+      setIsFreeTranslationOpen(false);
       paperContextPageTextsRef.current = new Map();
       mathpixParsedPagesRef.current = new Map();
       setPaperContext(undefined);
@@ -756,6 +761,7 @@ export function ReaderShell() {
       return undefined;
     }
 
+    setIsFreeTranslationOpen(false);
     paperContextPageTextsRef.current = new Map();
     mathpixParsedPagesRef.current = new Map();
     setMathpixParsedPages(new Map());
@@ -1370,7 +1376,10 @@ export function ReaderShell() {
     void updatePinTranslation(existingPin.id, {
       cacheKey: input.cacheKey,
       model: input.model,
+      promptVersion: input.promptVersion,
       translation: input.translation,
+      translationStyle: input.translationStyle,
+      translationStyleHash: input.translationStyleHash,
     })
       .then((pin) => {
         if (pin) {
@@ -1387,6 +1396,7 @@ export function ReaderShell() {
     annotation: PinAnnotationInput,
   ) => {
     try {
+      const style = getEffectiveTranslationStyle(paperContext?.translationStyle);
       const pin = await putPin({
         annotation,
         contextWindowN: settings.contextWindowN,
@@ -1399,6 +1409,8 @@ export function ReaderShell() {
         sourceLang: settings.sourceLang,
         targetLang: settings.targetLang,
         translation: "",
+        translationStyle: style.translationStyle,
+        translationStyleHash: style.translationStyleHash,
       });
 
       setPins((currentPins) => upsertPin(currentPins, pin));
@@ -1406,7 +1418,7 @@ export function ReaderShell() {
       setStatusMessage("Could not save annotation.");
       throw error;
     }
-  }, [settings]);
+  }, [paperContext?.translationStyle, settings]);
 
   const handlePinAnnotation = useCallback(async (
     pin: TranslationPin,
@@ -1892,6 +1904,15 @@ export function ReaderShell() {
   const renderDocumentHeaderControls = () => (
     <div className="pdf-export-toolbar" aria-label={t("reader.exportControls")}>
       <button
+        aria-label={t("freeTranslation.open")}
+        className="icon-button"
+        onClick={() => setIsFreeTranslationOpen(true)}
+        title={t("freeTranslation.open")}
+        type="button"
+      >
+        <Languages aria-hidden="true" size={17} strokeWidth={2} />
+      </button>
+      <button
         aria-label={t("reader.exportPdf")}
         className="icon-button"
         disabled={isExporting}
@@ -2081,6 +2102,15 @@ export function ReaderShell() {
           paperContext={paperContext}
           settings={settings}
           supabaseConfigured={health.status === "ok" ? health.data.supabase.configured : undefined}
+        />
+      ) : null}
+
+      {isFreeTranslationOpen && currentEntry ? (
+        <FreeTranslationPanel
+          entry={currentEntry}
+          onClose={() => setIsFreeTranslationOpen(false)}
+          paperContext={paperContext}
+          settings={settings}
         />
       ) : null}
 

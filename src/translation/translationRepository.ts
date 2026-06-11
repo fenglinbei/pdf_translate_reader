@@ -5,6 +5,7 @@ import type {
   TokenUsage,
   TranslationCacheEntry,
   TranslationModel,
+  TranslationStyleSettings,
 } from "../types/domain";
 import { getAppDb } from "../cache";
 import {
@@ -28,6 +29,8 @@ export type TranslationCacheWriteInput = {
   longContextEnabled: boolean;
   paperContextHash?: string;
   promptVersion: string;
+  translationStyle: TranslationStyleSettings;
+  translationStyleHash: string;
   translation: string;
   usage?: TokenUsage;
 };
@@ -56,6 +59,8 @@ export async function putTranslationCacheEntry(input: TranslationCacheWriteInput
     longContextEnabled: input.longContextEnabled,
     paperContextHash: input.paperContextHash,
     promptVersion: input.promptVersion,
+    translationStyle: input.translationStyle,
+    translationStyleHash: input.translationStyleHash,
     translation: input.translation,
     usage: input.usage,
     createdAt: existing?.createdAt ?? now,

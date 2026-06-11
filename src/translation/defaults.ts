@@ -5,4 +5,4 @@ export {
 
 export const DEFAULT_CONTEXT_WINDOW_N = 2;
 export const DEFAULT_LONG_CONTEXT_ENABLED = true;
-export const TRANSLATION_PROMPT_VERSION = "translation-v2";
+export const TRANSLATION_PROMPT_VERSION = "translation-v3";

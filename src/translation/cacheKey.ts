@@ -17,6 +17,7 @@ export type TranslationCacheKeyInput = {
   longContextEnabled: boolean;
   paperContextHash?: string;
   promptVersion: string;
+  translationStyleHash: string;
 };
 
 export function createTranslationCacheKey(input: TranslationCacheKeyInput) {
@@ -32,5 +33,6 @@ export function createTranslationCacheKey(input: TranslationCacheKeyInput) {
     longContextEnabled: input.longContextEnabled,
     paperContextHash: input.paperContextHash ?? "",
     promptVersion: input.promptVersion,
+    translationStyleHash: input.translationStyleHash,
   });
 }

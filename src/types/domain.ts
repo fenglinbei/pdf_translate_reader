@@ -8,6 +8,18 @@ export type SourceLanguage = TranslationLanguage;
 export type TargetLanguage = TranslationLanguage;
 export type AnnotationColor = "yellow" | "blue" | "green" | "red";
 export type TextExtractionSource = "pdfjs" | "mathpix-v3-pdf";
+export type TranslationRequestKind = "selection" | "free";
+export type TranslationStylePresetId =
+  | "academic-faithful"
+  | "academic-fluent"
+  | "concise-literal"
+  | "publication-polished"
+  | "reader-friendly"
+  | "custom";
+export type TranslationStyleSettings = {
+  customInstruction?: string;
+  presetId: TranslationStylePresetId;
+};
 export type MathpixParseStatus =
   | "submitted"
   | "processing"
@@ -118,6 +130,8 @@ export type PaperContext = {
   abstract?: string;
   terminology: PaperContextTerm[];
   contextHash: string;
+  translationStyle: TranslationStyleSettings;
+  translationStyleHash: string;
 };
 
 export type PaperContextRecord = PaperContext & {
@@ -130,6 +144,7 @@ export type PaperContextRecord = PaperContext & {
 export type TranslationRequest = {
   cloudDocumentId?: string;
   pdfFingerprint: string;
+  requestKind: TranslationRequestKind;
   sourceLang: SourceLanguage;
   targetLang: TargetLanguage;
   textSource?: TextExtractionSource;
@@ -143,6 +158,9 @@ export type TranslationRequest = {
   paperContext?: PaperContext;
   promptVersion: string;
   stream: boolean;
+  terminologyOverride?: PaperContextTerm[];
+  translationStyle: TranslationStyleSettings;
+  translationStyleHash: string;
 };
 
 export type TokenUsage = {
@@ -167,6 +185,8 @@ export type TranslationCacheEntry = {
   longContextEnabled: boolean;
   paperContextHash?: string;
   promptVersion: string;
+  translationStyle: TranslationStyleSettings;
+  translationStyleHash: string;
   translation: string;
   usage?: TokenUsage;
   createdAt: number;
@@ -203,6 +223,8 @@ export type TranslationPin = {
   color?: AnnotationColor;
   translationVisible?: boolean;
   promptVersion: string;
+  translationStyle: TranslationStyleSettings;
+  translationStyleHash: string;
   createdAt: number;
   updatedAt: number;
 };
@@ -221,6 +243,9 @@ export type ApiCallLog = {
   status: "success" | "error" | "aborted";
   errorMessage?: string;
   promptVersion: string;
+  requestKind: TranslationRequestKind;
+  translationStyle: TranslationStyleSettings;
+  translationStyleHash: string;
   contextWindowN: number;
   longContextEnabled: boolean;
   promptTokens?: number;

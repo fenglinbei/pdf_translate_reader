@@ -29,6 +29,7 @@ export async function putApiCallLog(input: ApiCallLogWriteInput) {
     promptCacheMissTokens: input.usage?.promptCacheMissTokens,
     promptTokens: input.usage?.promptTokens,
     promptVersion: input.request.promptVersion,
+    requestKind: input.request.requestKind,
     requestFinishedAt: input.requestFinishedAt,
     requestStartedAt: input.requestStartedAt,
     sourceLang: input.request.sourceLang,
@@ -37,6 +38,8 @@ export async function putApiCallLog(input: ApiCallLogWriteInput) {
     textSource: input.request.textSource,
     mathpixOptionsHash: input.request.mathpixOptionsHash,
     totalTokens: input.usage?.totalTokens,
+    translationStyle: input.request.translationStyle,
+    translationStyleHash: input.request.translationStyleHash,
   };
 
   await db.put("apiLogs", log);

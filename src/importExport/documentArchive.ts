@@ -10,6 +10,7 @@ import { runCloudSync } from "../cloud/syncStatus";
 import { createTranslationPinId } from "../pins/pinRepository";
 import { createTranslationCacheKey } from "../translation/cacheKey";
 import type { StoredPinnedTranslationCard } from "../translation/floatingCardTypes";
+import { getEffectiveTranslationStyle } from "../translation/translationStyle";
 import type {
   PaperContextRecord,
   PdfLibraryEntry,
@@ -232,6 +233,7 @@ function normalizeStateForEntry(
   const cacheKeyMap = new Map<string, string>();
   const translationCache = dedupeByKey(
     state.translationCache.map((cacheEntry) => {
+      const style = getEffectiveTranslationStyle(cacheEntry.translationStyle);
       const nextCacheKey = createTranslationCacheKey({
         contextWindowN: cacheEntry.contextWindowN,
         longContextEnabled: cacheEntry.longContextEnabled,
@@ -242,6 +244,9 @@ function normalizeStateForEntry(
         promptVersion: cacheEntry.promptVersion,
         sourceLang: cacheEntry.sourceLang,
         targetLang: cacheEntry.targetLang,
+        textSource: cacheEntry.textSource,
+        mathpixOptionsHash: cacheEntry.mathpixOptionsHash,
+        translationStyleHash: style.translationStyleHash,
       });
 
       cacheKeyMap.set(cacheEntry.cacheKey, nextCacheKey);
@@ -252,6 +257,8 @@ function normalizeStateForEntry(
         cloudDocumentId: entry.cloudDocumentId,
         createdAt: cleanNumber(cacheEntry.createdAt, Date.now()),
         pdfFingerprint: entry.fingerprint,
+        translationStyle: style.translationStyle,
+        translationStyleHash: style.translationStyleHash,
         updatedAt: cleanNumber(cacheEntry.updatedAt, Date.now()),
       };
     }),
@@ -260,6 +267,7 @@ function normalizeStateForEntry(
   );
   const pins = dedupeByKey(
     state.pins.map((pin) => {
+      const style = getEffectiveTranslationStyle(pin.translationStyle);
       const id = createTranslationPinId({
         normalizedSentence: pin.normalizedSentence,
         pageIndex: pin.pageIndex,
@@ -274,6 +282,8 @@ function normalizeStateForEntry(
         id,
         pdfFingerprint: entry.fingerprint,
         regions: pin.regions,
+        translationStyle: style.translationStyle,
+        translationStyleHash: style.translationStyleHash,
         updatedAt: cleanNumber(pin.updatedAt, Date.now()),
       };
     }),
@@ -305,6 +315,7 @@ function normalizeStateForEntry(
           ...state.paperContext,
           cloudDocumentId: entry.cloudDocumentId,
           pdfFingerprint: entry.fingerprint,
+          ...getEffectiveTranslationStyle(state.paperContext.translationStyle),
           updatedAt: cleanNumber(state.paperContext.updatedAt, Date.now()),
         }
       : undefined,

@@ -1,8 +1,21 @@
 import { Plus, Save, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useI18n } from "../i18n/I18nProvider";
-import type { PaperContextRecord, PaperContextTerm, PdfLibraryEntry } from "../types/domain";
+import type {
+  PaperContextRecord,
+  PaperContextTerm,
+  PdfLibraryEntry,
+  TranslationStylePresetId,
+  TranslationStyleSettings,
+} from "../types/domain";
+import type { MessageKey } from "../i18n/messages";
 import type { PaperContextDraft } from "../translation/paperContext";
+import {
+  DEFAULT_TRANSLATION_STYLE,
+  TRANSLATION_STYLE_CUSTOM_MAX_LENGTH,
+  TRANSLATION_STYLE_PRESET_IDS,
+  normalizeTranslationStyle,
+} from "../translation/translationStyle";
 
 type PaperContextEditorProps = {
   currentEntry?: PdfLibraryEntry;
@@ -24,6 +37,8 @@ export function PaperContextEditor({
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [terms, setTerms] = useState<TermDraft[]>([]);
   const [title, setTitle] = useState("");
+  const [translationStyle, setTranslationStyle] =
+    useState<TranslationStyleSettings>(DEFAULT_TRANSLATION_STYLE);
   const editorKey = `${currentEntry?.fingerprint ?? "none"}:${paperContext?.contextHash ?? "empty"}`;
   const canSave = Boolean(currentEntry);
   const contextSummary = useMemo(() => {
@@ -48,6 +63,7 @@ export function PaperContextEditor({
       })),
     );
     setTitle(paperContext?.title ?? currentEntry?.pdfMetadata?.title ?? "");
+    setTranslationStyle(normalizeTranslationStyle(paperContext?.translationStyle));
   }, [currentEntry?.fileName, currentEntry?.pdfMetadata?.title, editorKey, paperContext]);
 
   async function handleSave() {
@@ -69,6 +85,7 @@ export function PaperContextEditor({
           updatedAt: now + index,
         })),
         title,
+        translationStyle: normalizeTranslationStyle(translationStyle),
       });
       setSaveStatus("saved");
     } catch {
@@ -116,6 +133,52 @@ export function PaperContextEditor({
           value={abstract}
         />
       </label>
+      <label className="settings-field">
+        <span>{t("paperContext.translationStyle")}</span>
+        <select
+          disabled={!currentEntry}
+          onChange={(event) => {
+            const presetId = event.currentTarget.value as TranslationStylePresetId;
+
+            setTranslationStyle(
+              presetId === "custom"
+                ? { customInstruction: "", presetId }
+                : { presetId },
+            );
+            setSaveStatus("idle");
+          }}
+          value={translationStyle.presetId}
+        >
+          {TRANSLATION_STYLE_PRESET_IDS.map((presetId) => (
+            <option key={presetId} value={presetId}>
+              {t(getTranslationStylePresetLabelKey(presetId))}
+            </option>
+          ))}
+        </select>
+      </label>
+      {translationStyle.presetId === "custom" ? (
+        <label className="settings-field">
+          <span>{t("paperContext.customTranslationStyle")}</span>
+          <textarea
+            disabled={!currentEntry}
+            maxLength={TRANSLATION_STYLE_CUSTOM_MAX_LENGTH}
+            onChange={(event) => {
+              setTranslationStyle({
+                customInstruction: event.currentTarget.value,
+                presetId: "custom",
+              });
+              setSaveStatus("idle");
+            }}
+            rows={4}
+            value={translationStyle.customInstruction ?? ""}
+          />
+          <small className="settings-field-hint">
+            {t("paperContext.customTranslationStyleHint", {
+              count: TRANSLATION_STYLE_CUSTOM_MAX_LENGTH,
+            })}
+          </small>
+        </label>
+      ) : null}
       <div className="paper-context-terms">
         <div className="paper-context-terms-header">
           <span>{t("paperContext.terminology")}</span>
@@ -188,6 +251,24 @@ export function PaperContextEditor({
       </div>
     </div>
   );
+}
+
+function getTranslationStylePresetLabelKey(presetId: TranslationStylePresetId): MessageKey {
+  switch (presetId) {
+    case "academic-fluent":
+      return "translationStyle.academicFluent";
+    case "concise-literal":
+      return "translationStyle.conciseLiteral";
+    case "publication-polished":
+      return "translationStyle.publicationPolished";
+    case "reader-friendly":
+      return "translationStyle.readerFriendly";
+    case "custom":
+      return "translationStyle.custom";
+    case "academic-faithful":
+    default:
+      return "translationStyle.academicFaithful";
+  }
 }
 
 function formatSaveStatus(

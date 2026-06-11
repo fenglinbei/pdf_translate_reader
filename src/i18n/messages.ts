@@ -91,6 +91,12 @@ export const MESSAGES = {
     "import.importing": "Importing...",
     "import.title": "Import PDF or reading package",
 
+    "freeTranslation.emptyOutput": "Translation output will appear here.",
+    "freeTranslation.includePaperContext": "Include title and abstract context",
+    "freeTranslation.open": "Free translation",
+    "freeTranslation.sourceText": "Text to translate",
+    "freeTranslation.title": "Free Translation",
+
     "library.deleteHistory": "Delete PDF history",
     "library.empty": "No PDFs imported yet.",
     "library.noMatches": "No matching PDFs.",
@@ -131,6 +137,8 @@ export const MESSAGES = {
 
     "paperContext.abstract": "Abstract",
     "paperContext.addTerm": "Add term",
+    "paperContext.customTranslationStyle": "Custom style requirements",
+    "paperContext.customTranslationStyleHint": "Up to {count} characters.",
     "paperContext.manualTermsOnly": "Manual terms only",
     "paperContext.noContext": "No paper context stored",
     "paperContext.noTerms": "No terms yet",
@@ -144,6 +152,7 @@ export const MESSAGES = {
     "paperContext.terminology": "Terminology",
     "paperContext.termsSummary": "{count} terms · {hash}",
     "paperContext.title": "Title",
+    "paperContext.translationStyle": "Translation style",
 
     "reader.annotations": "Annotations",
     "reader.api": "API",
@@ -274,6 +283,13 @@ export const MESSAGES = {
     "translation.zoomInContent": "Increase card text size",
     "translation.zoomOutContent": "Decrease card text size",
 
+    "translationStyle.academicFaithful": "Academic faithful",
+    "translationStyle.academicFluent": "Academic fluent",
+    "translationStyle.conciseLiteral": "Concise literal",
+    "translationStyle.custom": "Custom",
+    "translationStyle.publicationPolished": "Publication polished",
+    "translationStyle.readerFriendly": "Reader friendly",
+
     "pdf.loading": "Loading PDF",
     "pdf.loadingWithDots": "Loading PDF...",
     "pdf.pages": "{count} pages",
@@ -386,6 +402,12 @@ export const MESSAGES = {
     "import.importing": "导入中...",
     "import.title": "导入 PDF 或阅读包",
 
+    "freeTranslation.emptyOutput": "译文会显示在这里。",
+    "freeTranslation.includePaperContext": "加入标题和摘要上下文",
+    "freeTranslation.open": "自由翻译",
+    "freeTranslation.sourceText": "待翻译文本",
+    "freeTranslation.title": "自由翻译",
+
     "library.deleteHistory": "删除 PDF 历史",
     "library.empty": "还没有导入 PDF。",
     "library.noMatches": "没有匹配的 PDF。",
@@ -426,6 +448,8 @@ export const MESSAGES = {
 
     "paperContext.abstract": "摘要",
     "paperContext.addTerm": "添加术语",
+    "paperContext.customTranslationStyle": "自定义风格要求",
+    "paperContext.customTranslationStyleHint": "最多 {count} 个字符。",
     "paperContext.manualTermsOnly": "仅手动术语",
     "paperContext.noContext": "未保存论文上下文",
     "paperContext.noTerms": "暂无术语",
@@ -439,6 +463,7 @@ export const MESSAGES = {
     "paperContext.terminology": "术语",
     "paperContext.termsSummary": "{count} 个术语 · {hash}",
     "paperContext.title": "标题",
+    "paperContext.translationStyle": "翻译风格",
 
     "reader.annotations": "注释",
     "reader.api": "API",
@@ -568,6 +593,13 @@ export const MESSAGES = {
     "translation.unpinCard": "取消固定翻译卡片",
     "translation.zoomInContent": "放大卡片文字",
     "translation.zoomOutContent": "缩小卡片文字",
+
+    "translationStyle.academicFaithful": "学术忠实",
+    "translationStyle.academicFluent": "学术流畅",
+    "translationStyle.conciseLiteral": "简明直译",
+    "translationStyle.custom": "自定义",
+    "translationStyle.publicationPolished": "发表润色",
+    "translationStyle.readerFriendly": "读者友好",
 
     "pdf.loading": "正在加载 PDF",
     "pdf.loadingWithDots": "正在加载 PDF...",

@@ -10,12 +10,19 @@ import type {
   PaperContextRecord,
   PaperContextTerm,
   PdfLibraryEntry,
+  TranslationStyleSettings,
 } from "../types/domain";
+import {
+  DEFAULT_TRANSLATION_STYLE,
+  getEffectiveTranslationStyle,
+  normalizeTranslationStyle,
+} from "./translationStyle";
 
 export type PaperContextDraft = {
   abstract?: string;
   terminology: PaperContextTerm[];
   title?: string;
+  translationStyle?: TranslationStyleSettings;
 };
 
 type InferPaperContextInput = {
@@ -26,8 +33,9 @@ type InferPaperContextInput = {
 
 export async function getPaperContextRecord(pdfFingerprint: string) {
   const db = await getAppDb();
+  const record = await db.get("paperContexts", pdfFingerprint);
 
-  return db.get("paperContexts", pdfFingerprint);
+  return record ? normalizePaperContextRecord(record) : undefined;
 }
 
 export async function ensurePaperContextForEntry(entry: PdfLibraryEntry) {
@@ -41,6 +49,7 @@ export async function ensurePaperContextForEntry(entry: PdfLibraryEntry) {
     abstract: undefined,
     terminology: [],
     title: cleanOptionalText(entry.pdfMetadata?.title),
+    translationStyle: DEFAULT_TRANSLATION_STYLE,
   }, {
     cloudDocumentId: entry.cloudDocumentId,
   });
@@ -71,6 +80,7 @@ export async function updatePaperContextFromPageTexts({
     abstract: existing?.abstract || inferredContext.abstract,
     terminology: existing?.terminology ?? [],
     title: existing?.title || inferredContext.title,
+    translationStyle: existing?.translationStyle ?? DEFAULT_TRANSLATION_STYLE,
   };
   const nextContext = normalizePaperContext(draft);
 
@@ -112,6 +122,8 @@ export async function deletePaperContextByPdf(pdfFingerprint: string) {
 
 export function normalizePaperContext(draft: PaperContextDraft): PaperContext {
   const terminology = normalizeTerminology(draft.terminology);
+  const translationStyle = normalizeTranslationStyle(draft.translationStyle);
+  const translationStyleHash = getEffectiveTranslationStyle(translationStyle).translationStyleHash;
   const contextBody = {
     abstract: cleanOptionalText(draft.abstract) ?? "",
     terminology: terminology.map((term) => ({
@@ -127,6 +139,8 @@ export function normalizePaperContext(draft: PaperContextDraft): PaperContext {
     contextHash: `ctx-${hashString(JSON.stringify(contextBody))}`,
     terminology,
     title: contextBody.title || undefined,
+    translationStyle,
+    translationStyleHash,
   };
 }
 
@@ -147,6 +161,7 @@ function inferPaperContext({
     abstract: inferredAbstract,
     terminology: [],
     title: inferredTitle,
+    translationStyle: DEFAULT_TRANSLATION_STYLE,
   });
 }
 
@@ -161,7 +176,10 @@ async function putPaperContextRecord(
 ) {
   const db = await getAppDb();
   const now = Date.now();
-  const context = normalizePaperContext(draft);
+  const context = normalizePaperContext({
+    ...draft,
+    translationStyle: draft.translationStyle ?? options.previousRecord?.translationStyle,
+  });
   const record: PaperContextRecord = {
     ...context,
     cloudDocumentId: options.cloudDocumentId ?? options.previousRecord?.cloudDocumentId,
@@ -180,6 +198,20 @@ async function putPaperContextRecord(
   }).catch(() => undefined);
 
   return record;
+}
+
+function normalizePaperContextRecord(record: PaperContextRecord): PaperContextRecord {
+  const context = normalizePaperContext({
+    abstract: record.abstract,
+    terminology: record.terminology ?? [],
+    title: record.title,
+    translationStyle: record.translationStyle,
+  });
+
+  return {
+    ...record,
+    ...context,
+  };
 }
 
 function normalizeTerminology(terminology: PaperContextTerm[]) {

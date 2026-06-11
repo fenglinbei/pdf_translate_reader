@@ -142,9 +142,63 @@ function normalizeTranslationRequest(body) {
 
   return {
     ...body,
+    requestKind: body.requestKind === "free" ? "free" : "selection",
     sourceLang,
     targetLang,
+    terminologyOverride: normalizeTerminologyOverride(body.terminologyOverride),
+    translationStyle: normalizeTranslationStyle(body.translationStyle),
   };
+}
+
+function normalizeTranslationStyle(value) {
+  const presetId = isTranslationStylePresetId(value?.presetId)
+    ? value.presetId
+    : "academic-faithful";
+
+  if (presetId !== "custom") {
+    return { presetId };
+  }
+
+  const customInstruction = typeof value?.customInstruction === "string"
+    ? value.customInstruction.replace(/\s+/g, " ").trim().slice(0, 800).trim()
+    : "";
+
+  return customInstruction
+    ? { customInstruction, presetId }
+    : { presetId: "academic-faithful" };
+}
+
+function isTranslationStylePresetId(value) {
+  return [
+    "academic-faithful",
+    "academic-fluent",
+    "concise-literal",
+    "publication-polished",
+    "reader-friendly",
+    "custom",
+  ].includes(value);
+}
+
+function normalizeTerminologyOverride(value) {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value
+    .map((term) => ({
+      confidence: term?.confidence === "auto" ? "auto" : "user",
+      source: cleanOptionalText(term?.source, 120),
+      target: cleanOptionalText(term?.target, 120),
+      updatedAt: Number.isFinite(term?.updatedAt) ? term.updatedAt : Date.now(),
+    }))
+    .filter((term) => term.source && term.target)
+    .slice(0, 80);
+}
+
+function cleanOptionalText(value, maxLength) {
+  const text = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+
+  return text ? text.slice(0, maxLength).trim() : undefined;
 }
 
 function normalizeModel(model) {

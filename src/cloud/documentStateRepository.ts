@@ -6,6 +6,7 @@ import type {
   TranslationPin,
 } from "../types/domain";
 import type { StoredPinnedTranslationCard } from "../translation/floatingCardTypes";
+import { getEffectiveTranslationStyle } from "../translation/translationStyle";
 import { requireCurrentUserId } from "./currentUser";
 
 type PayloadRow<T> = {
@@ -305,7 +306,7 @@ async function listCloudPins(cloudDocumentId: string) {
   }
 
   return ((data ?? []) as unknown as Array<PayloadRow<TranslationPin>>)
-    .map((row) => row.payload);
+    .map((row) => normalizeTranslationStylePayload(row.payload));
 }
 
 async function listCloudTranslationCacheEntries(cloudDocumentId: string) {
@@ -321,7 +322,7 @@ async function listCloudTranslationCacheEntries(cloudDocumentId: string) {
   }
 
   return ((data ?? []) as unknown as Array<PayloadRow<TranslationCacheEntry>>)
-    .map((row) => row.payload);
+    .map((row) => normalizeTranslationStylePayload(row.payload));
 }
 
 async function getCloudPaperContext(cloudDocumentId: string) {
@@ -336,7 +337,9 @@ async function getCloudPaperContext(cloudDocumentId: string) {
     throw error;
   }
 
-  return (data as unknown as PayloadRow<PaperContextRecord> | null)?.payload;
+  const payload = (data as unknown as PayloadRow<PaperContextRecord> | null)?.payload;
+
+  return payload ? normalizeTranslationStylePayload(payload) : undefined;
 }
 
 async function listCloudPinnedTranslationCards(cloudDocumentId: string) {
@@ -409,4 +412,14 @@ async function deleteAllCloudPinnedTranslationCardsByDocument(cloudDocumentId: s
 
 function toIsoTime(epochMs: number | undefined) {
   return new Date(epochMs ?? Date.now()).toISOString();
+}
+
+function normalizeTranslationStylePayload<T extends {
+  translationStyle?: unknown;
+  translationStyleHash?: string;
+}>(payload: T): T {
+  return {
+    ...payload,
+    ...getEffectiveTranslationStyle(payload.translationStyle),
+  };
 }

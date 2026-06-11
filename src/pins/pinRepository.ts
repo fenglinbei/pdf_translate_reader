@@ -12,7 +12,9 @@ import type {
   TargetLanguage,
   TranslationModel,
   TranslationPin,
+  TranslationStyleSettings,
 } from "../types/domain";
+import { getEffectiveTranslationStyle } from "../translation/translationStyle";
 
 export type PinAnnotationInput = {
   color: AnnotationColor;
@@ -33,13 +35,18 @@ export type PinWriteInput = {
   sourceLang: SourceLanguage;
   targetLang: TargetLanguage;
   translation: string;
+  translationStyle: TranslationStyleSettings;
+  translationStyleHash: string;
   translationVisible?: boolean;
 };
 
 export type PinTranslationUpdateInput = {
   cacheKey?: string;
   model: TranslationModel;
+  promptVersion?: string;
   translation: string;
+  translationStyle?: TranslationStyleSettings;
+  translationStyleHash?: string;
   translationVisible?: boolean;
 };
 
@@ -47,7 +54,8 @@ export type PinAnnotationUpdateInput = PinAnnotationInput;
 
 export async function listPinsByPdf(pdfFingerprint: string) {
   const db = await getAppDb();
-  const pins = await db.getAllFromIndex("pins", "by-pdf", pdfFingerprint);
+  const pins = (await db.getAllFromIndex("pins", "by-pdf", pdfFingerprint))
+    .map(normalizePinTranslationStyle);
 
   return collapseDuplicatePins(pins).sort(comparePins);
 }
@@ -60,6 +68,7 @@ export async function putPin(input: PinWriteInput) {
     pdfFingerprint: input.selection.pdfFingerprint,
   });
   const existingPins = (await db.getAllFromIndex("pins", "by-pdf", input.selection.pdfFingerprint))
+    .map(normalizePinTranslationStyle)
     .filter((pin) => isSamePinTarget(pin, {
       normalizedSentence: input.selection.normalizedSentence,
       pageIndex: input.selection.pageIndex,
@@ -70,6 +79,7 @@ export async function putPin(input: PinWriteInput) {
   const nextNote =
     input.annotation ? normalizeOptionalText(input.annotation.note) : existing?.note;
   const hasTranslationInput = input.translation.trim().length > 0;
+  const style = getEffectiveTranslationStyle(input.translationStyle);
   const pin: TranslationPin = {
     anchorRegionIndex: input.selection.anchorRegionIndex,
     cacheKey: hasTranslationInput ? input.cacheKey : existing?.cacheKey ?? input.cacheKey,
@@ -103,6 +113,8 @@ export async function putPin(input: PinWriteInput) {
     mathpixOptionsHash: input.selection.mathpixOptionsHash,
     mathpixConfidence: input.selection.mathpixConfidence,
     translation: hasTranslationInput ? input.translation : existing?.translation ?? input.translation,
+    translationStyle: style.translationStyle,
+    translationStyleHash: style.translationStyleHash,
     translationVisible:
       input.translationVisible ??
       (hasTranslationInput ? true : existing?.translationVisible ?? false),
@@ -134,13 +146,15 @@ export async function putPin(input: PinWriteInput) {
 
 export async function updatePinAnnotation(pinId: string, input: PinAnnotationUpdateInput) {
   const db = await getAppDb();
-  const existing = await db.get("pins", pinId);
+  const existingRecord = await db.get("pins", pinId);
+  const existing = existingRecord ? normalizePinTranslationStyle(existingRecord) : undefined;
 
   if (!existing) {
     return undefined;
   }
 
   const duplicatePins = (await db.getAllFromIndex("pins", "by-pdf", existing.pdfFingerprint))
+    .map(normalizePinTranslationStyle)
     .filter((pin) => isSamePinTarget(pin, existing));
   const now = Date.now();
   const note = normalizeOptionalText(input.note);
@@ -172,7 +186,8 @@ export async function updatePinAnnotation(pinId: string, input: PinAnnotationUpd
 
 export async function updatePinTranslation(pinId: string, input: PinTranslationUpdateInput) {
   const db = await getAppDb();
-  const existing = await db.get("pins", pinId);
+  const existingRecord = await db.get("pins", pinId);
+  const existing = existingRecord ? normalizePinTranslationStyle(existingRecord) : undefined;
 
   if (!existing) {
     return undefined;
@@ -182,12 +197,15 @@ export async function updatePinTranslation(pinId: string, input: PinTranslationU
     ...existing,
     cacheKey: input.cacheKey,
     model: input.model,
+    promptVersion: input.promptVersion ?? existing.promptVersion,
     translation: input.translation,
+    ...getEffectiveTranslationStyle(input.translationStyle ?? existing.translationStyle),
     translationVisible: input.translationVisible ?? true,
     updatedAt: Date.now(),
   };
 
   const duplicatePins = (await db.getAllFromIndex("pins", "by-pdf", existing.pdfFingerprint))
+    .map(normalizePinTranslationStyle)
     .filter((pin) => isSamePinTarget(pin, existing));
 
   await Promise.all(
@@ -196,7 +214,9 @@ export async function updatePinTranslation(pinId: string, input: PinTranslationU
         ...pin,
         cacheKey: input.cacheKey,
         model: input.model,
+        promptVersion: input.promptVersion ?? pin.promptVersion,
         translation: input.translation,
+        ...getEffectiveTranslationStyle(input.translationStyle ?? pin.translationStyle),
         translationVisible: input.translationVisible ?? true,
         updatedAt: updatedPin.updatedAt,
       }),
@@ -213,13 +233,15 @@ export async function updatePinTranslation(pinId: string, input: PinTranslationU
 
 export async function updatePinTranslationVisibility(pinId: string, translationVisible: boolean) {
   const db = await getAppDb();
-  const existing = await db.get("pins", pinId);
+  const existingRecord = await db.get("pins", pinId);
+  const existing = existingRecord ? normalizePinTranslationStyle(existingRecord) : undefined;
 
   if (!existing) {
     return undefined;
   }
 
   const duplicatePins = (await db.getAllFromIndex("pins", "by-pdf", existing.pdfFingerprint))
+    .map(normalizePinTranslationStyle)
     .filter((pin) => isSamePinTarget(pin, existing));
   const now = Date.now();
   const updatedPin: TranslationPin = {
@@ -248,13 +270,15 @@ export async function updatePinTranslationVisibility(pinId: string, translationV
 
 export async function updatePinHighlight(pinId: string, highlighted: boolean) {
   const db = await getAppDb();
-  const existing = await db.get("pins", pinId);
+  const existingRecord = await db.get("pins", pinId);
+  const existing = existingRecord ? normalizePinTranslationStyle(existingRecord) : undefined;
 
   if (!existing) {
     return undefined;
   }
 
   const duplicatePins = (await db.getAllFromIndex("pins", "by-pdf", existing.pdfFingerprint))
+    .map(normalizePinTranslationStyle)
     .filter((pin) => isSamePinTarget(pin, existing));
   const now = Date.now();
   const updatedPin: TranslationPin = {
@@ -279,6 +303,13 @@ export async function updatePinHighlight(pinId: string, highlighted: boolean) {
   }).catch(() => undefined);
 
   return updatedPin;
+}
+
+function normalizePinTranslationStyle(pin: TranslationPin): TranslationPin {
+  return {
+    ...pin,
+    ...getEffectiveTranslationStyle(pin.translationStyle),
+  };
 }
 
 export async function deletePin(pinId: string) {

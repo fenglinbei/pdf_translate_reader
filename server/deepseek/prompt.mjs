@@ -1,10 +1,11 @@
 import { getTranslationLanguagePromptLabel } from "./languages.mjs";
 
-export const TRANSLATION_PROMPT_VERSION = "translation-v2";
+export const TRANSLATION_PROMPT_VERSION = "translation-v3";
 
 const MAX_ABSTRACT_CHARS = 1800;
 const MAX_CONTEXT_SECTION_CHARS = 6000;
 const MAX_CONTEXT_SENTENCE_CHARS = 900;
+const MAX_STYLE_CHARS = 1000;
 const MAX_TARGET_SENTENCE_CHARS = 4000;
 const MAX_TERM_CHARS = 120;
 const MAX_TERM_COUNT = 80;
@@ -29,6 +30,7 @@ export function buildTranslationMessages(requestBody) {
         "Use the requested target-language conventions consistently, including Simplified or Traditional Chinese script when applicable.",
         "Preserve formulas, citations, variables, method names, dataset names, and technical abbreviations.",
         "Preserve LaTeX math delimited by \\( \\), \\[ \\], or $$ $$ exactly, including equation tags.",
+        "Follow this priority order: preserve formulas, citations, and terminology first; then apply custom style requirements; then apply preset style; then use general academic translation rules.",
         "Do not add commentary, explanation, markdown, or quotation marks.",
       ].join("\n"),
     },
@@ -44,6 +46,7 @@ export function buildTranslationMessages(requestBody) {
         "[Translation policy]",
         `Source language: ${sourceLanguage}`,
         `Target language: ${targetLanguage}`,
+        `Style: ${promptContent.translationStyle}`,
         "Output only the translation.",
         "",
         "[Dynamic local context]",
@@ -62,9 +65,13 @@ export function buildTranslationMessages(requestBody) {
 
 function createBudgetedPromptContent(requestBody, paperContext) {
   const targetSentence = truncateText(requestBody.targetSentence, MAX_TARGET_SENTENCE_CHARS);
+  const translationStyle = truncateText(
+    getTranslationStyleInstruction(requestBody.translationStyle),
+    MAX_STYLE_CHARS,
+  );
   let remainingBudget = Math.max(
     0,
-    MAX_USER_PROMPT_CHARS - PROMPT_FIXED_OVERHEAD_CHARS - targetSentence.length,
+    MAX_USER_PROMPT_CHARS - PROMPT_FIXED_OVERHEAD_CHARS - targetSentence.length - translationStyle.length,
   );
   const contextBudget = Math.min(
     MAX_CONTEXT_SECTION_CHARS,
@@ -91,7 +98,10 @@ function createBudgetedPromptContent(requestBody, paperContext) {
   );
   remainingBudget = Math.max(0, remainingBudget - abstract.length);
 
-  const terminologyResult = formatTerminology(paperContext?.terminology, remainingBudget);
+  const terminology = Array.isArray(requestBody.terminologyOverride)
+    ? requestBody.terminologyOverride
+    : paperContext?.terminology;
+  const terminologyResult = formatTerminology(terminology, remainingBudget);
 
   return {
     abstract,
@@ -100,7 +110,41 @@ function createBudgetedPromptContent(requestBody, paperContext) {
     targetSentence,
     terminology: terminologyResult.lines,
     title,
+    translationStyle,
   };
+}
+
+function getTranslationStyleInstruction(translationStyle) {
+  const presetId = normalizeTranslationStylePresetId(translationStyle?.presetId);
+
+  if (presetId === "custom") {
+    const customInstruction = truncateText(translationStyle?.customInstruction ?? "", 800);
+
+    return customInstruction ||
+      TRANSLATION_STYLE_PRESET_INSTRUCTIONS["academic-faithful"];
+  }
+
+  return TRANSLATION_STYLE_PRESET_INSTRUCTIONS[presetId] ??
+    TRANSLATION_STYLE_PRESET_INSTRUCTIONS["academic-faithful"];
+}
+
+const TRANSLATION_STYLE_PRESET_INSTRUCTIONS = {
+  "academic-faithful":
+    "Use a faithful academic style: prioritize technical accuracy, literal correspondence, and stable terminology while keeping the target language grammatical.",
+  "academic-fluent":
+    "Use a fluent academic style: keep technical meaning exact, but smooth sentence flow and improve readability in the target language.",
+  "concise-literal":
+    "Use a concise literal style: stay close to the source wording, avoid embellishment, and remove only unnecessary verbosity.",
+  "publication-polished":
+    "Use a polished publication style: preserve meaning and terminology while making the target text sound suitable for a formal academic paper.",
+  "reader-friendly":
+    "Use a reader-friendly style: preserve technical precision while making complex phrasing easier to follow for a broad academic reader.",
+};
+
+function normalizeTranslationStylePresetId(value) {
+  return Object.hasOwn(TRANSLATION_STYLE_PRESET_INSTRUCTIONS, value) || value === "custom"
+    ? value
+    : "academic-faithful";
 }
 
 function formatSentenceList(sentences, budget) {

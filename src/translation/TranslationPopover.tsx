@@ -28,6 +28,7 @@ import type {
 } from "./floatingCardTypes";
 import { putApiCallLog } from "./apiLogRepository";
 import { getTranslationErrorMessage } from "./errors";
+import { getEffectiveTranslationStyle } from "./translationStyle";
 
 export type TranslationPinPayload = {
   annotation?: TranslationAnnotationInput;
@@ -40,6 +41,8 @@ export type TranslationPinPayload = {
   sourceLang: SourceLanguage;
   targetLang: TargetLanguage;
   translation: string;
+  translationStyle: TranslationRequest["translationStyle"];
+  translationStyleHash: string;
 };
 
 export type TranslationAnnotationInput = {
@@ -184,6 +187,7 @@ export function TranslationPopover({
   );
   const createRequest = useCallback((): TranslationRequest => {
     const contextWindowN = settings.contextWindowN;
+    const style = getEffectiveTranslationStyle(paperContext?.translationStyle);
 
     return {
       cloudDocumentId: selection.cloudDocumentId,
@@ -196,12 +200,15 @@ export function TranslationPopover({
       paperContext: settings.longContextEnabled ? paperContext : undefined,
       pdfFingerprint: selection.pdfFingerprint,
       promptVersion: TRANSLATION_PROMPT_VERSION,
+      requestKind: "selection",
       sourceLang: settings.sourceLang,
       stream: true,
       targetLang: settings.targetLang,
       targetSentence: selection.targetSentence,
       textSource: selection.textSource,
       mathpixOptionsHash: selection.mathpixOptionsHash,
+      translationStyle: style.translationStyle,
+      translationStyleHash: style.translationStyleHash,
     };
   }, [
     selection.localContextAfter,
@@ -233,6 +240,8 @@ export function TranslationPopover({
       sourceLang: request.sourceLang,
       targetLang: request.targetLang,
       translation: nextTranslation,
+      translationStyle: request.translationStyle,
+      translationStyleHash: request.translationStyleHash,
     }),
     [createRequest],
   );
@@ -316,6 +325,7 @@ export function TranslationPopover({
         targetLang: request.targetLang,
         textSource: request.textSource,
         mathpixOptionsHash: request.mathpixOptionsHash,
+        translationStyleHash: request.translationStyleHash,
       });
 
       setStatus("loading");
@@ -420,6 +430,8 @@ export function TranslationPopover({
             targetLang: request.targetLang,
             textSource: request.textSource,
             mathpixOptionsHash: request.mathpixOptionsHash,
+            translationStyle: request.translationStyle,
+            translationStyleHash: request.translationStyleHash,
             translation: streamedTranslation,
             usage: streamedUsage,
           }).catch(() => {
