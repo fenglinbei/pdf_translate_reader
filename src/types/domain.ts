@@ -84,6 +84,7 @@ export type SelectionRegion = {
   pageWidth?: number;
   mathpixConfidence?: number;
   mathpixOptionsHash?: string;
+  nativeTargetSentence?: string;
   selectedText: string;
   targetSentence: string;
   textSource?: TextExtractionSource;
@@ -104,6 +105,7 @@ export type SentenceSelection = {
   pageWidth?: number;
   mathpixConfidence?: number;
   mathpixOptionsHash?: string;
+  nativeTargetSentence?: string;
   selectedText: string;
   targetSentence: string;
   textSource?: TextExtractionSource;
@@ -260,6 +262,7 @@ export type AppSettings = {
   defaultModel: TranslationModel;
   longContextEnabled: boolean;
   maxDraggedWords: number;
+  selectedTextOutputMode: "processed" | "native";
   sourceLang: SourceLanguage;
   targetLang: TargetLanguage;
   textSelectionMode: "mathpix" | "original";

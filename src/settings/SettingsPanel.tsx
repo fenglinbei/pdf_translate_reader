@@ -300,6 +300,21 @@ export function SettingsPanel({
             <small className="settings-field-hint">{t("settings.textSelectionModeHint")}</small>
           </label>
           <label className="settings-field">
+            <span>{t("settings.selectedTextOutputMode")}</span>
+            <select
+              value={settings.selectedTextOutputMode}
+              onChange={(event) =>
+                void updateSettings({
+                  selectedTextOutputMode: event.currentTarget.value as AppSettings["selectedTextOutputMode"],
+                })
+              }
+            >
+              <option value="processed">{t("settings.selectedTextOutputModeProcessed")}</option>
+              <option value="native">{t("settings.selectedTextOutputModeNative")}</option>
+            </select>
+            <small className="settings-field-hint">{t("settings.selectedTextOutputModeHint")}</small>
+          </label>
+          <label className="settings-field">
             <span>{t("settings.draggedWords")}</span>
             <input
               max={MAX_DRAGGED_WORDS_LIMIT}

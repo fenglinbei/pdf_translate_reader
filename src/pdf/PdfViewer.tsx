@@ -801,7 +801,11 @@ export function PdfViewer({
       setCopiedSelection(selection);
 
       try {
-        await copyTextToClipboard(selection.targetSentence);
+        const copyText = settings.selectedTextOutputMode === "native" && selection.nativeTargetSentence
+          ? selection.nativeTargetSentence
+          : selection.targetSentence;
+
+        await copyTextToClipboard(copyText);
         setCopyNotice(t("pdf.copied"));
       } catch {
         setCopyNotice(t("pdf.copyFailed"));
@@ -813,7 +817,7 @@ export function PdfViewer({
         setCopyNotice(undefined);
       }, 1800);
     },
-    [t],
+    [settings.selectedTextOutputMode, t],
   );
 
   const addPageMetricsToSelection = useCallback(
@@ -1955,7 +1959,11 @@ function createCompositeCrossSelection(
     return undefined;
   }
 
-  const targetSentence = joinCrossSelectionText(selections);
+  const nativeTargetSentence = joinCrossSelectionText(
+    selections,
+    (selection) => selection.nativeTargetSentence ?? selection.targetSentence,
+  );
+  const targetSentence = joinCrossSelectionText(selections, (selection) => selection.targetSentence);
   const normalizedSentence = normalizeSentence(targetSentence);
   const firstSelection = selections[0];
   const anchorSelection = selections[selections.length - 1];
@@ -1970,6 +1978,7 @@ function createCompositeCrossSelection(
     cloudDocumentId: cloudDocumentId ?? firstSelection.cloudDocumentId,
     localContextAfter: anchorSelection.localContextAfter,
     localContextBefore: firstSelection.localContextBefore,
+    nativeTargetSentence,
     normalizedSentence,
     pageHeight: anchorSelection.pageHeight,
     pageIndex: anchorSelection.pageIndex,
@@ -1985,6 +1994,9 @@ function createCompositeCrossSelection(
 
 function createSelectionRegion(selection: SentenceSelection): SelectionRegion {
   return {
+    mathpixConfidence: selection.mathpixConfidence,
+    mathpixOptionsHash: selection.mathpixOptionsHash,
+    nativeTargetSentence: selection.nativeTargetSentence,
     normalizedSentence: selection.normalizedSentence,
     pageHeight: selection.pageHeight,
     pageIndex: selection.pageIndex,
@@ -1993,12 +2005,16 @@ function createSelectionRegion(selection: SentenceSelection): SelectionRegion {
     selectedText: selection.selectedText,
     targetSentence: selection.targetSentence,
     textSpan: selection.textSpan,
+    textSource: selection.textSource,
   };
 }
 
-function joinCrossSelectionText(selections: SentenceSelection[]) {
+function joinCrossSelectionText(
+  selections: SentenceSelection[],
+  getText: (selection: SentenceSelection) => string | undefined,
+) {
   return selections
-    .map((selection) => selection.targetSentence.trim())
+    .map((selection) => getText(selection)?.trim() ?? "")
     .filter((text) => text.length > 0)
     .reduce((joinedText, nextText) => {
       if (joinedText.length === 0) {

@@ -20,6 +20,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   defaultModel: "deepseek-v4-flash",
   longContextEnabled: true,
   maxDraggedWords: PROJECT_CONFIG.selection.defaultMaxDraggedWords,
+  selectedTextOutputMode: "processed",
   sourceLang: DEFAULT_SOURCE_LANG,
   targetLang: DEFAULT_TARGET_LANG,
   textSelectionMode: "mathpix",
@@ -119,6 +120,10 @@ export function normalizeAppSettings(input: unknown): AppSettings {
         ? value.longContextEnabled
         : DEFAULT_APP_SETTINGS.longContextEnabled,
     maxDraggedWords,
+    selectedTextOutputMode:
+      value.selectedTextOutputMode === "native" || value.selectedTextOutputMode === "processed"
+        ? value.selectedTextOutputMode
+        : DEFAULT_APP_SETTINGS.selectedTextOutputMode,
     sourceLang,
     targetLang,
     textSelectionMode:

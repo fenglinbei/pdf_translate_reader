@@ -9,6 +9,7 @@ import {
   type NormalizedPageText,
   type SentenceRange,
 } from "./sentenceBoundary";
+import { cleanExtractedText } from "./textProcessing";
 
 export type PageTextIndex = {
   pageElement: HTMLElement;
@@ -327,7 +328,8 @@ function createTextSelectionFromRange({
 }): SentenceSelection | undefined {
   const safeStart = clamp(normalizedStart, 0, pageTextIndex.text.length);
   const safeEnd = clamp(normalizedEnd, safeStart, pageTextIndex.text.length);
-  const targetSentence = pageTextIndex.text.slice(safeStart, safeEnd).trim();
+  const nativeTargetSentence = pageTextIndex.text.slice(safeStart, safeEnd).trim();
+  const targetSentence = cleanExtractedText(nativeTargetSentence);
   const normalizedSentence = normalizeSentence(targetSentence);
 
   if (normalizedSentence.length === 0) {
@@ -340,17 +342,20 @@ function createTextSelectionFromRange({
   const contextBefore = firstContextSentence
     ? pageTextIndex.sentences
         .slice(Math.max(0, firstContextSentence.index - contextWindowSize), firstContextSentence.index)
-        .map((sentence) => sentence.normalized)
+        .map((sentence) => cleanExtractedText(sentence.normalized))
+        .filter(Boolean)
     : [];
   const contextAfter = lastContextSentence
     ? pageTextIndex.sentences
         .slice(lastContextSentence.index + 1, lastContextSentence.index + 1 + contextWindowSize)
-        .map((sentence) => sentence.normalized)
+        .map((sentence) => cleanExtractedText(sentence.normalized))
+        .filter(Boolean)
     : [];
 
   return {
     localContextAfter: contextAfter,
     localContextBefore: contextBefore,
+    nativeTargetSentence,
     normalizedSentence,
     pageIndex: pageTextIndex.pageIndex,
     pdfFingerprint,

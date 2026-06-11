@@ -6,6 +6,7 @@ import type {
   SentenceSelection,
 } from "../types/domain";
 import { normalizeSentence } from "../selection/sentenceBoundary";
+import { cleanExtractedText } from "../selection/textProcessing";
 import { joinMathpixLines } from "./mathpixNormalizer";
 import { MATHPIX_OPTIONS_HASH, MATHPIX_TEXT_SOURCE } from "./options";
 
@@ -40,7 +41,8 @@ export function resolveMathpixSelectionText({
     return selection;
   }
 
-  const targetSentence = joinMathpixLines(resolvedRegions.map((resolved) => resolved.text));
+  const nativeTargetSentence = joinMathpixLines(resolvedRegions.map((resolved) => resolved.text));
+  const targetSentence = cleanExtractedText(nativeTargetSentence);
   const normalizedSentence = normalizeSentence(targetSentence);
 
   if (!normalizedSentence) {
@@ -56,13 +58,17 @@ export function resolveMathpixSelectionText({
           return region;
         }
 
+        const nativeRegionSentence = resolved.text;
+        const targetRegionSentence = cleanExtractedText(nativeRegionSentence);
+
         return {
           ...region,
           mathpixConfidence: resolved.confidence,
           mathpixOptionsHash: MATHPIX_OPTIONS_HASH,
-          normalizedSentence: normalizeSentence(resolved.text),
-          selectedText: resolved.text,
-          targetSentence: resolved.text,
+          nativeTargetSentence: nativeRegionSentence,
+          normalizedSentence: normalizeSentence(targetRegionSentence),
+          selectedText: targetRegionSentence,
+          targetSentence: targetRegionSentence,
           textSource: MATHPIX_TEXT_SOURCE,
         };
       })
@@ -74,6 +80,7 @@ export function resolveMathpixSelectionText({
     localContextBefore: joinContextLists(resolvedRegions.map((resolved) => resolved.localContextBefore)),
     mathpixConfidence,
     mathpixOptionsHash: MATHPIX_OPTIONS_HASH,
+    nativeTargetSentence,
     normalizedSentence,
     regions: nextRegions,
     selectedText: targetSentence,
@@ -181,7 +188,7 @@ function getOverlapScore(
 function joinContextLists(contextLists: string[][]) {
   return contextLists
     .flatMap((context) => context)
-    .map((text) => text.trim())
+    .map((text) => cleanExtractedText(text))
     .filter(Boolean);
 }
 

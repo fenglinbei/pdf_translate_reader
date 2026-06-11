@@ -13,6 +13,12 @@ import type {
   TranslationStyleSettings,
 } from "../types/domain";
 import {
+  cleanExtractedText,
+  cleanOptionalExtractedText,
+  extractAbstractText,
+  extractTitleText,
+} from "../selection/textProcessing";
+import {
   DEFAULT_TRANSLATION_STYLE,
   getEffectiveTranslationStyle,
   normalizeTranslationStyle,
@@ -149,13 +155,15 @@ function inferPaperContext({
   metadataTitle,
   pageTexts,
 }: InferPaperContextInput): PaperContext {
-  const firstPagesText = normalizeText(pageTexts.join(" "));
+  const firstPagesRawText = pageTexts.join(" ");
+  const firstPagesText = normalizeText(firstPagesRawText);
   const metadataTitleCandidate = cleanOptionalText(metadataTitle);
   const inferredTitle =
     metadataTitleCandidate ??
+    extractTitleText(firstPagesRawText, { fallbackToInput: false }) ??
     inferTitleFromText(firstPagesText) ??
     cleanFileNameTitle(fileName);
-  const inferredAbstract = extractAbstract(firstPagesText);
+  const inferredAbstract = extractAbstract(firstPagesRawText, firstPagesText);
 
   return normalizePaperContext({
     abstract: inferredAbstract,
@@ -268,7 +276,18 @@ function inferTitleFromText(text: string) {
   return cleanOptionalText(trimTrailingPunctuation(words));
 }
 
-function extractAbstract(text: string) {
+function extractAbstract(rawText: string, cleanedText = normalizeText(rawText)) {
+  const explicitAbstract = extractAbstractText(rawText, { fallbackToInput: false });
+
+  if (explicitAbstract) {
+    return cleanOptionalText(
+      trimToSentenceBoundary(
+        explicitAbstract.slice(0, PROJECT_CONFIG.paperContext.maxAbstractCharacters),
+      ),
+    );
+  }
+
+  const text = cleanedText;
   const match = /\babstract\b\s*[:.-]?\s*/i.exec(text);
 
   if (!match) {
@@ -317,13 +336,11 @@ function cleanFileNameTitle(fileName?: string) {
 }
 
 function cleanOptionalText(value?: string) {
-  const normalized = normalizeText(value ?? "");
-
-  return normalized.length > 0 ? normalized : undefined;
+  return cleanOptionalExtractedText(value);
 }
 
 function normalizeText(value: string) {
-  return value.replace(/\s+/g, " ").trim();
+  return cleanExtractedText(value);
 }
 
 function trimTrailingPunctuation(value: string) {
