@@ -50,6 +50,7 @@ export type TranslationAnnotationInput = {
 type TranslationPopoverProps = {
   annotationColor?: AnnotationColor;
   annotationNote?: string;
+  autoTranslate?: boolean;
   isCardPinned?: boolean;
   isEmphasized?: boolean;
   isFavorited?: boolean;
@@ -125,6 +126,7 @@ const ANNOTATION_COLORS: AnnotationColor[] = ["yellow", "blue", "green", "red"];
 export function TranslationPopover({
   annotationColor,
   annotationNote,
+  autoTranslate = true,
   isCardPinned = false,
   isEmphasized = false,
   isFavorited = false,
@@ -295,7 +297,7 @@ export function TranslationPopover({
   );
 
   const startTranslation = useCallback(
-    (options: { bypassCache?: boolean } = {}) => {
+    (options: { bypassCache?: boolean; cacheOnly?: boolean } = {}) => {
       abortControllerRef.current?.abort();
 
       const abortController = new AbortController();
@@ -348,6 +350,14 @@ export function TranslationPopover({
             }
             return;
           }
+        }
+
+        if (options.cacheOnly) {
+          setStatus("idle");
+          setErrorMessage(undefined);
+          setTranslation("");
+          setTranslationSource(undefined);
+          return;
         }
 
         let streamedTranslation = "";
@@ -485,12 +495,12 @@ export function TranslationPopover({
   }, [isFavorited, selectionKey]);
 
   useEffect(() => {
-    startTranslation();
+    startTranslation({ cacheOnly: !autoTranslate });
 
     return () => {
       abortControllerRef.current?.abort();
     };
-  }, [selectionKey, startTranslation]);
+  }, [autoTranslate, selectionKey, startTranslation]);
 
   useEffect(() => {
     if (isAnnotationEditorOpen) {
@@ -1032,6 +1042,8 @@ export function TranslationPopover({
               errorMessage
             ) : translation ? (
               <RichMathText scale={contentScale} text={translation} />
+            ) : status === "idle" && !autoTranslate ? (
+              t("translation.noCachedTranslation")
             ) : (
               t("translation.translating")
             )}

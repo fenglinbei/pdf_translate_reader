@@ -669,6 +669,7 @@ export function PageOverlayLayer({
                   <TranslationPopover
                     annotationColor={cardPin?.color}
                     annotationNote={cardPin?.note}
+                    autoTranslate={false}
                     isCardPinned={true}
                     isEmphasized={card.key === emphasizedPinnedCardKey}
                     isFavorited={Boolean(cardPin)}
