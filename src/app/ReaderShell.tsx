@@ -431,6 +431,8 @@ function getQaIndexStatusLabelKey(status: QaIndexJob["status"]): MessageKey {
       return "ask.indexStatus.referenceMatching";
     case "ready":
       return "ask.indexStatus.ready";
+    case "ready_degraded":
+      return "ask.indexStatus.readyDegraded";
     case "error":
       return "ask.indexStatus.error";
     default:
@@ -2125,11 +2127,16 @@ export function ReaderShell() {
                 <LoaderCircle aria-hidden="true" className="ask-spin-icon" size={17} strokeWidth={2.2} />
               ) : qaIndexJob?.status === "ready" ? (
                 <Check aria-hidden="true" size={17} strokeWidth={2.4} />
+              ) : qaIndexJob?.status === "ready_degraded" ? (
+                <CircleAlert aria-hidden="true" size={17} strokeWidth={2.2} />
               ) : qaIndexJob?.status === "error" ? (
                 <CircleAlert aria-hidden="true" size={17} strokeWidth={2.2} />
               ) : null}
             </div>
             {qaIndexProgress ? <div className="ask-detail">{qaIndexProgress}</div> : null}
+            {qaIndexJob?.status === "ready_degraded" ? (
+              <div className="ask-detail">{t("ask.indexReadyDegradedDetail")}</div>
+            ) : null}
             {qaIndexJob?.errorMessage ? <div className="ask-detail ask-detail--error">{qaIndexJob.errorMessage}</div> : null}
             {qaIndexError ? <div className="ask-detail ask-detail--error">{qaIndexError}</div> : null}
             {!currentEntry?.cloudDocumentId ? (
@@ -2149,10 +2156,11 @@ export function ReaderShell() {
               </button>
               <button
                 className="ask-action-button ask-action-button--secondary"
-                disabled={!canCreateIndex}
+                disabled
                 onClick={() => {
                   void handleCreateQaIndexJob("pdfjs");
                 }}
+                title={t("ask.pdfTextIndexUnavailable")}
                 type="button"
               >
                 <MessageSquareText aria-hidden="true" size={16} strokeWidth={2} />

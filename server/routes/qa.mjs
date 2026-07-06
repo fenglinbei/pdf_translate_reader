@@ -6,7 +6,7 @@ import {
 import { SupabaseServiceError } from "../supabase/service.mjs";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
-const QA_INDEX_SOURCES = new Set(["mathpix-v3-pdf", "pdfjs"]);
+const QA_INDEX_SOURCES = new Set(["mathpix-v3-pdf"]);
 
 export async function handleQaRoute(request, response, url, user) {
   try {
@@ -74,11 +74,21 @@ async function handleCreateIndexJob(request, response, user) {
   const userDocumentId = normalizeUuidLike(body?.userDocumentId);
   const source = typeof body?.source === "string" ? body.source : undefined;
 
-  if (!userDocumentId || !QA_INDEX_SOURCES.has(source)) {
+  if (!userDocumentId || !source) {
     writeJson(response, 400, {
       error: {
         code: "invalid_qa_index_job_request",
         message: "userDocumentId and source are required.",
+      },
+    });
+    return;
+  }
+
+  if (!QA_INDEX_SOURCES.has(source)) {
+    writeJson(response, 400, {
+      error: {
+        code: "qa_index_source_not_supported",
+        message: "PDF text indexing is not supported yet. Start MathPix parsing first, then build the MathPix index.",
       },
     });
     return;
@@ -135,4 +145,3 @@ function serializeError(error) {
 function getErrorStatusCode(error) {
   return error instanceof SupabaseServiceError ? error.statusCode : 500;
 }
-

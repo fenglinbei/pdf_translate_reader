@@ -6,6 +6,7 @@ import { handleHealth } from "./routes/health.mjs";
 import { handleMathpixRoute } from "./routes/mathpix.mjs";
 import { handleQaRoute } from "./routes/qa.mjs";
 import { handleTranslateStream } from "./routes/translate.mjs";
+import { recoverQaIndexJobs } from "./qa/indexJobRunner.mjs";
 import { requireAuthenticatedUser, SupabaseAuthError } from "./supabase/auth.mjs";
 
 const processEnvOverrides = { ...process.env };
@@ -106,6 +107,12 @@ const server = createServer(async (request, response) => {
 
 server.listen(port, () => {
   console.log(`API proxy listening on http://localhost:${port}`);
+  recoverQaIndexJobs().catch((error) => {
+    console.warn(
+      "QA index job recovery skipped:",
+      error instanceof Error ? error.message : error,
+    );
+  });
 });
 
 function applyCorsHeaders(request, response) {

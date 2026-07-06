@@ -4,6 +4,12 @@ export type ApiHealth = {
   deepseek: {
     apiKeyConfigured: boolean;
   };
+  embedding?: {
+    configured: boolean;
+    dimensions: number;
+    model: string;
+    provider: string;
+  };
   supabase: {
     configured: boolean;
   };

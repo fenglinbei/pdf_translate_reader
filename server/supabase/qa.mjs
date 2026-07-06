@@ -3,6 +3,7 @@ import {
   QA_REFERENCE_MATCHER_VERSION,
   QA_RETRIEVER_VERSION,
 } from "../qa/config.mjs";
+import { getEmbeddingRuntimeConfig } from "../embedding/config.mjs";
 import {
   QA_INDEX_ACTIVE_STATUSES,
   enqueueQaIndexJob,
@@ -27,6 +28,8 @@ const QA_INDEX_JOB_COLUMNS = [
   "content_sha256",
   "created_at",
   "deleted_at",
+  "embedding_dimensions",
+  "embedding_model",
   "error_message",
   "finished_at",
   "id",
@@ -75,9 +78,12 @@ export async function createOrUpdateIndexJob({ source, userDocumentId, userId })
   }
 
   const now = new Date().toISOString();
+  const embedding = getEmbeddingRuntimeConfig();
   const jobInsert = {
     chunker_version: QA_CHUNKER_VERSION,
     content_sha256: document.content_sha256,
+    embedding_dimensions: embedding.configured ? embedding.dimensions : null,
+    embedding_model: embedding.configured ? embedding.model : "none",
     pdf_fingerprint: document.pdf_fingerprint,
     progress_percent: 0,
     reference_matcher_version: QA_REFERENCE_MATCHER_VERSION,
@@ -89,6 +95,7 @@ export async function createOrUpdateIndexJob({ source, userDocumentId, userId })
     user_id: userId,
     payload: {
       displayFileName: document.display_file_name,
+      embeddingProvider: embedding.provider,
       source,
     },
   };
@@ -174,6 +181,10 @@ function rowToQaIndexJob(row) {
     contentSha256: row.content_sha256,
     createdAt: parseIsoTime(row.created_at) ?? Date.now(),
     deletedAt: parseIsoTime(row.deleted_at),
+    embeddingDimensions: typeof row.embedding_dimensions === "number"
+      ? row.embedding_dimensions
+      : undefined,
+    embeddingModel: row.embedding_model ?? "none",
     errorMessage: row.error_message ?? undefined,
     finishedAt: parseIsoTime(row.finished_at),
     id: row.id,
@@ -210,4 +221,3 @@ function parseIsoTime(value) {
 
   return Number.isFinite(parsed) ? parsed : undefined;
 }
-

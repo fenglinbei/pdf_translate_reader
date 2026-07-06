@@ -305,7 +305,7 @@ create table if not exists public.user_paper_chunks (
   chunker_version text not null,
   embedding_model text,
   embedding_dimensions integer,
-  embedding vector,
+  embedding vector(1024),
   fts tsvector generated always as (
     to_tsvector('english', coalesce(title, '') || ' ' || coalesce(array_to_string(section_path, ' '), '') || ' ' || text)
   ) stored,
@@ -325,9 +325,15 @@ create index if not exists user_paper_chunks_user_document_idx
 
 create index if not exists user_paper_chunks_fts_idx
   on public.user_paper_chunks using gin (fts);
+
+create index if not exists user_paper_chunks_embedding_idx
+  on public.user_paper_chunks using hnsw (embedding vector_cosine_ops)
+  where deleted_at is null
+    and embedding_model = 'voyage-4-large'
+    and embedding_dimensions = 1024;
 ```
 
-Embedding 模型暂不锚定。正式选择模型后，必须补充对应维度的 HNSW/IVFFlat 索引迁移，并固定 `embedding_model + embedding_dimensions`。不允许同一索引混用不同维度的向量。模型未确定前可以只启用 full-text + metadata boost，或临时保存 embedding 但不创建生产向量索引。
+Embedding 默认锚定为 Voyage `voyage-4-large`，维度固定为 1024。后续如果切换模型或维度，必须新增迁移、重建 embedding，并固定新的 `embedding_model + embedding_dimensions`；不允许同一生产向量索引混用不同维度的向量。
 
 #### user_paper_references
 
@@ -591,21 +597,22 @@ export async function embedTexts({ texts, model, signal }) {
 
 推荐支持：
 
-- 当前阶段：embedding 模型暂不确定，不在方案中锚定具体 provider、模型名或维度。
-- 默认落地顺序：先保留 full-text + metadata boost 降级路径，再在 embedding 模型确定后启用 vector retrieval。
+- 当前阶段默认使用 Voyage 托管 API：`voyage-4-large`。
+- 默认向量维度固定为 1024，对应 Supabase `pgvector` 的 `vector(1024)`。
+- 默认落地顺序：先保留 full-text + metadata boost 降级路径，再启用 `voyage-4-large` vector retrieval；provider 不可用时进入 `ready_degraded`。
 - 可选：本地 embedding 服务，只适合后续有独立算力或强隐私诉求的私有部署；公网 VPS 不推荐自托管 embedding，当前服务器可在 `qa-worker` 中承载这类能力。
 
 环境变量：
 
 ```bash
-EMBEDDING_PROVIDER=
-EMBEDDING_API_KEY=
-EMBEDDING_MODEL=
-EMBEDDING_DIMENSIONS=
+VOYAGE_API_KEY=
+EMBEDDING_PROVIDER=voyage
+EMBEDDING_MODEL=voyage-4-large
+EMBEDDING_DIMENSIONS=1024
 EMBEDDING_BATCH_SIZE=64
 ```
 
-索引写入必须记录 `embedding_model` 和 `embedding_dimensions`。当模型变化时，旧 chunk 不可混用，必须重建或迁移到新 embedding 列/索引。
+索引写入必须记录 `embedding_model` 和 `embedding_dimensions`。当模型或维度变化时，旧 chunk 不可混用，必须重建或迁移到新 embedding 列/索引。第一期不要在同一张 `user_paper_chunks.embedding` 中混用 `voyage-4-large` 与其他维度的 embedding。
 
 ## 5. 检索与重排
 
@@ -680,11 +687,21 @@ metadata boost:  0.20
 
 新增 `server/qa/reranker.mjs`：
 
-- 第一版可以用轻量 cross-encoder provider 或 LLM 打分。
+- 第一版默认使用 Voyage 托管 reranker：`rerank-2.5`。
+- `rerank-2.5` 只在 query-time 对粗召回候选重排，不参与离线索引。
 - 没有 rerank provider 时，使用 hybrid score 降级。`qa-worker` 可以承载 rerank，但 rerank 必须是可选能力，不应阻塞 QA 主流程。
-- 从 top 50 重排到 top 8-15。
+- 从 top 50-80 重排到 top 8-15。
 
 Rerank 输入只包含短文本和元数据，避免把整篇论文塞进模型。
+
+默认配置：
+
+```bash
+QA_RERANK_PROVIDER=voyage
+QA_RERANK_MODEL=rerank-2.5
+QA_RERANK_CANDIDATE_LIMIT=80
+QA_RERANK_TOP_K=12
+```
 
 ### 5.5 Evidence pack
 
@@ -1402,13 +1419,14 @@ server/qa/tools/
 
 ### 12.1 Embedding provider
 
-Embedding 模型暂不确定。上线 full-text + metadata boost 和 agentic 检索流程时，可以先不启用向量检索；在正式启用 vector retrieval 前，必须确定 provider、模型名和向量维度。`pgvector` 生产索引维度一旦上线，不应频繁改动。
+Embedding 默认 provider 已确定为 Voyage API，模型为 `voyage-4-large`，向量维度为 1024。上线 full-text + metadata boost 和 agentic 检索流程时，仍要保留无 embedding 的降级路径；但正式 vector retrieval 的生产 schema 按 `vector(1024)` 设计。
 
 建议决策：
 
-- 如果优先易部署，后续选择稳定云端 embedding。
-- 如果优先隐私和低成本，可以在当前服务器的 `qa-worker` 中准备本地 embedding 服务；公网 VPS 不应承担这类重计算。
-- 模型未确定期间，索引 job 可以进入 `ready_degraded`，使用 full-text + metadata boost，并在 UI 中明确显示语义检索不可用。
+- 默认易部署路线：`voyage-4-large` 托管 API。
+- 如果后续优先隐私和低成本，可以在当前服务器的 `qa-worker` 中准备本地 embedding 服务；公网 VPS 不应承担这类重计算。
+- Voyage provider 不可用或 API key 未配置时，索引 job 可以进入 `ready_degraded`，使用 full-text + metadata boost，并在 UI 中明确显示语义检索不可用。
+- 如果将来从 `voyage-4-large` 切换到其他 embedding 模型，必须用新的 `embedding_model + embedding_dimensions` 创建新索引版本并重建 chunk embedding。
 
 ### 12.2 索引成本
 
@@ -1725,14 +1743,18 @@ QA_AGENT_STOP_ON_NO_NEW_EVIDENCE_ROUNDS=2
 QA_DEFAULT_CHAT_MODEL=deepseek-v4-pro
 QA_AVAILABLE_CHAT_MODELS=deepseek-v4-pro,glm-5.2
 
-EMBEDDING_PROVIDER=
-EMBEDDING_MODEL=
-EMBEDDING_DIMENSIONS=
+VOYAGE_API_KEY=
+EMBEDDING_PROVIDER=voyage
+EMBEDDING_MODEL=voyage-4-large
+EMBEDDING_DIMENSIONS=1024
 EMBEDDING_BATCH_SIZE=8
 EMBEDDING_TIMEOUT_MS=60000
 
-QA_RERANK_PROVIDER=none-or-local-or-cloud
-QA_VECTOR_PROVIDER=supabase-pgvector-or-local
+QA_RERANK_PROVIDER=voyage
+QA_RERANK_MODEL=rerank-2.5
+QA_RERANK_CANDIDATE_LIMIT=80
+QA_RERANK_TOP_K=12
+QA_VECTOR_PROVIDER=supabase-pgvector
 ```
 
 ### 13.6 分阶段部署路线

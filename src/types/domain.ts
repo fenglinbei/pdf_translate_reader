@@ -266,6 +266,7 @@ export type QaIndexJobStatus =
   | "embedding"
   | "reference-matching"
   | "ready"
+  | "ready_degraded"
   | "error";
 export type QaCitationConfidence = "verified" | "weak" | "rejected";
 export type QaMessageStatus = "streaming" | "success" | "error" | "aborted";
@@ -375,6 +376,8 @@ export type QaIndexJob = {
   source: QaIndexSource;
   status: QaIndexJobStatus;
   chunkerVersion: string;
+  embeddingModel: string;
+  embeddingDimensions?: number;
   referenceMatcherVersion: string;
   retrieverVersion: string;
   progressPercent?: number;

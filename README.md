@@ -141,9 +141,22 @@ The browser uses `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for login and
 Storage access. The Node API proxy reads the same values from `.env.local`, or
 `SUPABASE_URL` and `SUPABASE_ANON_KEY` if those are set by the host.
 
-Paper QA Step 1-3 uses the existing Supabase settings and
-`SUPABASE_SERVICE_ROLE_KEY` for index job control. Embedding provider variables
-are intentionally deferred until the embedding provider is selected.
+Paper QA Milestone A uses the existing Supabase settings,
+`SUPABASE_SERVICE_ROLE_KEY` for index job control, and Voyage embeddings for the
+semantic index:
+
+```bash
+VOYAGE_API_KEY=your_voyage_api_key
+EMBEDDING_PROVIDER=voyage
+EMBEDDING_MODEL=voyage-4-large
+EMBEDDING_DIMENSIONS=1024
+EMBEDDING_BATCH_SIZE=8
+EMBEDDING_TIMEOUT_MS=60000
+```
+
+If `VOYAGE_API_KEY` is missing, QA indexing still writes text chunks and marks
+the job `ready_degraded`; semantic vector search is unavailable until the index
+is rebuilt with embeddings.
 
 ### Invite code signup hook
 

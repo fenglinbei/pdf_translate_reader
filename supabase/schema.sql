@@ -1,4 +1,6 @@
 create extension if not exists pgcrypto;
+create extension if not exists pg_trgm;
+create extension if not exists vector;
 
 create table if not exists public.signup_email_allowlist (
   email text primary key check (email ~ '^[^@[:space:]]+@[^@[:space:]]+[.][^@[:space:]]+$'),
@@ -748,6 +750,9 @@ create table if not exists public.user_paper_chunks (
   source text not null check (source in ('mathpix-v3-pdf', 'pdfjs')),
   token_count integer not null default 0 check (token_count >= 0),
   chunker_version text not null,
+  embedding_model text,
+  embedding_dimensions integer,
+  embedding vector(1024),
   fts tsvector generated always as (
     to_tsvector('english', coalesce(title, '') || ' ' || coalesce(array_to_string(section_path, ' '), '') || ' ' || text)
   ) stored,
@@ -767,6 +772,17 @@ create index if not exists user_paper_chunks_user_document_idx
 create index if not exists user_paper_chunks_fts_idx
   on public.user_paper_chunks using gin (fts)
   where deleted_at is null;
+
+alter table public.user_paper_chunks
+  add column if not exists embedding_model text,
+  add column if not exists embedding_dimensions integer,
+  add column if not exists embedding vector(1024);
+
+create index if not exists user_paper_chunks_embedding_idx
+  on public.user_paper_chunks using hnsw (embedding vector_cosine_ops)
+  where deleted_at is null
+    and embedding_model = 'voyage-4-large'
+    and embedding_dimensions = 1024;
 
 alter table public.user_paper_chunks enable row level security;
 
@@ -985,9 +1001,11 @@ create table if not exists public.user_qa_index_jobs (
   content_sha256 text not null check (content_sha256 ~ '^sha256-[0-9a-f]{64}$'),
   source text not null check (source in ('mathpix-v3-pdf', 'pdfjs')),
   status text not null check (
-    status in ('pending', 'extracting', 'chunking', 'embedding', 'reference-matching', 'ready', 'error')
+    status in ('pending', 'extracting', 'chunking', 'embedding', 'reference-matching', 'ready', 'ready_degraded', 'error')
   ),
   chunker_version text not null,
+  embedding_model text not null default 'none',
+  embedding_dimensions integer,
   reference_matcher_version text not null,
   retriever_version text not null,
   progress_percent double precision,
@@ -1008,6 +1026,17 @@ create unique index if not exists user_qa_index_jobs_active_document_key
 create index if not exists user_qa_index_jobs_user_document_idx
   on public.user_qa_index_jobs (user_id, user_document_id, created_at desc)
   where deleted_at is null;
+
+alter table public.user_qa_index_jobs
+  add column if not exists embedding_model text not null default 'none',
+  add column if not exists embedding_dimensions integer;
+
+alter table public.user_qa_index_jobs
+  drop constraint if exists user_qa_index_jobs_status_check;
+
+alter table public.user_qa_index_jobs
+  add constraint user_qa_index_jobs_status_check
+  check (status in ('pending', 'extracting', 'chunking', 'embedding', 'reference-matching', 'ready', 'ready_degraded', 'error'));
 
 alter table public.user_qa_index_jobs enable row level security;
 
