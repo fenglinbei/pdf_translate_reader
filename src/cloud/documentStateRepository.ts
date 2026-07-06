@@ -7,6 +7,7 @@ import type {
 } from "../types/domain";
 import type { StoredPinnedTranslationCard } from "../translation/floatingCardTypes";
 import { deleteCloudMathpixCacheByDocument } from "../mathpix/mathpixCloudRepository";
+import { deleteCloudQaStateByDocument } from "./qaCloudRepository";
 import { getEffectiveTranslationStyle } from "../translation/translationStyle";
 import { requireCurrentUserId } from "./currentUser";
 
@@ -292,6 +293,7 @@ export async function deleteCloudDocumentState(cloudDocumentId: string | undefin
     deleteCloudPaperContext(cloudDocumentId),
     deleteAllCloudPinnedTranslationCardsByDocument(cloudDocumentId),
     deleteCloudMathpixCacheByDocument(cloudDocumentId),
+    deleteCloudQaStateByDocument(cloudDocumentId),
   ]);
 }
 

@@ -4,6 +4,7 @@ import { writeJson } from "./http/json.mjs";
 import { handleInviteTicket } from "./routes/auth.mjs";
 import { handleHealth } from "./routes/health.mjs";
 import { handleMathpixRoute } from "./routes/mathpix.mjs";
+import { handleQaRoute } from "./routes/qa.mjs";
 import { handleTranslateStream } from "./routes/translate.mjs";
 import { requireAuthenticatedUser, SupabaseAuthError } from "./supabase/auth.mjs";
 
@@ -71,6 +72,27 @@ const server = createServer(async (request, response) => {
     }
 
     await handleMathpixRoute(request, response, url);
+    return;
+  }
+
+  if (url.pathname.startsWith("/api/qa/")) {
+    let user;
+
+    try {
+      user = await requireAuthenticatedUser(request);
+    } catch (error) {
+      const statusCode = error instanceof SupabaseAuthError ? error.statusCode : 500;
+
+      writeJson(response, statusCode, {
+        error: {
+          code: error instanceof SupabaseAuthError ? error.code : "auth_error",
+          message: error instanceof Error ? error.message : "Authentication failed.",
+        },
+      });
+      return;
+    }
+
+    await handleQaRoute(request, response, url, user);
     return;
   }
 

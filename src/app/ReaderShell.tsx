@@ -11,11 +11,14 @@ import {
   Languages,
   LoaderCircle,
   LogOut,
+  MessageSquareText,
   MousePointer2,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  Play,
+  RefreshCw,
   Trash2,
   X,
 } from "lucide-react";
@@ -56,6 +59,7 @@ import { PdfImportDropzone } from "../pdf/PdfImportDropzone";
 import { PdfLibrary } from "../pdf/PdfLibrary";
 import { createPdfFingerprint } from "../pdf/pdfFingerprint";
 import { PdfViewer, type PinLocateRequest } from "../pdf/PdfViewer";
+import { createQaIndexJob, getQaIndexJob } from "../qa/qaClient";
 import {
   deletePin,
   deletePinsByPdf,
@@ -86,6 +90,8 @@ import type {
   MathpixParsedPage,
   PaperContextRecord,
   PdfLibraryEntry,
+  QaIndexJob,
+  QaIndexSource,
   SelectionMode,
   SentenceSelection,
   TranslationPin,
@@ -114,7 +120,11 @@ import { getStorageErrorMessage } from "../translation/errors";
 import { TRANSLATION_PROMPT_VERSION } from "../translation/defaults";
 import { getEffectiveTranslationStyle } from "../translation/translationStyle";
 import { runMathpixParsePipeline } from "../mathpix/mathpixPipeline";
-import { getMathpixDocumentRecord, mapPagesByIndex } from "../mathpix/mathpixRepository";
+import {
+  getMathpixDocumentRecord,
+  listMathpixParsedPages,
+  mapPagesByIndex,
+} from "../mathpix/mathpixRepository";
 import { MATHPIX_OPTIONS_HASH } from "../mathpix/options";
 import { resolveMathpixSelectionText } from "../mathpix/mathpixSelectionResolver";
 import {
@@ -129,7 +139,8 @@ type PaneResizeState = {
   startWidth: number;
   startX: number;
 };
-type MobilePanel = "library" | "pins" | null;
+type RightPaneTab = "annotations" | "ask";
+type MobilePanel = "library" | "pins" | "ask" | null;
 type VisibleCloudSyncStatus =
   | Exclude<CloudSyncStatus, "idle">
   | "checking"
@@ -154,7 +165,6 @@ const PINS_PANE_DEFAULT_WIDTH = 280;
 const PINS_PANE_MAX_WIDTH = 460;
 const PINS_PANE_MIN_WIDTH = 300;
 const TRANSLATION_CARD_BASE_Z_INDEX = 20;
-const MATHPIX_BACKGROUND_PARSE_DELAY_MS = 2000;
 
 function getHighestTranslationCardZIndex(
   cards: PinnedTranslationCard[],
@@ -400,6 +410,34 @@ function createMathpixStepStates(
   });
 }
 
+function isActiveQaIndexJob(job: QaIndexJob | undefined) {
+  return Boolean(
+    job &&
+    ["pending", "extracting", "chunking", "embedding", "reference-matching"].includes(job.status),
+  );
+}
+
+function getQaIndexStatusLabelKey(status: QaIndexJob["status"]): MessageKey {
+  switch (status) {
+    case "pending":
+      return "ask.indexStatus.pending";
+    case "extracting":
+      return "ask.indexStatus.extracting";
+    case "chunking":
+      return "ask.indexStatus.chunking";
+    case "embedding":
+      return "ask.indexStatus.embedding";
+    case "reference-matching":
+      return "ask.indexStatus.referenceMatching";
+    case "ready":
+      return "ask.indexStatus.ready";
+    case "error":
+      return "ask.indexStatus.error";
+    default:
+      return "ask.indexNotBuilt";
+  }
+}
+
 export function ReaderShell() {
   const auth = useAuth();
   const readerSessionUserId = auth.user?.id;
@@ -421,6 +459,7 @@ export function ReaderShell() {
   const [locateRequest, setLocateRequest] = useState<PinLocateRequest>();
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const [pinsPaneWidth, setPinsPaneWidth] = useState(PINS_PANE_DEFAULT_WIDTH);
+  const [rightPaneTab, setRightPaneTab] = useState<RightPaneTab>("annotations");
   const [isPaneResizing, setIsPaneResizing] = useState(false);
   const [paperContext, setPaperContext] = useState<PaperContextRecord>();
   const [mathpixParsedPages, setMathpixParsedPages] = useState<Map<number, MathpixParsedPage>>(
@@ -446,11 +485,17 @@ export function ReaderShell() {
   const [mathpixPipelineState, setMathpixPipelineState] =
     useState<MathpixPipelineState>("idle");
   const [mathpixRuntimeError, setMathpixRuntimeError] = useState<string>();
+  const [qaIndexError, setQaIndexError] = useState<string>();
+  const [qaIndexJob, setQaIndexJob] = useState<QaIndexJob>();
+  const [isCreatingQaIndexJob, setIsCreatingQaIndexJob] = useState(false);
+  const [isLoadingQaIndexJob, setIsLoadingQaIndexJob] = useState(false);
   const [readerSessionHydratedUserId, setReaderSessionHydratedUserId] = useState<string>();
+  const activeCloudDocumentIdRef = useRef<string>();
   const activeReaderSessionUserIdRef = useRef<string>();
   const activeFingerprintRef = useRef<string>();
   const autoRestoreUserIdRef = useRef<string>();
   const locateRequestIdRef = useRef(0);
+  const mathpixAbortControllerRef = useRef<AbortController>();
   const paneResizeStateRef = useRef<PaneResizeState>();
   const pinPanelFocusRequestIdRef = useRef(0);
   const pinsRef = useRef<TranslationPin[]>([]);
@@ -490,6 +535,17 @@ export function ReaderShell() {
   useEffect(() => {
     activeFingerprintRef.current = activeFingerprint;
   }, [activeFingerprint]);
+
+  useEffect(() => {
+    return () => {
+      mathpixAbortControllerRef.current?.abort();
+      mathpixAbortControllerRef.current = undefined;
+    };
+  }, [activeFingerprint]);
+
+  useEffect(() => {
+    activeCloudDocumentIdRef.current = currentEntry?.cloudDocumentId;
+  }, [currentEntry?.cloudDocumentId]);
 
   const applyPinnedTranslationCards = useCallback((nextCards: PinnedTranslationCard[]) => {
     pinnedTranslationCardsRef.current = nextCards;
@@ -780,6 +836,14 @@ export function ReaderShell() {
         })
         .catch(() => undefined);
 
+      void listMathpixParsedPages(activeFingerprint)
+        .then((pages) => {
+          if (!cancelled && currentEntry.fingerprint === activeFingerprintRef.current) {
+            applyMathpixParsedPages(pages);
+          }
+        })
+        .catch(() => undefined);
+
       void ensurePaperContextForEntry(currentEntry)
         .then((record) => {
           if (!cancelled) {
@@ -838,103 +902,181 @@ export function ReaderShell() {
     replacePinnedTranslationCards,
   ]);
 
-  useEffect(() => {
-    if (!currentEntry) {
-      return undefined;
+  const handleStartMathpixParse = useCallback(() => {
+    if (!currentEntry || mathpixPipelineState === "running") {
+      return;
     }
 
     const abortController = new AbortController();
-    setMathpixPipelineState("scheduled");
+    mathpixAbortControllerRef.current?.abort();
+    mathpixAbortControllerRef.current = abortController;
+    setMathpixPipelineState("running");
     setMathpixRuntimeError(undefined);
-    const parseTimer = window.setTimeout(() => {
-      if (abortController.signal.aborted || currentEntry.fingerprint !== activeFingerprintRef.current) {
+
+    void runMathpixParsePipeline({
+      entry: currentEntry,
+      onPages: (pages) => {
+        if (abortController.signal.aborted || currentEntry.fingerprint !== activeFingerprintRef.current) {
+          return;
+        }
+
+        applyMathpixParsedPages(pages);
+
+        const pageTexts = pages
+          .slice(0, PROJECT_CONFIG.paperContext.maxScanPages)
+          .map((page) => page.pageText)
+          .filter((text) => text.trim().length > 0);
+
+        if (pageTexts.length > 0) {
+          void updatePaperContextFromPageTexts({
+            fileName: currentEntry.fileName,
+            metadataTitle: currentEntry.pdfMetadata?.title,
+            pageTexts,
+            cloudDocumentId: currentEntry.cloudDocumentId,
+            pdfFingerprint: currentEntry.fingerprint,
+          })
+            .then((record) => {
+              setPaperContext((currentRecord) =>
+                currentRecord?.pdfFingerprint === record.pdfFingerprint &&
+                currentRecord.contextHash === record.contextHash
+                  ? currentRecord
+                  : record,
+              );
+            })
+            .catch(() => undefined);
+        }
+      },
+      onRecord: (record) => {
+        if (abortController.signal.aborted || record.pdfFingerprint !== activeFingerprintRef.current) {
+          return;
+        }
+
+        setMathpixRuntimeError(undefined);
+        setMathpixRecord(record);
+      },
+      signal: abortController.signal,
+    })
+      .catch((error) => {
+        if (isAbortError(error)) {
+          return;
+        }
+
+        if (!abortController.signal.aborted && currentEntry.fingerprint === activeFingerprintRef.current) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "MathPix parsing failed.";
+
+          setMathpixRuntimeError(message);
+          setStatusMessage(`MathPix parsing failed. Using PDF text fallback. ${message}`);
+        }
+      })
+      .finally(() => {
+        if (mathpixAbortControllerRef.current === abortController) {
+          mathpixAbortControllerRef.current = undefined;
+        }
+
+        if (currentEntry.fingerprint === activeFingerprintRef.current) {
+          setMathpixPipelineState("idle");
+        }
+      });
+  }, [
+    applyMathpixParsedPages,
+    currentEntry,
+    mathpixPipelineState,
+  ]);
+
+  const refreshQaIndexJob = useCallback(
+    async (options: { showLoading?: boolean } = {}) => {
+      if (!currentEntry?.cloudDocumentId) {
+        setQaIndexJob(undefined);
+        setQaIndexError(undefined);
+        setIsLoadingQaIndexJob(false);
         return;
       }
 
-      setMathpixPipelineState("running");
-      void runMathpixParsePipeline({
-        entry: currentEntry,
-        onPages: (pages) => {
-          if (abortController.signal.aborted || currentEntry.fingerprint !== activeFingerprintRef.current) {
-            return;
-          }
+      const cloudDocumentId = currentEntry.cloudDocumentId;
 
-          applyMathpixParsedPages(pages);
+      if (options.showLoading) {
+        setIsLoadingQaIndexJob(true);
+      }
 
-          const pageTexts = pages
-            .slice(0, PROJECT_CONFIG.paperContext.maxScanPages)
-            .map((page) => page.pageText)
-            .filter((text) => text.trim().length > 0);
+      try {
+        const job = await getQaIndexJob(cloudDocumentId);
 
-          if (pageTexts.length > 0) {
-            void updatePaperContextFromPageTexts({
-              fileName: currentEntry.fileName,
-              metadataTitle: currentEntry.pdfMetadata?.title,
-              pageTexts,
-              cloudDocumentId: currentEntry.cloudDocumentId,
-              pdfFingerprint: currentEntry.fingerprint,
-            })
-              .then((record) => {
-                setPaperContext((currentRecord) =>
-                  currentRecord?.pdfFingerprint === record.pdfFingerprint &&
-                  currentRecord.contextHash === record.contextHash
-                    ? currentRecord
-                    : record,
-                );
-              })
-              .catch(() => undefined);
-          }
-        },
-        onRecord: (record) => {
-          if (abortController.signal.aborted || record.pdfFingerprint !== activeFingerprintRef.current) {
-            return;
-          }
+        if (cloudDocumentId !== activeCloudDocumentIdRef.current) {
+          return;
+        }
 
-          setMathpixRuntimeError(undefined);
-          setMathpixRecord(record);
-        },
-        signal: abortController.signal,
-      })
-        .catch((error) => {
-          if (isAbortError(error)) {
-            return;
-          }
+        setQaIndexJob(job);
+        setQaIndexError(undefined);
+      } catch (error) {
+        if (cloudDocumentId === activeCloudDocumentIdRef.current) {
+          setQaIndexError(error instanceof Error ? error.message : "Could not read QA index status.");
+        }
+      } finally {
+        if (options.showLoading && cloudDocumentId === activeCloudDocumentIdRef.current) {
+          setIsLoadingQaIndexJob(false);
+        }
+      }
+    },
+    [currentEntry?.cloudDocumentId],
+  );
 
-          if (!abortController.signal.aborted && currentEntry.fingerprint === activeFingerprintRef.current) {
-            const message =
-              error instanceof Error
-                ? error.message
-                : "MathPix parsing failed.";
+  useEffect(() => {
+    if (!currentEntry?.cloudDocumentId) {
+      setQaIndexJob(undefined);
+      setQaIndexError(undefined);
+      setIsLoadingQaIndexJob(false);
+      return;
+    }
 
-            setMathpixRuntimeError(message);
-            setStatusMessage(`MathPix parsing failed. Using PDF text fallback. ${message}`);
-          }
-        })
-        .finally(() => {
-          if (currentEntry.fingerprint === activeFingerprintRef.current) {
-            setMathpixPipelineState("idle");
-          }
-        });
-    }, MATHPIX_BACKGROUND_PARSE_DELAY_MS);
+    void refreshQaIndexJob({ showLoading: true });
+  }, [currentEntry?.cloudDocumentId, refreshQaIndexJob]);
+
+  useEffect(() => {
+    if (!currentEntry?.cloudDocumentId || !isActiveQaIndexJob(qaIndexJob)) {
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      void refreshQaIndexJob();
+    }, PROJECT_CONFIG.qa.indexStatusPollMs);
 
     return () => {
-      window.clearTimeout(parseTimer);
-      abortController.abort();
-      if (currentEntry.fingerprint === activeFingerprintRef.current) {
-        setMathpixPipelineState("idle");
-      }
+      window.clearInterval(timer);
     };
   }, [
-    activeFingerprint,
-    applyMathpixParsedPages,
-    currentEntry?.blob,
     currentEntry?.cloudDocumentId,
-    currentEntry?.contentSha256,
-    currentEntry?.fileName,
-    currentEntry?.fileSize,
-    currentEntry?.fingerprint,
-    currentEntry?.pdfMetadata?.title,
+    qaIndexJob?.id,
+    qaIndexJob?.status,
+    refreshQaIndexJob,
   ]);
+
+  const handleCreateQaIndexJob = useCallback(
+    async (source: QaIndexSource) => {
+      if (!currentEntry?.cloudDocumentId || isCreatingQaIndexJob) {
+        return;
+      }
+
+      setIsCreatingQaIndexJob(true);
+      setQaIndexError(undefined);
+
+      try {
+        const result = await createQaIndexJob({
+          cloudDocumentId: currentEntry.cloudDocumentId,
+          source,
+        });
+
+        setQaIndexJob(result.job);
+      } catch (error) {
+        setQaIndexError(error instanceof Error ? error.message : "Could not create QA index job.");
+      } finally {
+        setIsCreatingQaIndexJob(false);
+      }
+    },
+    [currentEntry?.cloudDocumentId, isCreatingQaIndexJob],
+  );
 
   const handleImport = useCallback(
     async (file: File) => {
@@ -1673,6 +1815,7 @@ export function ReaderShell() {
     if (isNarrowViewport) {
       setMobilePanel("pins");
     } else {
+      setRightPaneTab("annotations");
       setIsPinsPaneOpen(true);
     }
   }, [isNarrowViewport]);
@@ -1688,12 +1831,39 @@ export function ReaderShell() {
 
   const handlePinsPaneToggle = useCallback(() => {
     if (isNarrowViewport) {
+      setRightPaneTab("annotations");
       setMobilePanel((panel) => (panel === "pins" ? null : "pins"));
       return;
     }
 
-    setIsPinsPaneOpen((isOpen) => !isOpen);
-  }, [isNarrowViewport]);
+    setRightPaneTab("annotations");
+    setIsPinsPaneOpen((isOpen) => rightPaneTab === "annotations" ? !isOpen : true);
+  }, [isNarrowViewport, rightPaneTab]);
+
+  const handleAskPaneToggle = useCallback(() => {
+    if (isNarrowViewport) {
+      setRightPaneTab("ask");
+      setMobilePanel((panel) => (panel === "ask" ? null : "ask"));
+      return;
+    }
+
+    setRightPaneTab("ask");
+    setIsPinsPaneOpen((isOpen) => rightPaneTab === "ask" ? !isOpen : true);
+  }, [isNarrowViewport, rightPaneTab]);
+
+  const handleRightPaneTabSelect = useCallback(
+    (tab: RightPaneTab) => {
+      setRightPaneTab(tab);
+
+      if (isNarrowViewport) {
+        setMobilePanel(tab === "ask" ? "ask" : "pins");
+        return;
+      }
+
+      setIsPinsPaneOpen(true);
+    },
+    [isNarrowViewport],
+  );
 
   const handlePaneResizeStart = useCallback(
     (pane: PaneResizeState["pane"], event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1754,7 +1924,12 @@ export function ReaderShell() {
     "--pins-pane-width": `${pinsPaneWidth}px`,
   } as CSSProperties;
   const isLibraryControlOpen = isNarrowViewport ? mobilePanel === "library" : isLibraryPaneOpen;
-  const isPinsControlOpen = isNarrowViewport ? mobilePanel === "pins" : isPinsPaneOpen;
+  const isPinsControlOpen = isNarrowViewport
+    ? mobilePanel === "pins"
+    : isPinsPaneOpen && rightPaneTab === "annotations";
+  const isAskControlOpen = isNarrowViewport
+    ? mobilePanel === "ask"
+    : isPinsPaneOpen && rightPaneTab === "ask";
   const compactMathpixStatusLabel = mathpixProcessView
     ? getCompactMathpixStatusLabel(mathpixProcessView, t)
     : undefined;
@@ -1816,10 +1991,32 @@ export function ReaderShell() {
       />
     </>
   );
+  const renderRightPaneTabs = () => (
+    <div className="pane-tabs" aria-label={t("reader.rightPaneTabs")} role="tablist">
+      <button
+        aria-selected={rightPaneTab === "annotations"}
+        className={`pane-tab ${rightPaneTab === "annotations" ? "pane-tab--active" : ""}`}
+        onClick={() => handleRightPaneTabSelect("annotations")}
+        role="tab"
+        type="button"
+      >
+        {t("reader.annotations")}
+      </button>
+      <button
+        aria-selected={rightPaneTab === "ask"}
+        className={`pane-tab ${rightPaneTab === "ask" ? "pane-tab--active" : ""}`}
+        onClick={() => handleRightPaneTabSelect("ask")}
+        role="tab"
+        type="button"
+      >
+        {t("reader.ask")}
+      </button>
+    </div>
+  );
   const renderPinsPaneContent = (closeButton: ReactNode) => (
     <>
       <div className="pane-heading-row">
-        <div className="pane-heading">{t("reader.annotations")}</div>
+        {renderRightPaneTabs()}
         <div className="pins-clear-actions">
           {closeButton}
           {pins.length > 0 && isConfirmingClearPins ? (
@@ -1869,6 +2066,104 @@ export function ReaderShell() {
       />
     </>
   );
+  const renderAskPaneContent = (closeButton: ReactNode) => {
+    const isMathpixRunning = mathpixPipelineState === "running";
+    const mathpixTitle = mathpixProcessView?.title ?? t("ask.mathpixNotStarted");
+    const mathpixDetail = mathpixProcessView?.detail ?? t("ask.mathpixNotStartedDetail");
+    const isMathpixCompleted = mathpixRecord?.status === "completed";
+    const canCreateIndex = Boolean(currentEntry?.cloudDocumentId) &&
+      !isCreatingQaIndexJob &&
+      !isActiveQaIndexJob(qaIndexJob);
+    const qaIndexStatus = qaIndexJob ? t(getQaIndexStatusLabelKey(qaIndexJob.status)) : t("ask.indexNotBuilt");
+    const qaIndexProgress = typeof qaIndexJob?.progressPercent === "number"
+      ? t("ask.indexProgress", { percent: formatNumber(Math.round(qaIndexJob.progressPercent)) })
+      : undefined;
+
+    return (
+      <>
+        <div className="pane-heading-row">
+          {renderRightPaneTabs()}
+          <div className="pins-clear-actions">{closeButton}</div>
+        </div>
+        <div className="ask-panel">
+          <section className="ask-section" aria-label={t("ask.mathpixSection")}>
+            <div className="ask-section-heading">
+              <div>
+                <div className="ask-section-title">{t("mathpix.label")}</div>
+                <div className="ask-section-status">{mathpixTitle}</div>
+              </div>
+              {mathpixProcessView?.tone === "success" ? (
+                <Check aria-hidden="true" size={17} strokeWidth={2.4} />
+              ) : mathpixProcessView?.tone === "error" ? (
+                <CircleAlert aria-hidden="true" size={17} strokeWidth={2.2} />
+              ) : isMathpixRunning ? (
+                <LoaderCircle aria-hidden="true" className="ask-spin-icon" size={17} strokeWidth={2.2} />
+              ) : null}
+            </div>
+            <div className="ask-detail">{mathpixDetail}</div>
+            <button
+              className="ask-action-button"
+              disabled={!currentEntry || isMathpixRunning}
+              onClick={handleStartMathpixParse}
+              type="button"
+            >
+              {isMathpixCompleted ? (
+                <RefreshCw aria-hidden="true" size={16} strokeWidth={2} />
+              ) : (
+                <Play aria-hidden="true" size={16} strokeWidth={2} />
+              )}
+              <span>{isMathpixCompleted ? t("ask.refreshMathpix") : t("ask.startMathpix")}</span>
+            </button>
+          </section>
+          <section className="ask-section" aria-label={t("ask.indexSection")}>
+            <div className="ask-section-heading">
+              <div>
+                <div className="ask-section-title">{t("ask.indexTitle")}</div>
+                <div className="ask-section-status">{qaIndexStatus}</div>
+              </div>
+              {isLoadingQaIndexJob ? (
+                <LoaderCircle aria-hidden="true" className="ask-spin-icon" size={17} strokeWidth={2.2} />
+              ) : qaIndexJob?.status === "ready" ? (
+                <Check aria-hidden="true" size={17} strokeWidth={2.4} />
+              ) : qaIndexJob?.status === "error" ? (
+                <CircleAlert aria-hidden="true" size={17} strokeWidth={2.2} />
+              ) : null}
+            </div>
+            {qaIndexProgress ? <div className="ask-detail">{qaIndexProgress}</div> : null}
+            {qaIndexJob?.errorMessage ? <div className="ask-detail ask-detail--error">{qaIndexJob.errorMessage}</div> : null}
+            {qaIndexError ? <div className="ask-detail ask-detail--error">{qaIndexError}</div> : null}
+            {!currentEntry?.cloudDocumentId ? (
+              <div className="ask-detail">{t("ask.cloudRequired")}</div>
+            ) : null}
+            <div className="ask-action-grid">
+              <button
+                className="ask-action-button"
+                disabled={!canCreateIndex || !isMathpixCompleted}
+                onClick={() => {
+                  void handleCreateQaIndexJob("mathpix-v3-pdf");
+                }}
+                type="button"
+              >
+                <MessageSquareText aria-hidden="true" size={16} strokeWidth={2} />
+                <span>{t("ask.buildMathpixIndex")}</span>
+              </button>
+              <button
+                className="ask-action-button ask-action-button--secondary"
+                disabled={!canCreateIndex}
+                onClick={() => {
+                  void handleCreateQaIndexJob("pdfjs");
+                }}
+                type="button"
+              >
+                <MessageSquareText aria-hidden="true" size={16} strokeWidth={2} />
+                <span>{t("ask.buildPdfTextIndex")}</span>
+              </button>
+            </div>
+          </section>
+        </div>
+      </>
+    );
+  };
   const renderSidebarToggleButtons = () => (
     <>
       <button
@@ -1898,6 +2193,16 @@ export function ReaderShell() {
         ) : (
           <PanelRightOpen aria-hidden="true" size={17} strokeWidth={2} />
         )}
+      </button>
+      <button
+        aria-label={isAskControlOpen ? t("reader.closeAskPane") : t("reader.openAskPane")}
+        aria-pressed={isAskControlOpen}
+        className="icon-button"
+        onClick={handleAskPaneToggle}
+        title={isAskControlOpen ? t("reader.closeAsk") : t("reader.openAsk")}
+        type="button"
+      >
+        <MessageSquareText aria-hidden="true" size={17} strokeWidth={2} />
       </button>
     </>
   );
@@ -1969,6 +2274,18 @@ export function ReaderShell() {
         ) : (
           <PanelRightOpen aria-hidden="true" size={17} strokeWidth={2} />
         )}
+      </button>
+      <button
+        aria-label={isAskControlOpen ? t("reader.closeAskPane") : t("reader.openAskPane")}
+        aria-pressed={isAskControlOpen}
+        className={`icon-button mobile-reader-side-dock-button mobile-reader-side-dock-button--ask ${
+          isAskControlOpen ? "mobile-reader-side-dock-button--active" : ""
+        }`}
+        onClick={handleAskPaneToggle}
+        title={isAskControlOpen ? t("reader.closeAsk") : t("reader.openAsk")}
+        type="button"
+      >
+        <MessageSquareText aria-hidden="true" size={17} strokeWidth={2} />
       </button>
     </div>
   );
@@ -2213,7 +2530,7 @@ export function ReaderShell() {
           )}
         </section>
         <div
-          aria-label={t("reader.resizeAnnotationsPane")}
+          aria-label={t("reader.resizeRightPane")}
           aria-orientation="vertical"
           className={`pane-resizer pane-resizer--pins ${isPinsPaneOpen ? "" : "pane-resizer--closed"}`}
           aria-hidden={!isPinsPaneOpen}
@@ -2222,13 +2539,21 @@ export function ReaderShell() {
           onPointerMove={handlePaneResizeMove}
           onPointerUp={handlePaneResizeEnd}
           role="separator"
-          title={t("reader.resizeAnnotationsPane")}
+          title={t("reader.resizeRightPane")}
         >
           <button
-            aria-label={isPinsPaneOpen ? t("reader.closeAnnotationsPane") : t("reader.openAnnotationsPane")}
+            aria-label={
+              rightPaneTab === "ask"
+                ? isPinsPaneOpen ? t("reader.closeAskPane") : t("reader.openAskPane")
+                : isPinsPaneOpen ? t("reader.closeAnnotationsPane") : t("reader.openAnnotationsPane")
+            }
             className="pane-resizer-toggle"
-            onClick={handlePinsPaneToggle}
-            title={isPinsPaneOpen ? t("reader.closeAnnotations") : t("reader.openAnnotations")}
+            onClick={rightPaneTab === "ask" ? handleAskPaneToggle : handlePinsPaneToggle}
+            title={
+              rightPaneTab === "ask"
+                ? isPinsPaneOpen ? t("reader.closeAsk") : t("reader.openAsk")
+                : isPinsPaneOpen ? t("reader.closeAnnotations") : t("reader.openAnnotations")
+            }
             type="button"
           >
             {isPinsPaneOpen ? (
@@ -2241,19 +2566,31 @@ export function ReaderShell() {
         <aside
           className={`translation-pane ${isPinsPaneOpen ? "" : "pane--closed"}`}
           aria-hidden={!isPinsPaneOpen}
-          aria-label={t("reader.annotations")}
+          aria-label={rightPaneTab === "ask" ? t("reader.ask") : t("reader.annotations")}
         >
-          {renderPinsPaneContent(
-            <button
-              aria-label={t("reader.closeAnnotationsPane")}
-              className="icon-button icon-button--small"
-              onClick={() => setIsPinsPaneOpen(false)}
-              title={t("reader.closeAnnotations")}
-              type="button"
-            >
-              <PanelRightClose aria-hidden="true" size={16} strokeWidth={2} />
-            </button>,
-          )}
+          {rightPaneTab === "ask"
+            ? renderAskPaneContent(
+                <button
+                  aria-label={t("reader.closeAskPane")}
+                  className="icon-button icon-button--small"
+                  onClick={() => setIsPinsPaneOpen(false)}
+                  title={t("reader.closeAsk")}
+                  type="button"
+                >
+                  <PanelRightClose aria-hidden="true" size={16} strokeWidth={2} />
+                </button>,
+              )
+            : renderPinsPaneContent(
+                <button
+                  aria-label={t("reader.closeAnnotationsPane")}
+                  className="icon-button icon-button--small"
+                  onClick={() => setIsPinsPaneOpen(false)}
+                  title={t("reader.closeAnnotations")}
+                  type="button"
+                >
+                  <PanelRightClose aria-hidden="true" size={16} strokeWidth={2} />
+                </button>,
+              )}
         </aside>
       </main>
       {!isNarrowViewport && !isLibraryPaneOpen && (
@@ -2269,13 +2606,17 @@ export function ReaderShell() {
       )}
       {!isNarrowViewport && !isPinsPaneOpen && (
         <button
-          aria-label={t("reader.openAnnotationsPane")}
+          aria-label={rightPaneTab === "ask" ? t("reader.openAskPane") : t("reader.openAnnotationsPane")}
           className="pane-reopen-tab pane-reopen-tab--pins"
-          onClick={handlePinsPaneToggle}
-          title={t("reader.openAnnotations")}
+          onClick={rightPaneTab === "ask" ? handleAskPaneToggle : handlePinsPaneToggle}
+          title={rightPaneTab === "ask" ? t("reader.openAsk") : t("reader.openAnnotations")}
           type="button"
         >
-          <PanelRightOpen aria-hidden="true" size={16} strokeWidth={2} />
+          {rightPaneTab === "ask" ? (
+            <MessageSquareText aria-hidden="true" size={16} strokeWidth={2} />
+          ) : (
+            <PanelRightOpen aria-hidden="true" size={16} strokeWidth={2} />
+          )}
         </button>
       )}
       {currentEntry ? renderMobileReaderSideDock() : null}
@@ -2286,7 +2627,13 @@ export function ReaderShell() {
           role="presentation"
         >
           <aside
-            aria-label={mobilePanel === "library" ? t("reader.pdfLibrary") : t("reader.annotations")}
+            aria-label={
+              mobilePanel === "library"
+                ? t("reader.pdfLibrary")
+                : mobilePanel === "ask"
+                  ? t("reader.ask")
+                  : t("reader.annotations")
+            }
             className={`mobile-panel mobile-panel--${mobilePanel}`}
             onClick={(event) => event.stopPropagation()}
           >
@@ -2302,7 +2649,19 @@ export function ReaderShell() {
                     <PanelLeftClose aria-hidden="true" size={16} strokeWidth={2} />
                   </button>,
                 )
-              : renderPinsPaneContent(
+              : mobilePanel === "ask"
+                ? renderAskPaneContent(
+                    <button
+                      aria-label={t("reader.closeAskPane")}
+                      className="icon-button icon-button--small"
+                      onClick={() => setMobilePanel(null)}
+                      title={t("reader.closeAsk")}
+                      type="button"
+                    >
+                      <PanelRightClose aria-hidden="true" size={16} strokeWidth={2} />
+                    </button>,
+                  )
+                : renderPinsPaneContent(
                   <button
                     aria-label={t("reader.closeAnnotationsPane")}
                     className="icon-button icon-button--small"

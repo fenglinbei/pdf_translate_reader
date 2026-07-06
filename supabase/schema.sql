@@ -731,6 +731,367 @@ create policy "Users can manage their Mathpix documents"
     )
   );
 
+create table if not exists public.user_paper_chunks (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  user_document_id uuid not null references public.user_documents(id) on delete cascade,
+  pdf_fingerprint text not null,
+  content_sha256 text not null check (content_sha256 ~ '^sha256-[0-9a-f]{64}$'),
+  chunk_index integer not null check (chunk_index >= 0),
+  chunk_hash text not null,
+  title text,
+  section_path text[],
+  page_start integer not null check (page_start >= 1),
+  page_end integer not null check (page_end >= page_start),
+  text text not null,
+  mmd text,
+  source text not null check (source in ('mathpix-v3-pdf', 'pdfjs')),
+  token_count integer not null default 0 check (token_count >= 0),
+  chunker_version text not null,
+  fts tsvector generated always as (
+    to_tsvector('english', coalesce(title, '') || ' ' || coalesce(array_to_string(section_path, ' '), '') || ' ' || text)
+  ) stored,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
+create unique index if not exists user_paper_chunks_active_chunk_key
+  on public.user_paper_chunks (user_document_id, chunker_version, chunk_hash)
+  where deleted_at is null;
+
+create index if not exists user_paper_chunks_user_document_idx
+  on public.user_paper_chunks (user_id, user_document_id, chunk_index)
+  where deleted_at is null;
+
+create index if not exists user_paper_chunks_fts_idx
+  on public.user_paper_chunks using gin (fts)
+  where deleted_at is null;
+
+alter table public.user_paper_chunks enable row level security;
+
+drop policy if exists "Users can manage their paper chunks" on public.user_paper_chunks;
+create policy "Users can manage their paper chunks"
+  on public.user_paper_chunks
+  for all
+  using (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1 from public.user_documents documents
+      where documents.id = user_document_id
+        and documents.user_id = auth.uid()
+        and documents.content_sha256 = user_paper_chunks.content_sha256
+    )
+  );
+
+create table if not exists public.user_paper_references (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  user_document_id uuid not null references public.user_documents(id) on delete cascade,
+  reference_index text,
+  raw_text text not null,
+  title text,
+  authors text[],
+  year integer,
+  doi text,
+  arxiv_id text,
+  matched_user_document_id uuid references public.user_documents(id) on delete set null,
+  match_confidence double precision,
+  matcher_version text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
+create index if not exists user_paper_references_user_document_idx
+  on public.user_paper_references (user_id, user_document_id, created_at desc)
+  where deleted_at is null;
+
+create index if not exists user_paper_references_match_idx
+  on public.user_paper_references (user_id, matched_user_document_id)
+  where deleted_at is null and matched_user_document_id is not null;
+
+alter table public.user_paper_references enable row level security;
+
+drop policy if exists "Users can manage their paper references" on public.user_paper_references;
+create policy "Users can manage their paper references"
+  on public.user_paper_references
+  for all
+  using (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1 from public.user_documents documents
+      where documents.id = user_document_id
+        and documents.user_id = auth.uid()
+    )
+    and (
+      matched_user_document_id is null
+      or exists (
+        select 1 from public.user_documents matched_documents
+        where matched_documents.id = matched_user_document_id
+          and matched_documents.user_id = auth.uid()
+      )
+    )
+  );
+
+create table if not exists public.user_qa_threads (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  active_user_document_id uuid references public.user_documents(id) on delete set null,
+  title text not null,
+  scope text not null check (scope in ('current', 'current-plus-references', 'library')),
+  reference_document_ids uuid[] not null default '{}',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
+create index if not exists user_qa_threads_user_updated_idx
+  on public.user_qa_threads (user_id, updated_at desc)
+  where deleted_at is null;
+
+create index if not exists user_qa_threads_active_document_idx
+  on public.user_qa_threads (user_id, active_user_document_id, updated_at desc)
+  where deleted_at is null;
+
+create index if not exists user_qa_threads_reference_documents_idx
+  on public.user_qa_threads using gin (reference_document_ids)
+  where deleted_at is null;
+
+alter table public.user_qa_threads enable row level security;
+
+drop policy if exists "Users can manage their QA threads" on public.user_qa_threads;
+create policy "Users can manage their QA threads"
+  on public.user_qa_threads
+  for all
+  using (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and (
+      active_user_document_id is null
+      or exists (
+        select 1 from public.user_documents documents
+        where documents.id = active_user_document_id
+          and documents.user_id = auth.uid()
+      )
+    )
+    and not exists (
+      select 1
+      from unnest(reference_document_ids) as reference_document_id
+      where not exists (
+        select 1 from public.user_documents reference_documents
+        where reference_documents.id = reference_document_id
+          and reference_documents.user_id = auth.uid()
+      )
+    )
+  );
+
+create table if not exists public.user_qa_messages (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  thread_id uuid not null references public.user_qa_threads(id) on delete cascade,
+  role text not null check (role in ('user', 'assistant')),
+  status text not null check (status in ('streaming', 'success', 'error', 'aborted')),
+  content text not null,
+  model text,
+  prompt_version text,
+  retrieval_snapshot jsonb,
+  usage jsonb,
+  error_message text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
+create index if not exists user_qa_messages_thread_idx
+  on public.user_qa_messages (user_id, thread_id, created_at asc)
+  where deleted_at is null;
+
+alter table public.user_qa_messages enable row level security;
+
+drop policy if exists "Users can manage their QA messages" on public.user_qa_messages;
+create policy "Users can manage their QA messages"
+  on public.user_qa_messages
+  for all
+  using (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1 from public.user_qa_threads threads
+      where threads.id = thread_id
+        and threads.user_id = auth.uid()
+    )
+  );
+
+create table if not exists public.user_qa_citations (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  message_id uuid not null references public.user_qa_messages(id) on delete cascade,
+  chunk_id uuid not null references public.user_paper_chunks(id) on delete restrict,
+  user_document_id uuid not null references public.user_documents(id) on delete restrict,
+  pdf_fingerprint text not null,
+  document_title text not null,
+  page_start integer not null check (page_start >= 1),
+  page_end integer not null check (page_end >= page_start),
+  section_path text[],
+  quoted_text text not null,
+  confidence text not null check (confidence in ('verified', 'weak', 'rejected')),
+  created_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
+create index if not exists user_qa_citations_message_idx
+  on public.user_qa_citations (user_id, message_id, created_at asc)
+  where deleted_at is null;
+
+create index if not exists user_qa_citations_document_idx
+  on public.user_qa_citations (user_id, user_document_id, page_start)
+  where deleted_at is null;
+
+alter table public.user_qa_citations enable row level security;
+
+drop policy if exists "Users can manage their QA citations" on public.user_qa_citations;
+create policy "Users can manage their QA citations"
+  on public.user_qa_citations
+  for all
+  using (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1 from public.user_qa_messages messages
+      where messages.id = message_id
+        and messages.user_id = auth.uid()
+    )
+    and exists (
+      select 1 from public.user_paper_chunks chunks
+      where chunks.id = chunk_id
+        and chunks.user_id = auth.uid()
+        and chunks.user_document_id = user_qa_citations.user_document_id
+    )
+    and exists (
+      select 1 from public.user_documents documents
+      where documents.id = user_qa_citations.user_document_id
+        and documents.user_id = auth.uid()
+    )
+  );
+
+create table if not exists public.user_qa_index_jobs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  user_document_id uuid not null references public.user_documents(id) on delete cascade,
+  pdf_fingerprint text not null,
+  content_sha256 text not null check (content_sha256 ~ '^sha256-[0-9a-f]{64}$'),
+  source text not null check (source in ('mathpix-v3-pdf', 'pdfjs')),
+  status text not null check (
+    status in ('pending', 'extracting', 'chunking', 'embedding', 'reference-matching', 'ready', 'error')
+  ),
+  chunker_version text not null,
+  reference_matcher_version text not null,
+  retriever_version text not null,
+  progress_percent double precision,
+  error_message text,
+  payload jsonb,
+  started_at timestamptz,
+  finished_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
+create unique index if not exists user_qa_index_jobs_active_document_key
+  on public.user_qa_index_jobs (user_id, user_document_id)
+  where deleted_at is null
+    and status in ('pending', 'extracting', 'chunking', 'embedding', 'reference-matching');
+
+create index if not exists user_qa_index_jobs_user_document_idx
+  on public.user_qa_index_jobs (user_id, user_document_id, created_at desc)
+  where deleted_at is null;
+
+alter table public.user_qa_index_jobs enable row level security;
+
+drop policy if exists "Users can manage their QA index jobs" on public.user_qa_index_jobs;
+create policy "Users can manage their QA index jobs"
+  on public.user_qa_index_jobs
+  for all
+  using (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1 from public.user_documents documents
+      where documents.id = user_document_id
+        and documents.user_id = auth.uid()
+        and documents.content_sha256 = user_qa_index_jobs.content_sha256
+    )
+  );
+
+create table if not exists public.user_qa_api_logs (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  user_document_id uuid references public.user_documents(id) on delete set null,
+  pdf_fingerprint text,
+  thread_id uuid references public.user_qa_threads(id) on delete set null,
+  message_id uuid references public.user_qa_messages(id) on delete set null,
+  request_kind text not null check (
+    request_kind in ('index-job', 'answer-stream', 'retrieval', 'citation-verification')
+  ),
+  status text not null check (status in ('success', 'error', 'aborted')),
+  model text,
+  prompt_version text,
+  retriever_version text,
+  payload jsonb,
+  usage jsonb,
+  error_message text,
+  request_started_at timestamptz not null,
+  request_finished_at timestamptz,
+  created_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
+create index if not exists user_qa_api_logs_user_started_idx
+  on public.user_qa_api_logs (user_id, request_started_at desc)
+  where deleted_at is null;
+
+create index if not exists user_qa_api_logs_user_document_idx
+  on public.user_qa_api_logs (user_id, user_document_id, request_started_at desc)
+  where deleted_at is null;
+
+alter table public.user_qa_api_logs enable row level security;
+
+drop policy if exists "Users can manage their QA API logs" on public.user_qa_api_logs;
+create policy "Users can manage their QA API logs"
+  on public.user_qa_api_logs
+  for all
+  using (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and (
+      user_document_id is null
+      or exists (
+        select 1 from public.user_documents documents
+        where documents.id = user_document_id
+          and documents.user_id = auth.uid()
+      )
+    )
+    and (
+      thread_id is null
+      or exists (
+        select 1 from public.user_qa_threads threads
+        where threads.id = thread_id
+          and threads.user_id = auth.uid()
+      )
+    )
+    and (
+      message_id is null
+      or exists (
+        select 1 from public.user_qa_messages messages
+        where messages.id = message_id
+          and messages.user_id = auth.uid()
+      )
+    )
+  );
+
 create table if not exists public.user_settings (
   user_id uuid primary key references auth.users(id) on delete cascade,
   payload jsonb not null,

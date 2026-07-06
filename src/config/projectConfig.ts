@@ -6,6 +6,13 @@ export const PROJECT_CONFIG = {
     maxAbstractCharacters: 1800,
     maxScanPages: 3,
   },
+  qa: {
+    answerPromptVersion: "qa-answer-v1",
+    chunkerVersion: "qa-chunker-v1",
+    indexStatusPollMs: 3000,
+    referenceMatcherVersion: "reference-matcher-v1",
+    retrieverVersion: "hybrid-retriever-v1",
+  },
   selection: {
     defaultMaxDraggedWords: 128,
     maxDraggedWordsLimit: 512,

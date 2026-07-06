@@ -2,6 +2,12 @@
 
 Local-first web PDF reader scaffold for sentence-level translation workflows.
 
+## Project docs
+
+- [Implementation plan](docs/implementation-plan.md)
+- [Markdown reader adaptation plan](docs/markdown-adaptation-plan.md)
+- [Paper QA implementation plan](docs/paper-qa-implementation-plan.md)
+
 ## Runtime support
 
 The current project structure supports deployment on Windows, Linux, and macOS.
@@ -134,6 +140,10 @@ zoom used when reopening a PDF.
 The browser uses `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for login and
 Storage access. The Node API proxy reads the same values from `.env.local`, or
 `SUPABASE_URL` and `SUPABASE_ANON_KEY` if those are set by the host.
+
+Paper QA Step 1-3 uses the existing Supabase settings and
+`SUPABASE_SERVICE_ROLE_KEY` for index job control. Embedding provider variables
+are intentionally deferred until the embedding provider is selected.
 
 ### Invite code signup hook
 

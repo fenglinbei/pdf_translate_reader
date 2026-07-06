@@ -160,7 +160,6 @@ type LocatableSelection = {
 };
 
 const MAX_RENDER_SCALE = 1.35;
-const MAX_PDF_RENDER_SCALE = 2;
 const MAX_CANVAS_OUTPUT_SCALE = 1.5;
 const MOBILE_MAX_CANVAS_OUTPUT_SCALE = 1.25;
 const MOBILE_MAX_RENDER_SCALE = 1.2;
@@ -393,10 +392,7 @@ export function PdfViewer({
   const fitScale = baseScale ?? liveFitScale;
   const displayScale = useMemo(() => fitScale * userZoom, [fitScale, userZoom]);
   const committedDisplayScale = useMemo(() => fitScale * renderZoom, [fitScale, renderZoom]);
-  const pdfRenderScale = useMemo(
-    () => Math.min(committedDisplayScale, MAX_PDF_RENDER_SCALE),
-    [committedDisplayScale],
-  );
+  const pdfRenderScale = committedDisplayScale;
   const displayScaleRatio = pdfRenderScale > 0 ? displayScale / pdfRenderScale : 1;
   const pageGap = isMobileViewport ? MOBILE_PDF_PAGE_GAP_PX : PDF_PAGE_GAP_PX;
   const pageListPadding = isMobileViewport

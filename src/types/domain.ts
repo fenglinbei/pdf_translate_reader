@@ -257,6 +257,154 @@ export type ApiCallLog = {
   promptCacheMissTokens?: number;
 };
 
+export type QaScope = "current" | "current-plus-references" | "library";
+export type QaIndexSource = TextExtractionSource;
+export type QaIndexJobStatus =
+  | "pending"
+  | "extracting"
+  | "chunking"
+  | "embedding"
+  | "reference-matching"
+  | "ready"
+  | "error";
+export type QaCitationConfidence = "verified" | "weak" | "rejected";
+export type QaMessageStatus = "streaming" | "success" | "error" | "aborted";
+export type QaMessageRole = "user" | "assistant";
+
+export type QaChunk = {
+  id: string;
+  cloudDocumentId: string;
+  pdfFingerprint: string;
+  contentSha256: string;
+  chunkIndex: number;
+  chunkHash: string;
+  title?: string;
+  sectionPath?: string[];
+  pageStart: number;
+  pageEnd: number;
+  text: string;
+  mmd?: string;
+  tokenCount: number;
+  source: QaIndexSource;
+  chunkerVersion: string;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt?: number;
+};
+
+export type QaCitation = {
+  id: string;
+  messageId: string;
+  chunkId: string;
+  cloudDocumentId: string;
+  pdfFingerprint: string;
+  documentTitle: string;
+  pageStart: number;
+  pageEnd: number;
+  sectionPath?: string[];
+  quotedText: string;
+  confidence: QaCitationConfidence;
+  createdAt: number;
+  deletedAt?: number;
+};
+
+export type QaRetrievedEvidence = {
+  evidenceId: string;
+  chunkId: string;
+  cloudDocumentId: string;
+  pdfFingerprint: string;
+  documentTitle: string;
+  pageStart: number;
+  pageEnd: number;
+  sectionPath?: string[];
+  score: number;
+  scoreBreakdown: {
+    vector?: number;
+    fullText?: number;
+    metadataBoost?: number;
+    rerank?: number;
+  };
+  textPreview: string;
+};
+
+export type QaRetrievalSnapshot = {
+  scope: QaScope;
+  activeCloudDocumentId?: string;
+  referenceDocumentIds: string[];
+  queryPlan: {
+    intent: string;
+    rewrittenQueries: string[];
+    requiredEvidence: "single" | "multi" | "comparison";
+    answerFormat: "paragraph" | "bullets" | "table";
+  };
+  retrieverVersion: string;
+  rerankerVersion?: string;
+  evidence: QaRetrievedEvidence[];
+};
+
+export type QaThread = {
+  id: string;
+  activeCloudDocumentId?: string;
+  title: string;
+  scope: QaScope;
+  referenceDocumentIds: string[];
+  createdAt: number;
+  updatedAt: number;
+  deletedAt?: number;
+};
+
+export type QaMessage = {
+  id: string;
+  threadId: string;
+  role: QaMessageRole;
+  content: string;
+  status: QaMessageStatus;
+  citations: QaCitation[];
+  retrievalSnapshot?: QaRetrievalSnapshot;
+  usage?: TokenUsage;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt?: number;
+};
+
+export type QaIndexJob = {
+  id: string;
+  cloudDocumentId: string;
+  pdfFingerprint: string;
+  contentSha256: string;
+  source: QaIndexSource;
+  status: QaIndexJobStatus;
+  chunkerVersion: string;
+  referenceMatcherVersion: string;
+  retrieverVersion: string;
+  progressPercent?: number;
+  errorMessage?: string;
+  payload?: unknown;
+  startedAt?: number;
+  finishedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt?: number;
+};
+
+export type QaApiLog = {
+  id: string;
+  cloudDocumentId?: string;
+  pdfFingerprint?: string;
+  threadId?: string;
+  messageId?: string;
+  requestKind: "index-job" | "answer-stream" | "retrieval" | "citation-verification";
+  status: "success" | "error" | "aborted";
+  model?: TranslationModel;
+  promptVersion?: string;
+  retrieverVersion?: string;
+  payload?: unknown;
+  requestStartedAt: number;
+  requestFinishedAt?: number;
+  errorMessage?: string;
+  usage?: TokenUsage;
+};
+
 export type AppSettings = {
   contextWindowN: 0 | 1 | 2 | 3 | 5;
   defaultModel: TranslationModel;
