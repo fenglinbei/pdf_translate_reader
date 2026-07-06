@@ -124,9 +124,14 @@ import { TRANSLATION_PROMPT_VERSION } from "../translation/defaults";
 import { getEffectiveTranslationStyle } from "../translation/translationStyle";
 import { runMathpixParsePipeline } from "../mathpix/mathpixPipeline";
 import {
+  syncCloudMathpixDocumentRecord,
+  uploadCompletedCloudMathpixCache,
+} from "../mathpix/mathpixCloudRepository";
+import {
   getMathpixDocumentRecord,
   listMathpixParsedPages,
   mapPagesByIndex,
+  putMathpixDocumentRecord,
 } from "../mathpix/mathpixRepository";
 import { MATHPIX_OPTIONS_HASH } from "../mathpix/options";
 import { resolveMathpixSelectionText } from "../mathpix/mathpixSelectionResolver";
@@ -1060,16 +1065,28 @@ export function ReaderShell() {
 
   const handleCreateQaIndexJob = useCallback(
     async (source: QaIndexSource) => {
-      if (!currentEntry?.cloudDocumentId || isCreatingQaIndexJob) {
+      const activeCloudDocumentId = currentEntry?.cloudDocumentId;
+
+      if (!currentEntry || !activeCloudDocumentId || isCreatingQaIndexJob) {
         return;
       }
 
+      const activeEntry = currentEntry;
       setIsCreatingQaIndexJob(true);
       setQaIndexError(undefined);
 
       try {
+        if (source === "mathpix-v3-pdf") {
+          const syncedRecord = await ensureMathpixCloudCacheForQaIndex({
+            entry: activeEntry,
+            record: mathpixRecord,
+          });
+
+          setMathpixRecord(syncedRecord);
+        }
+
         const result = await createQaIndexJob({
-          cloudDocumentId: currentEntry.cloudDocumentId,
+          cloudDocumentId: activeCloudDocumentId,
           source,
         });
 
@@ -1080,7 +1097,7 @@ export function ReaderShell() {
         setIsCreatingQaIndexJob(false);
       }
     },
-    [currentEntry?.cloudDocumentId, isCreatingQaIndexJob],
+    [currentEntry, isCreatingQaIndexJob, mathpixRecord],
   );
 
   const handleImport = useCallback(
@@ -2879,6 +2896,49 @@ function hasReadingPosition(position: ReadingPositionUpdate) {
 
 function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
+}
+
+async function ensureMathpixCloudCacheForQaIndex({
+  entry,
+  record,
+}: {
+  entry: PdfLibraryEntry;
+  record?: MathpixDocumentRecord;
+}) {
+  if (!entry.cloudDocumentId || !entry.contentSha256) {
+    throw new Error("Cloud sync must finish before building the MathPix QA index.");
+  }
+
+  if (!record || record.status !== "completed" || !isMathpixRecordCurrentForEntry(record, entry)) {
+    throw new Error("MathPix parsing must be completed before building the QA index.");
+  }
+
+  const pages = await listMathpixParsedPages(entry.fingerprint);
+
+  if (pages.length > 0) {
+    const syncedRecord = await uploadCompletedCloudMathpixCache({
+      entry,
+      fullMmd: record.fullMmd,
+      pages,
+      record,
+    });
+
+    if (!syncedRecord?.pagesStoragePath) {
+      throw new Error("Could not sync MathPix cache before building the QA index.");
+    }
+
+    return putMathpixDocumentRecord(syncedRecord);
+  }
+
+  if (record.pagesStoragePath) {
+    const syncedRecord = await syncCloudMathpixDocumentRecord(entry, record);
+
+    if (syncedRecord?.pagesStoragePath) {
+      return putMathpixDocumentRecord(syncedRecord);
+    }
+  }
+
+  throw new Error("MathPix local cache is missing parsed pages. Refresh MathPix before building the QA index.");
 }
 
 function isMathpixRecordCurrentForEntry(
