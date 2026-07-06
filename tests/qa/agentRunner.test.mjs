@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   QaAgentRunnerError,
   runAgenticRetrieval,
+  runReasoningAgenticRetrieval,
 } from "../../server/qa/agentRunner.mjs";
 import { createQueryPlan } from "../../server/qa/retriever.mjs";
 
@@ -113,6 +114,110 @@ describe("runAgenticRetrieval", () => {
       },
     );
     assert.equal(store.toolCalls.length, 1);
+  });
+});
+
+describe("runReasoningAgenticRetrieval", () => {
+  it("lets the controller choose search query, topK, open_chunk, and final evidence", async () => {
+    const store = createAgentStore();
+    const events = [];
+    const retrievalCalls = [];
+    const actions = [
+      {
+        action: "search_current_paper",
+        query: "contrastive retrieval method",
+        summary: "Search for method evidence.",
+        topK: 4,
+      },
+      {
+        action: "open_chunk",
+        evidenceIds: ["C1"],
+        summary: "Inspect the top method evidence.",
+      },
+      {
+        action: "finish_retrieval",
+        answerOutline: "Use the opened method evidence for the answer.",
+        evidenceIds: ["C1"],
+        summary: "Enough evidence is available.",
+      },
+    ];
+
+    const result = await runReasoningAgenticRetrieval({
+      callController: async () => actions.shift(),
+      emit: (eventName, payload) => events.push({ eventName, payload }),
+      insertStep: store.insertStep,
+      insertToolCall: store.insertToolCall,
+      messageId: "message-reasoning-1",
+      model: "deepseek-v4-pro",
+      question: "Explain the method",
+      reasoningEffort: "standard",
+      retrieveEvidence: async ({ matchCount, question }) => {
+        retrievalCalls.push({ matchCount, question });
+
+        return createRetrieval([
+          makeEvidence("chunk-1", 3, 0.91),
+          makeEvidence("chunk-2", 5, 0.52),
+        ], question);
+      },
+      userDocumentId: "doc-1",
+      userId: "user-1",
+    });
+
+    assert.deepEqual(retrievalCalls, [
+      {
+        matchCount: 4,
+        question: "contrastive retrieval method",
+      },
+    ]);
+    assert.deepEqual(store.toolCalls.map((toolCall) => toolCall.toolName), [
+      "search_current_paper",
+      "open_chunk",
+    ]);
+    assert.equal(result.evidence.length, 1);
+    assert.equal(result.evidence[0].evidenceId, "C1");
+    assert.equal(result.diagnostics.agent.controller, "llm-json-v1");
+    assert.equal(result.diagnostics.agent.effectiveReasoningEffort, "standard");
+    assert.deepEqual(events.map((event) => event.eventName), [
+      "agent_step",
+      "gap_check",
+      "tool_call",
+      "observation",
+      "gap_check",
+      "tool_call",
+      "observation",
+      "agent_step",
+    ]);
+  });
+
+  it("rejects unsupported controller actions as runner errors", async () => {
+    const store = createAgentStore();
+
+    await assert.rejects(
+      () => runReasoningAgenticRetrieval({
+        callController: async () => ({
+          action: "search_library",
+          summary: "Try to search outside the current paper.",
+        }),
+        emit: () => undefined,
+        insertStep: store.insertStep,
+        insertToolCall: store.insertToolCall,
+        messageId: "message-reasoning-2",
+        model: "deepseek-v4-pro",
+        question: "Find related work",
+        reasoningEffort: "deep",
+        retrieveEvidence: async () => createRetrieval([], "Find related work"),
+        userDocumentId: "doc-1",
+        userId: "user-1",
+      }),
+      (error) => {
+        assert.ok(error instanceof QaAgentRunnerError);
+        assert.match(error.message, /unsupported action/);
+        assert.equal(error.nextStepIndex, 1);
+        assert.deepEqual(error.agentSteps.map((step) => step.kind), ["plan"]);
+
+        return true;
+      },
+    );
   });
 });
 

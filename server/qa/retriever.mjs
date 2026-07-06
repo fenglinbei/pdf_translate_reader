@@ -13,6 +13,7 @@ const MAX_QUERY_CHARS = 2000;
 const MAX_TEXT_PREVIEW_CHARS = 520;
 
 export async function retrieveCurrentPaperEvidence({
+  matchCount,
   question,
   signal,
   userDocumentId,
@@ -29,7 +30,10 @@ export async function retrieveCurrentPaperEvidence({
     embedding: queryEmbedding.vector,
     embeddingDimensions: queryEmbedding.dimensions,
     embeddingModel: queryEmbedding.model,
-    matchCount: rerankerConfig.configured ? rerankerConfig.candidateLimit : DEFAULT_MATCH_COUNT,
+    matchCount: normalizePositiveInteger(
+      matchCount,
+      rerankerConfig.configured ? rerankerConfig.candidateLimit : DEFAULT_MATCH_COUNT,
+    ),
     question: normalizedQuestion,
     userDocumentId,
     userId,

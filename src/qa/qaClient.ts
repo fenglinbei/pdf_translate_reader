@@ -8,6 +8,7 @@ import type {
   QaIndexJob,
   QaIndexSource,
   QaMessage,
+  QaReasoningEffort,
   QaRetrievalSnapshot,
   QaThread,
   QaToolCall,
@@ -53,6 +54,7 @@ export type QaStreamMeta = {
   executionMode: QaExecutionMode;
   model: string;
   promptVersion: string;
+  reasoningEffort: QaReasoningEffort;
   scope: "current";
   threadId: string;
   userMessageId: string;

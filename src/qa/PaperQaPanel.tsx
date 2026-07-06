@@ -22,6 +22,7 @@ import type {
   QaExecutionMode,
   QaIndexJob,
   QaMessage,
+  QaReasoningEffort,
   QaRetrievedEvidence,
   QaRetrievalSnapshot,
   QaThread,
@@ -74,6 +75,7 @@ type MarkdownBlock =
   | { type: "unordered-list"; items: string[] };
 
 const QA_MODELS: QaChatModel[] = ["deepseek-v4-pro", "glm-5.2"];
+const QA_REASONING_EFFORTS: QaReasoningEffort[] = ["auto", "quick", "standard", "deep"];
 
 export function PaperQaPanel({
   activeDocumentId,
@@ -92,6 +94,7 @@ export function PaperQaPanel({
   const [isStreaming, setIsStreaming] = useState(false);
   const [messages, setMessages] = useState<LocalQaMessage[]>([]);
   const [model, setModel] = useState<QaChatModel>("deepseek-v4-pro");
+  const [reasoningEffort, setReasoningEffort] = useState<QaReasoningEffort>("auto");
   const [retrievalWarnings, setRetrievalWarnings] = useState<string[]>([]);
   const [selectedEvidenceRef, setSelectedEvidenceRef] = useState<SelectedEvidenceRef>();
   const [threadId, setThreadId] = useState<string>();
@@ -366,6 +369,7 @@ export function PaperQaPanel({
           executionMode,
           model,
           question,
+          reasoningEffort,
           scope: "current",
           threadId,
         },
@@ -477,6 +481,7 @@ export function PaperQaPanel({
     isReady,
     isStreaming,
     model,
+    reasoningEffort,
     refreshThreads,
     t,
     threadId,
@@ -589,6 +594,18 @@ export function PaperQaPanel({
               ))}
             </div>
           </div>
+          <label className="ask-reasoning-menu">
+            <span>{t("ask.reasoningEffort")}</span>
+            <select
+              disabled={isStreaming || executionMode !== "agentic"}
+              onChange={(event) => setReasoningEffort(event.currentTarget.value as QaReasoningEffort)}
+              value={reasoningEffort}
+            >
+              {QA_REASONING_EFFORTS.map((option) => (
+                <option key={option} value={option}>{t(getReasoningEffortLabelKey(option))}</option>
+              ))}
+            </select>
+          </label>
           <label className="ask-model-menu">
             <span>{t("ask.model")}</span>
             <select
@@ -1420,6 +1437,22 @@ function getAgentToolNameLabel(toolName?: QaAgentStep["toolName"]) {
   }
 
   return "-";
+}
+
+function getReasoningEffortLabelKey(effort: QaReasoningEffort): MessageKey {
+  if (effort === "quick") {
+    return "ask.reasoning.quick";
+  }
+
+  if (effort === "standard") {
+    return "ask.reasoning.standard";
+  }
+
+  if (effort === "deep") {
+    return "ask.reasoning.deep";
+  }
+
+  return "ask.reasoning.auto";
 }
 
 function uniqueStrings(values: string[]) {

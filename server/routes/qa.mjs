@@ -7,7 +7,7 @@ import {
 import { verifyAnswerCitations } from "../qa/citationVerifier.mjs";
 import {
   recordAgentFallbackStep,
-  runCurrentPaperAgenticRetrieval,
+  runCurrentPaperReasoningRetrieval,
   QaAgentRunnerError,
 } from "../qa/agentRunner.mjs";
 import {
@@ -147,6 +147,7 @@ async function handleQaStream(request, response, user) {
       executionMode: requestBody.executionMode,
       model: requestBody.model,
       promptVersion: QA_PROMPT_VERSION,
+      reasoningEffort: requestBody.reasoningEffort,
       scope: requestBody.scope,
       threadId: thread.id,
       userMessageId: userMessage.id,
@@ -159,10 +160,12 @@ async function handleQaStream(request, response, user) {
     try {
       if (requestBody.executionMode === "agentic") {
         try {
-          retrieval = await runCurrentPaperAgenticRetrieval({
+          retrieval = await runCurrentPaperReasoningRetrieval({
             emit: (eventName, payload) => writeSse(response, eventName, payload),
             messageId: assistantMessage.id,
+            model: requestBody.model,
             question: requestBody.question,
+            reasoningEffort: requestBody.reasoningEffort,
             signal: abortController.signal,
             userDocumentId: requestBody.activeDocumentId,
             userId: user.id,
@@ -672,6 +675,7 @@ function normalizeQaStreamRequest(body) {
     executionMode: normalizeExecutionMode(body.executionMode),
     model: normalizeQaChatModel(body.model),
     question: question.slice(0, 2000),
+    reasoningEffort: normalizeReasoningEffort(body.reasoningEffort),
     scope: normalizeQaScope(body.scope),
     threadId,
   };
@@ -683,6 +687,12 @@ function normalizeAnswerLanguage(value) {
 
 function normalizeExecutionMode(value) {
   return value === "rag" ? "rag" : "agentic";
+}
+
+function normalizeReasoningEffort(value) {
+  return value === "quick" || value === "standard" || value === "deep" || value === "auto"
+    ? value
+    : "auto";
 }
 
 function normalizeQaScope(value) {

@@ -260,6 +260,7 @@ export type ApiCallLog = {
 export type QaScope = "current" | "current-plus-references" | "library";
 export type QaChatModel = "deepseek-v4-pro" | "glm-5.2";
 export type QaExecutionMode = "rag" | "agentic";
+export type QaReasoningEffort = "auto" | "quick" | "standard" | "deep";
 export type QaAnswerLanguage = "auto" | "zh" | "en";
 export type QaIndexSource = TextExtractionSource;
 export type QaIndexJobStatus =
@@ -464,6 +465,7 @@ export type QaAnswerStreamRequest = {
   executionMode: QaExecutionMode;
   model: QaChatModel;
   question: string;
+  reasoningEffort: QaReasoningEffort;
   scope: "current";
   threadId?: string;
 };

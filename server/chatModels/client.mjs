@@ -91,6 +91,74 @@ export async function streamQaChatCompletion({
   });
 }
 
+export async function createQaChatCompletion({
+  messages,
+  model,
+  signal,
+  temperature = 0.1,
+}) {
+  const normalizedModel = normalizeQaChatModel(model);
+  const providerConfig = getProviderConfig(normalizedModel);
+
+  if (!providerConfig.apiKey) {
+    throw new QaChatModelError(
+      500,
+      `${providerConfig.provider}_api_key_missing`,
+      `${providerConfig.apiKeyName} is not configured.`,
+    );
+  }
+
+  let response;
+
+  try {
+    response = await fetch(`${providerConfig.apiBaseUrl}/chat/completions`, {
+      body: JSON.stringify(createChatCompletionBody({
+        messages,
+        provider: providerConfig.provider,
+        providerModel: providerConfig.providerModel,
+        stream: false,
+        temperature,
+      })),
+      headers: {
+        Authorization: `Bearer ${providerConfig.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+      signal,
+    });
+  } catch (error) {
+    if (signal?.aborted) {
+      throw error;
+    }
+
+    throw new QaChatModelError(
+      502,
+      `${providerConfig.provider}_network_error`,
+      `Network connection to ${providerConfig.displayName} failed.`,
+    );
+  }
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+
+    throw new QaChatModelError(
+      response.status,
+      getProviderErrorCode(providerConfig.provider, response.status),
+      parseProviderErrorMessage(body) ??
+        `${providerConfig.displayName} API returned ${response.status}.`,
+    );
+  }
+
+  const payload = await response.json();
+  const content = payload?.choices?.[0]?.message?.content;
+
+  return {
+    content: typeof content === "string" ? content : "",
+    finishReason: payload?.choices?.[0]?.finish_reason,
+    usage: normalizeUsage(payload?.usage),
+  };
+}
+
 export class QaChatModelError extends Error {
   constructor(statusCode, code, message) {
     super(message);
@@ -124,16 +192,25 @@ function getProviderConfig(model) {
   };
 }
 
-function createChatCompletionBody({ messages, provider, providerModel }) {
+function createChatCompletionBody({
+  messages,
+  provider,
+  providerModel,
+  stream = true,
+  temperature = 0.2,
+}) {
   const body = {
     messages,
     model: providerModel,
-    stream: true,
-    stream_options: {
-      include_usage: true,
-    },
-    temperature: 0.2,
+    stream,
+    temperature,
   };
+
+  if (stream) {
+    body.stream_options = {
+      include_usage: true,
+    };
+  }
 
   if (provider === "deepseek") {
     body.thinking = {
