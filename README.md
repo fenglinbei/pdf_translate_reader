@@ -152,11 +152,26 @@ EMBEDDING_MODEL=voyage-4-large
 EMBEDDING_DIMENSIONS=1024
 EMBEDDING_BATCH_SIZE=8
 EMBEDDING_TIMEOUT_MS=60000
+QA_DEFAULT_CHAT_MODEL=deepseek-v4-pro
+DEEPSEEK_QA_MODEL=deepseek-v4-pro
+GLM_API_KEY=your_glm_key_here
+GLM_QA_MODEL=glm-5.2
+QA_RERANK_PROVIDER=voyage
+QA_RERANK_MODEL=rerank-2.5
+QA_RERANK_CANDIDATE_LIMIT=50
+QA_RERANK_TOP_K=12
 ```
 
 If `VOYAGE_API_KEY` is missing, QA indexing still writes text chunks and marks
 the job `ready_degraded`; semantic vector search is unavailable until the index
 is rebuilt with embeddings.
+
+Milestone B adds current-paper QA through `/api/qa/stream`. It uses DeepSeek V4
+Pro by default and can switch to GLM 5.2 from the Ask panel. GLM can use
+`GLM_API_BASE_URL` when the host needs a custom OpenAI-compatible endpoint.
+When `QA_RERANK_PROVIDER=voyage` and `VOYAGE_API_KEY` are available, retrieval
+uses Voyage `rerank-2.5` after hybrid recall; if rerank fails, the API falls
+back to the hybrid order and records a QA warning/log entry.
 
 ### Invite code signup hook
 

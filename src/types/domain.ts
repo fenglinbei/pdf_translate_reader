@@ -258,6 +258,9 @@ export type ApiCallLog = {
 };
 
 export type QaScope = "current" | "current-plus-references" | "library";
+export type QaChatModel = "deepseek-v4-pro" | "glm-5.2";
+export type QaExecutionMode = "rag" | "agentic";
+export type QaAnswerLanguage = "auto" | "zh" | "en";
 export type QaIndexSource = TextExtractionSource;
 export type QaIndexJobStatus =
   | "pending"
@@ -271,6 +274,19 @@ export type QaIndexJobStatus =
 export type QaCitationConfidence = "verified" | "weak" | "rejected";
 export type QaMessageStatus = "streaming" | "success" | "error" | "aborted";
 export type QaMessageRole = "user" | "assistant";
+export type QaAgentStepKind =
+  | "plan"
+  | "tool_call"
+  | "observation"
+  | "gap_check"
+  | "answer_outline"
+  | "fallback";
+export type QaAgentToolName =
+  | "search_current_paper"
+  | "open_chunk"
+  | "verify_citation"
+  | "compose_answer";
+export type QaAgentStatus = "success" | "error" | "skipped";
 
 export type QaChunk = {
   id: string;
@@ -343,6 +359,36 @@ export type QaRetrievalSnapshot = {
   evidence: QaRetrievedEvidence[];
 };
 
+export type QaToolCall = {
+  id: string;
+  stepId: string;
+  toolName: QaAgentToolName;
+  input: unknown;
+  outputSummary?: string;
+  resultEvidenceIds: string[];
+  status: QaAgentStatus;
+  errorMessage?: string;
+  startedAt: number;
+  finishedAt?: number;
+  createdAt: number;
+  deletedAt?: number;
+};
+
+export type QaAgentStep = {
+  id: string;
+  messageId: string;
+  stepIndex: number;
+  kind: QaAgentStepKind;
+  summary: string;
+  toolName?: QaAgentToolName;
+  evidenceIds: string[];
+  status: QaAgentStatus;
+  payload?: unknown;
+  toolCall?: QaToolCall;
+  createdAt: number;
+  deletedAt?: number;
+};
+
 export type QaThread = {
   id: string;
   activeCloudDocumentId?: string;
@@ -360,7 +406,11 @@ export type QaMessage = {
   role: QaMessageRole;
   content: string;
   status: QaMessageStatus;
+  errorMessage?: string;
+  model?: QaChatModel;
+  promptVersion?: string;
   citations: QaCitation[];
+  agentSteps?: QaAgentStep[];
   retrievalSnapshot?: QaRetrievalSnapshot;
   usage?: TokenUsage;
   createdAt: number;
@@ -396,9 +446,9 @@ export type QaApiLog = {
   pdfFingerprint?: string;
   threadId?: string;
   messageId?: string;
-  requestKind: "index-job" | "answer-stream" | "retrieval" | "citation-verification";
+  requestKind: "index-job" | "answer-stream" | "retrieval" | "rerank" | "citation-verification";
   status: "success" | "error" | "aborted";
-  model?: TranslationModel;
+  model?: TranslationModel | QaChatModel;
   promptVersion?: string;
   retrieverVersion?: string;
   payload?: unknown;
@@ -406,6 +456,16 @@ export type QaApiLog = {
   requestFinishedAt?: number;
   errorMessage?: string;
   usage?: TokenUsage;
+};
+
+export type QaAnswerStreamRequest = {
+  activeDocumentId: string;
+  answerLanguage: QaAnswerLanguage;
+  executionMode: QaExecutionMode;
+  model: QaChatModel;
+  question: string;
+  scope: "current";
+  threadId?: string;
 };
 
 export type AppSettings = {

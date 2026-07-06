@@ -1,5 +1,6 @@
 export const PROJECT_CONFIG = {
   api: {
+    qaAnswerTimeoutMs: 180000,
     translationTimeoutMs: 90000,
   },
   paperContext: {

@@ -753,9 +753,7 @@ create table if not exists public.user_paper_chunks (
   embedding_model text,
   embedding_dimensions integer,
   embedding vector(1024),
-  fts tsvector generated always as (
-    to_tsvector('english', coalesce(title, '') || ' ' || coalesce(array_to_string(section_path, ' '), '') || ' ' || text)
-  ) stored,
+  fts tsvector,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   deleted_at timestamptz
@@ -768,6 +766,35 @@ create unique index if not exists user_paper_chunks_active_chunk_key
 create index if not exists user_paper_chunks_user_document_idx
   on public.user_paper_chunks (user_id, user_document_id, chunk_index)
   where deleted_at is null;
+
+create or replace function public.update_user_paper_chunks_fts()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  new.fts := to_tsvector(
+    'english'::regconfig,
+    coalesce(new.title, '') || ' ' ||
+    coalesce(array_to_string(new.section_path, ' '), '') || ' ' ||
+    coalesce(new.text, '')
+  );
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_user_paper_chunks_fts
+  on public.user_paper_chunks;
+
+create trigger trg_user_paper_chunks_fts
+before insert or update of title, section_path, text
+on public.user_paper_chunks
+for each row
+execute function public.update_user_paper_chunks_fts();
+
+update public.user_paper_chunks
+set text = text
+where fts is null;
 
 create index if not exists user_paper_chunks_fts_idx
   on public.user_paper_chunks using gin (fts)
@@ -783,6 +810,140 @@ create index if not exists user_paper_chunks_embedding_idx
   where deleted_at is null
     and embedding_model = 'voyage-4-large'
     and embedding_dimensions = 1024;
+
+create or replace function public.match_user_paper_chunks_current(
+  p_user_id uuid,
+  p_user_document_id uuid,
+  p_query_text text,
+  p_query_embedding vector(1024) default null,
+  p_embedding_model text default null,
+  p_embedding_dimensions integer default null,
+  p_match_count integer default 12
+)
+returns table (
+  chunk_id uuid,
+  user_document_id uuid,
+  pdf_fingerprint text,
+  document_title text,
+  chunk_index integer,
+  title text,
+  section_path text[],
+  page_start integer,
+  page_end integer,
+  text text,
+  vector_score double precision,
+  full_text_score double precision,
+  metadata_boost double precision,
+  score double precision
+)
+language sql
+stable
+set search_path = public
+as $$
+  with normalized_query as (
+    select nullif(trim(coalesce(p_query_text, '')), '') as query_text
+  ),
+  query_terms as (
+    select
+      query_text,
+      case
+        when query_text is null then null::tsquery
+        else websearch_to_tsquery('english'::regconfig, query_text)
+      end as tsq
+    from normalized_query
+  ),
+  scored_chunks as (
+    select
+      chunks.id as chunk_id,
+      chunks.user_document_id,
+      chunks.pdf_fingerprint,
+      coalesce(nullif(chunks.title, ''), documents.display_file_name) as document_title,
+      chunks.chunk_index,
+      chunks.title,
+      chunks.section_path,
+      chunks.page_start,
+      chunks.page_end,
+      chunks.text,
+      case
+        when p_query_embedding is not null
+          and p_embedding_model is not null
+          and p_embedding_dimensions is not null
+          and chunks.embedding is not null
+          and chunks.embedding_model = p_embedding_model
+          and chunks.embedding_dimensions = p_embedding_dimensions
+        then greatest(0, 1 - (chunks.embedding <=> p_query_embedding))
+        else 0
+      end as vector_score,
+      greatest(
+        case
+          when query_terms.tsq is not null and chunks.fts @@ query_terms.tsq
+          then ts_rank_cd(chunks.fts, query_terms.tsq)::double precision
+          else 0
+        end,
+        case
+          when query_terms.query_text is not null
+          then similarity(
+            left(
+              coalesce(chunks.title, '') || ' ' ||
+              coalesce(array_to_string(chunks.section_path, ' '), '') || ' ' ||
+              chunks.text,
+              1600
+            ),
+            query_terms.query_text
+          )::double precision
+          else 0
+        end
+      ) as full_text_score,
+      (
+        0.08 +
+        case
+          when query_terms.query_text is not null
+            and similarity(
+              coalesce(chunks.title, '') || ' ' ||
+              coalesce(array_to_string(chunks.section_path, ' '), ''),
+              query_terms.query_text
+            ) > 0.08
+          then 0.12
+          else 0
+        end
+      )::double precision as metadata_boost
+    from public.user_paper_chunks chunks
+    join public.user_documents documents
+      on documents.id = chunks.user_document_id
+     and documents.user_id = chunks.user_id
+    cross join query_terms
+    where chunks.user_id = p_user_id
+      and chunks.user_document_id = p_user_document_id
+      and chunks.deleted_at is null
+      and documents.deleted_at is null
+      and (
+        p_query_embedding is not null
+        or query_terms.query_text is not null
+      )
+  )
+  select
+    scored_chunks.chunk_id,
+    scored_chunks.user_document_id,
+    scored_chunks.pdf_fingerprint,
+    scored_chunks.document_title,
+    scored_chunks.chunk_index,
+    scored_chunks.title,
+    scored_chunks.section_path,
+    scored_chunks.page_start,
+    scored_chunks.page_end,
+    scored_chunks.text,
+    scored_chunks.vector_score,
+    scored_chunks.full_text_score,
+    scored_chunks.metadata_boost,
+    (
+      scored_chunks.vector_score * 0.50 +
+      least(1, scored_chunks.full_text_score * 8) * 0.35 +
+      scored_chunks.metadata_boost * 0.15
+    )::double precision as score
+  from scored_chunks
+  order by score desc, chunk_index asc
+  limit greatest(1, least(coalesce(p_match_count, 12), 30));
+$$;
 
 alter table public.user_paper_chunks enable row level security;
 
@@ -993,6 +1154,83 @@ create policy "Users can manage their QA citations"
     )
   );
 
+create table if not exists public.user_qa_agent_steps (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  message_id uuid not null references public.user_qa_messages(id) on delete cascade,
+  step_index integer not null check (step_index >= 0),
+  kind text not null check (kind in ('plan', 'tool_call', 'observation', 'gap_check', 'answer_outline', 'fallback')),
+  summary text not null,
+  tool_name text check (
+    tool_name is null
+    or tool_name in ('search_current_paper', 'open_chunk', 'verify_citation', 'compose_answer')
+  ),
+  evidence_ids text[] not null default '{}',
+  status text not null default 'success' check (status in ('success', 'error', 'skipped')),
+  payload jsonb,
+  created_at timestamptz not null default now(),
+  deleted_at timestamptz,
+  unique (message_id, step_index)
+);
+
+create index if not exists user_qa_agent_steps_message_idx
+  on public.user_qa_agent_steps (user_id, message_id, step_index)
+  where deleted_at is null;
+
+alter table public.user_qa_agent_steps enable row level security;
+
+drop policy if exists "Users can manage their QA agent steps" on public.user_qa_agent_steps;
+create policy "Users can manage their QA agent steps"
+  on public.user_qa_agent_steps
+  for all
+  using (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1 from public.user_qa_messages messages
+      where messages.id = message_id
+        and messages.user_id = auth.uid()
+    )
+  );
+
+create table if not exists public.user_qa_tool_calls (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  step_id uuid not null references public.user_qa_agent_steps(id) on delete cascade,
+  tool_name text not null check (
+    tool_name in ('search_current_paper', 'open_chunk', 'verify_citation', 'compose_answer')
+  ),
+  input jsonb not null default '{}'::jsonb,
+  output_summary text,
+  result_evidence_ids text[] not null default '{}',
+  status text not null check (status in ('success', 'error', 'skipped')),
+  error_message text,
+  started_at timestamptz not null default now(),
+  finished_at timestamptz,
+  created_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
+create index if not exists user_qa_tool_calls_step_idx
+  on public.user_qa_tool_calls (user_id, step_id, created_at asc)
+  where deleted_at is null;
+
+alter table public.user_qa_tool_calls enable row level security;
+
+drop policy if exists "Users can manage their QA tool calls" on public.user_qa_tool_calls;
+create policy "Users can manage their QA tool calls"
+  on public.user_qa_tool_calls
+  for all
+  using (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1 from public.user_qa_agent_steps steps
+      where steps.id = step_id
+        and steps.user_id = auth.uid()
+    )
+  );
+
 create table if not exists public.user_qa_index_jobs (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -1063,7 +1301,7 @@ create table if not exists public.user_qa_api_logs (
   thread_id uuid references public.user_qa_threads(id) on delete set null,
   message_id uuid references public.user_qa_messages(id) on delete set null,
   request_kind text not null check (
-    request_kind in ('index-job', 'answer-stream', 'retrieval', 'citation-verification')
+    request_kind in ('index-job', 'answer-stream', 'retrieval', 'rerank', 'citation-verification')
   ),
   status text not null check (status in ('success', 'error', 'aborted')),
   model text,
@@ -1077,6 +1315,13 @@ create table if not exists public.user_qa_api_logs (
   created_at timestamptz not null default now(),
   deleted_at timestamptz
 );
+
+alter table public.user_qa_api_logs
+  drop constraint if exists user_qa_api_logs_request_kind_check;
+
+alter table public.user_qa_api_logs
+  add constraint user_qa_api_logs_request_kind_check
+  check (request_kind in ('index-job', 'answer-stream', 'retrieval', 'rerank', 'citation-verification'));
 
 create index if not exists user_qa_api_logs_user_started_idx
   on public.user_qa_api_logs (user_id, request_started_at desc)

@@ -87,7 +87,8 @@ type PdfViewerProps = {
 };
 
 export type PinLocateRequest = {
-  pin: TranslationPin;
+  pageIndex?: number;
+  pin?: TranslationPin;
   requestId: number;
 };
 
@@ -1188,6 +1189,22 @@ export function PdfViewer({
     return true;
   }, [pageLayout]);
 
+  const scrollToPage = useCallback((pageIndex: number) => {
+    const scrollElement = scrollRef.current;
+    const pageScrollTop = pageLayout.tops[pageIndex];
+
+    if (!scrollElement || pageScrollTop === undefined) {
+      return false;
+    }
+
+    scrollElement.scrollTo({
+      behavior: "smooth",
+      top: Math.max(0, pageScrollTop - 18),
+    });
+
+    return true;
+  }, [pageLayout]);
+
   const emphasizePinnedTranslationCard = useCallback((cardKey: string) => {
     setEmphasizedPinnedCardKey(cardKey);
     window.clearTimeout(emphasizedPinnedCardTimerRef.current);
@@ -1222,10 +1239,12 @@ export function PdfViewer({
   );
 
   useEffect(() => {
-    if (locateRequest) {
+    if (locateRequest?.pin) {
       handleLocatePin(locateRequest.pin);
+    } else if (typeof locateRequest?.pageIndex === "number") {
+      scrollToPage(locateRequest.pageIndex);
     }
-  }, [handleLocatePin, locateRequest]);
+  }, [handleLocatePin, locateRequest, scrollToPage]);
 
   useEffect(() => {
     if (!isMobileViewport) {

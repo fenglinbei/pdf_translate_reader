@@ -1,5 +1,6 @@
 import { getAppDb } from "../cache";
 import { listCloudApiCallLogs } from "../cloud/apiLogCloudRepository";
+import { listCloudQaApiLogs } from "../cloud/qaApiLogCloudRepository";
 import { getCloudSettings, putCloudSettings } from "../cloud/settingsCloudRepository";
 import { runCloudSync } from "../cloud/syncStatus";
 import { PROJECT_CONFIG } from "../config/projectConfig";
@@ -9,7 +10,13 @@ import {
   normalizeTranslationLanguagePair,
 } from "../config/translationLanguages";
 import { detectBrowserUiLocale, normalizeUiLocale } from "../i18n/uiLocales";
-import type { ApiCallLog, AppSettings, TranslationModel } from "../types/domain";
+import type {
+  ApiCallLog,
+  AppSettings,
+  QaApiLog,
+  QaChatModel,
+  TranslationModel,
+} from "../types/domain";
 
 const APP_SETTINGS_KEY = "app";
 export const MAX_DRAGGED_WORDS_LIMIT = PROJECT_CONFIG.selection.maxDraggedWordsLimit;
@@ -33,12 +40,28 @@ export type ApiUsageSummary = {
   cacheMissTokens: number;
   completionTokens: number;
   errorCalls: number;
-  modelCounts: Record<TranslationModel, number>;
+  modelCounts: Record<ApiUsageModel, number>;
   promptTokens: number;
-  recentLogs: ApiCallLog[];
+  recentLogs: ApiUsageLog[];
   successfulCalls: number;
   totalCalls: number;
   totalTokens: number;
+};
+
+export type ApiUsageModel = TranslationModel | QaChatModel;
+
+export type ApiUsageLog = {
+  completionTokens?: number;
+  id: string;
+  model?: ApiUsageModel;
+  promptCacheHitTokens?: number;
+  promptCacheMissTokens?: number;
+  promptTokens?: number;
+  requestFinishedAt?: number;
+  requestKind?: string;
+  requestStartedAt: number;
+  status: "success" | "error" | "aborted";
+  totalTokens?: number;
 };
 
 export async function getAppSettings() {
@@ -79,10 +102,16 @@ export async function getApiUsageSummary(input: {
   cloudDocumentId?: string;
   pdfFingerprint?: string;
 } = {}): Promise<ApiUsageSummary> {
-  const cloudLogs = await listCloudApiCallLogs(input.cloudDocumentId).catch(() => undefined);
+  const [cloudLogs, qaCloudLogs] = await Promise.all([
+    listCloudApiCallLogs(input.cloudDocumentId).catch(() => undefined),
+    listCloudQaApiLogs(input.cloudDocumentId).catch(() => undefined),
+  ]);
 
-  if (cloudLogs) {
-    return summarizeApiLogs(cloudLogs);
+  if (cloudLogs || qaCloudLogs) {
+    return summarizeApiLogs([
+      ...(cloudLogs ?? []).map(translationLogToUsageLog),
+      ...(qaCloudLogs ?? []).map(qaLogToUsageLog),
+    ]);
   }
 
   const db = await getAppDb();
@@ -90,7 +119,7 @@ export async function getApiUsageSummary(input: {
     ? await db.getAllFromIndex("apiLogs", "by-pdf", input.pdfFingerprint)
     : await db.getAll("apiLogs");
 
-  return summarizeApiLogs(logs);
+  return summarizeApiLogs(logs.map(translationLogToUsageLog));
 }
 
 export function normalizeAppSettings(input: unknown): AppSettings {
@@ -142,7 +171,7 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, Math.round(value)));
 }
 
-function summarizeApiLogs(logs: ApiCallLog[]): ApiUsageSummary {
+function summarizeApiLogs(logs: ApiUsageLog[]): ApiUsageSummary {
   const recentLogs = logs
     .slice()
     .sort((left, right) => right.requestStartedAt - left.requestStartedAt)
@@ -157,6 +186,7 @@ function summarizeApiLogs(logs: ApiCallLog[]): ApiUsageSummary {
     modelCounts: {
       "deepseek-v4-flash": logs.filter((log) => log.model === "deepseek-v4-flash").length,
       "deepseek-v4-pro": logs.filter((log) => log.model === "deepseek-v4-pro").length,
+      "glm-5.2": logs.filter((log) => log.model === "glm-5.2").length,
     },
     promptTokens: sum(logs, "promptTokens"),
     recentLogs,
@@ -166,7 +196,39 @@ function summarizeApiLogs(logs: ApiCallLog[]): ApiUsageSummary {
   };
 }
 
-function sum(logs: ApiCallLog[], key: keyof ApiCallLog) {
+function translationLogToUsageLog(log: ApiCallLog): ApiUsageLog {
+  return {
+    completionTokens: log.completionTokens,
+    id: log.id,
+    model: log.model,
+    promptCacheHitTokens: log.promptCacheHitTokens,
+    promptCacheMissTokens: log.promptCacheMissTokens,
+    promptTokens: log.promptTokens,
+    requestFinishedAt: log.requestFinishedAt,
+    requestKind: log.requestKind,
+    requestStartedAt: log.requestStartedAt,
+    status: log.status,
+    totalTokens: log.totalTokens,
+  };
+}
+
+function qaLogToUsageLog(log: QaApiLog): ApiUsageLog {
+  return {
+    completionTokens: log.usage?.completionTokens,
+    id: log.id,
+    model: log.model,
+    promptCacheHitTokens: log.usage?.promptCacheHitTokens,
+    promptCacheMissTokens: log.usage?.promptCacheMissTokens,
+    promptTokens: log.usage?.promptTokens,
+    requestFinishedAt: log.requestFinishedAt,
+    requestKind: log.requestKind,
+    requestStartedAt: log.requestStartedAt,
+    status: log.status,
+    totalTokens: log.usage?.totalTokens,
+  };
+}
+
+function sum(logs: ApiUsageLog[], key: keyof ApiUsageLog) {
   return logs.reduce((total, log) => {
     const value = log[key];
 

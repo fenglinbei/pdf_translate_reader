@@ -59,6 +59,7 @@ import { PdfImportDropzone } from "../pdf/PdfImportDropzone";
 import { PdfLibrary } from "../pdf/PdfLibrary";
 import { createPdfFingerprint } from "../pdf/pdfFingerprint";
 import { PdfViewer, type PinLocateRequest } from "../pdf/PdfViewer";
+import { PaperQaPanel } from "../qa/PaperQaPanel";
 import { createQaIndexJob, getQaIndexJob } from "../qa/qaClient";
 import {
   deletePin,
@@ -90,8 +91,10 @@ import type {
   MathpixParsedPage,
   PaperContextRecord,
   PdfLibraryEntry,
+  QaCitation,
   QaIndexJob,
   QaIndexSource,
+  QaRetrievedEvidence,
   SelectionMode,
   SentenceSelection,
   TranslationPin,
@@ -1807,6 +1810,32 @@ export function ReaderShell() {
     setMobilePanel(null);
   }, []);
 
+  const handleLocateQaCitation = useCallback((citation: QaCitation) => {
+    if (!currentEntry?.cloudDocumentId || citation.cloudDocumentId !== currentEntry.cloudDocumentId) {
+      return;
+    }
+
+    locateRequestIdRef.current += 1;
+    setLocateRequest({
+      pageIndex: Math.max(0, citation.pageStart - 1),
+      requestId: locateRequestIdRef.current,
+    });
+    setMobilePanel(null);
+  }, [currentEntry?.cloudDocumentId]);
+
+  const handleLocateQaEvidence = useCallback((evidence: QaRetrievedEvidence) => {
+    if (!currentEntry?.cloudDocumentId || evidence.cloudDocumentId !== currentEntry.cloudDocumentId) {
+      return;
+    }
+
+    locateRequestIdRef.current += 1;
+    setLocateRequest({
+      pageIndex: Math.max(0, evidence.pageStart - 1),
+      requestId: locateRequestIdRef.current,
+    });
+    setMobilePanel(null);
+  }, [currentEntry?.cloudDocumentId]);
+
   const handleRevealPinCard = useCallback((pin: TranslationPin) => {
     pinPanelFocusRequestIdRef.current += 1;
     setPinPanelFocusRequest({
@@ -2088,74 +2117,71 @@ export function ReaderShell() {
           <div className="pins-clear-actions">{closeButton}</div>
         </div>
         <div className="ask-panel">
-          <section className="ask-section" aria-label={t("ask.mathpixSection")}>
-            <div className="ask-section-heading">
-              <div>
+          <div className="ask-status-strip" aria-label={t("ask.statusSection")}>
+            <section className="ask-status-item" aria-label={t("ask.mathpixSection")}>
+              <div className="ask-status-main">
                 <div className="ask-section-title">{t("mathpix.label")}</div>
                 <div className="ask-section-status">{mathpixTitle}</div>
+                <div className="ask-detail">{mathpixDetail}</div>
               </div>
-              {mathpixProcessView?.tone === "success" ? (
-                <Check aria-hidden="true" size={17} strokeWidth={2.4} />
-              ) : mathpixProcessView?.tone === "error" ? (
-                <CircleAlert aria-hidden="true" size={17} strokeWidth={2.2} />
-              ) : isMathpixRunning ? (
-                <LoaderCircle aria-hidden="true" className="ask-spin-icon" size={17} strokeWidth={2.2} />
-              ) : null}
-            </div>
-            <div className="ask-detail">{mathpixDetail}</div>
-            <button
-              className="ask-action-button"
-              disabled={!currentEntry || isMathpixRunning}
-              onClick={handleStartMathpixParse}
-              type="button"
-            >
-              {isMathpixCompleted ? (
-                <RefreshCw aria-hidden="true" size={16} strokeWidth={2} />
-              ) : (
-                <Play aria-hidden="true" size={16} strokeWidth={2} />
-              )}
-              <span>{isMathpixCompleted ? t("ask.refreshMathpix") : t("ask.startMathpix")}</span>
-            </button>
-          </section>
-          <section className="ask-section" aria-label={t("ask.indexSection")}>
-            <div className="ask-section-heading">
-              <div>
+              <div className="ask-status-actions">
+                {mathpixProcessView?.tone === "success" ? (
+                  <Check aria-hidden="true" size={16} strokeWidth={2.4} />
+                ) : mathpixProcessView?.tone === "error" ? (
+                  <CircleAlert aria-hidden="true" size={16} strokeWidth={2.2} />
+                ) : isMathpixRunning ? (
+                  <LoaderCircle aria-hidden="true" className="ask-spin-icon" size={16} strokeWidth={2.2} />
+                ) : null}
+                <button
+                  className="ask-icon-button"
+                  disabled={!currentEntry || isMathpixRunning}
+                  onClick={handleStartMathpixParse}
+                  title={isMathpixCompleted ? t("ask.refreshMathpix") : t("ask.startMathpix")}
+                  type="button"
+                >
+                  {isMathpixCompleted ? (
+                    <RefreshCw aria-hidden="true" size={15} strokeWidth={2} />
+                  ) : (
+                    <Play aria-hidden="true" size={15} strokeWidth={2} />
+                  )}
+                </button>
+              </div>
+            </section>
+            <section className="ask-status-item" aria-label={t("ask.indexSection")}>
+              <div className="ask-status-main">
                 <div className="ask-section-title">{t("ask.indexTitle")}</div>
                 <div className="ask-section-status">{qaIndexStatus}</div>
+                {qaIndexProgress ? <div className="ask-detail">{qaIndexProgress}</div> : null}
+                {qaIndexJob?.status === "ready_degraded" ? (
+                  <div className="ask-detail">{t("ask.indexReadyDegradedDetail")}</div>
+                ) : null}
+                {qaIndexJob?.errorMessage ? <div className="ask-detail ask-detail--error">{qaIndexJob.errorMessage}</div> : null}
+                {qaIndexError ? <div className="ask-detail ask-detail--error">{qaIndexError}</div> : null}
+                {!currentEntry?.cloudDocumentId ? (
+                  <div className="ask-detail">{t("ask.cloudRequired")}</div>
+                ) : null}
               </div>
-              {isLoadingQaIndexJob ? (
-                <LoaderCircle aria-hidden="true" className="ask-spin-icon" size={17} strokeWidth={2.2} />
-              ) : qaIndexJob?.status === "ready" ? (
-                <Check aria-hidden="true" size={17} strokeWidth={2.4} />
-              ) : qaIndexJob?.status === "ready_degraded" ? (
-                <CircleAlert aria-hidden="true" size={17} strokeWidth={2.2} />
-              ) : qaIndexJob?.status === "error" ? (
-                <CircleAlert aria-hidden="true" size={17} strokeWidth={2.2} />
-              ) : null}
-            </div>
-            {qaIndexProgress ? <div className="ask-detail">{qaIndexProgress}</div> : null}
-            {qaIndexJob?.status === "ready_degraded" ? (
-              <div className="ask-detail">{t("ask.indexReadyDegradedDetail")}</div>
-            ) : null}
-            {qaIndexJob?.errorMessage ? <div className="ask-detail ask-detail--error">{qaIndexJob.errorMessage}</div> : null}
-            {qaIndexError ? <div className="ask-detail ask-detail--error">{qaIndexError}</div> : null}
-            {!currentEntry?.cloudDocumentId ? (
-              <div className="ask-detail">{t("ask.cloudRequired")}</div>
-            ) : null}
-            <div className="ask-action-grid">
+              <div className="ask-status-actions">
+                {isLoadingQaIndexJob ? (
+                  <LoaderCircle aria-hidden="true" className="ask-spin-icon" size={16} strokeWidth={2.2} />
+                ) : qaIndexJob?.status === "ready" ? (
+                  <Check aria-hidden="true" size={16} strokeWidth={2.4} />
+                ) : qaIndexJob?.status === "ready_degraded" || qaIndexJob?.status === "error" ? (
+                  <CircleAlert aria-hidden="true" size={16} strokeWidth={2.2} />
+                ) : null}
               <button
-                className="ask-action-button"
+                className="ask-icon-button"
                 disabled={!canCreateIndex || !isMathpixCompleted}
                 onClick={() => {
                   void handleCreateQaIndexJob("mathpix-v3-pdf");
                 }}
+                title={t("ask.buildMathpixIndex")}
                 type="button"
               >
                 <MessageSquareText aria-hidden="true" size={16} strokeWidth={2} />
-                <span>{t("ask.buildMathpixIndex")}</span>
               </button>
               <button
-                className="ask-action-button ask-action-button--secondary"
+                className="ask-icon-button"
                 disabled
                 onClick={() => {
                   void handleCreateQaIndexJob("pdfjs");
@@ -2164,10 +2190,16 @@ export function ReaderShell() {
                 type="button"
               >
                 <MessageSquareText aria-hidden="true" size={16} strokeWidth={2} />
-                <span>{t("ask.buildPdfTextIndex")}</span>
               </button>
-            </div>
-          </section>
+              </div>
+            </section>
+          </div>
+          <PaperQaPanel
+            activeDocumentId={currentEntry?.cloudDocumentId}
+            onCitationClick={handleLocateQaCitation}
+            onEvidenceClick={handleLocateQaEvidence}
+            qaIndexJob={qaIndexJob}
+          />
         </div>
       </>
     );

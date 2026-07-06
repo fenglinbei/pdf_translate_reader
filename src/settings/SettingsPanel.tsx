@@ -54,6 +54,7 @@ const EMPTY_USAGE_SUMMARY: ApiUsageSummary = {
   modelCounts: {
     "deepseek-v4-flash": 0,
     "deepseek-v4-pro": 0,
+    "glm-5.2": 0,
   },
   promptTokens: 0,
   recentLogs: [],
@@ -362,7 +363,7 @@ export function SettingsPanel({
             <Readout label={t("settings.tokens")} value={formatLocalizedNumber(usageSummary.totalTokens)} />
             <Readout
               label={t("settings.models")}
-              value={`F ${usageSummary.modelCounts["deepseek-v4-flash"]} / P ${usageSummary.modelCounts["deepseek-v4-pro"]}`}
+              value={`F ${usageSummary.modelCounts["deepseek-v4-flash"]} / P ${usageSummary.modelCounts["deepseek-v4-pro"]} / GLM ${usageSummary.modelCounts["glm-5.2"]}`}
             />
             <Readout label={t("settings.dsCacheHit")} value={formatLocalizedNumber(usageSummary.cacheHitTokens)} />
             <Readout label={t("settings.dsCacheMiss")} value={formatLocalizedNumber(usageSummary.cacheMissTokens)} />
@@ -371,7 +372,7 @@ export function SettingsPanel({
             {usageSummary.recentLogs.length > 0
               ? usageSummary.recentLogs.map((log) => (
                   <div className="settings-log-row" key={log.id}>
-                    <span>{log.model === "deepseek-v4-pro" ? "Pro" : "Flash"}</span>
+                    <span>{formatModelShortLabel(log.model)}</span>
                     <span>{log.status}</span>
                     <span>{formatDuration(log)}</span>
                     <span>{formatLocalizedNumber(log.totalTokens ?? 0)}</span>
@@ -566,4 +567,20 @@ function formatDuration(log: { requestFinishedAt?: number; requestStartedAt: num
   }
 
   return `${Math.max(0, log.requestFinishedAt - log.requestStartedAt)} ms`;
+}
+
+function formatModelShortLabel(model?: string) {
+  if (model === "deepseek-v4-pro") {
+    return "Pro";
+  }
+
+  if (model === "glm-5.2") {
+    return "GLM";
+  }
+
+  if (model === "deepseek-v4-flash") {
+    return "Flash";
+  }
+
+  return "-";
 }
