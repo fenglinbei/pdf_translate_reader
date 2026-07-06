@@ -29,8 +29,10 @@ export function buildTranslationMessages(requestBody) {
         `Only translate the target sentence into ${targetLanguage}.`,
         "Use the requested target-language conventions consistently, including Simplified or Traditional Chinese script when applicable.",
         "Preserve formulas, citations, variables, method names, dataset names, and technical abbreviations.",
+        "Preserve established English acronyms, API names, product names, benchmark names, metric names, code identifiers, and class or label tokens unless terminology explicitly maps them.",
+        "When the source enumerates benchmark label values or tag-like classes, preserve their original casing and hyphenation, e.g. true, mostly-true, half-true, barely-true, false, and pants-fire.",
         "Preserve LaTeX math delimited by \\( \\), \\[ \\], or $$ $$ exactly, including equation tags.",
-        "Follow this priority order: preserve formulas, citations, and terminology first; then apply custom style requirements; then apply preset style; then use general academic translation rules.",
+        "Follow this priority order: preserve formulas, citations, terminology, acronyms, identifiers, and label tokens first; then apply custom style requirements; then apply preset style; then use general academic translation rules.",
         "Do not add commentary, explanation, markdown, or quotation marks.",
       ].join("\n"),
     },
@@ -130,7 +132,7 @@ function getTranslationStyleInstruction(translationStyle) {
 
 const TRANSLATION_STYLE_PRESET_INSTRUCTIONS = {
   "academic-faithful":
-    "Use a faithful academic style: prioritize technical accuracy, literal correspondence, and stable terminology while keeping the target language grammatical.",
+    "Use a faithful academic style: prioritize technical accuracy, literal correspondence, stable terminology, and preservation of established English acronyms, identifiers, and benchmark labels while keeping the target language grammatical.",
   "academic-fluent":
     "Use a fluent academic style: keep technical meaning exact, but smooth sentence flow and improve readability in the target language.",
   "concise-literal":
