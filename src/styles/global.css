@@ -927,17 +927,16 @@ button {
 
 .ask-history-item {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) 26px;
+  align-items: stretch;
   gap: 2px;
   min-width: 120px;
   max-width: 170px;
   border: 1px solid rgba(202, 207, 198, 0.74);
   border-radius: 7px;
-  padding: 7px 8px;
+  padding: 2px;
   color: var(--text);
   background: rgba(255, 255, 255, 0.68);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
 }
 
 .ask-history-item[aria-current="true"] {
@@ -945,12 +944,53 @@ button {
   background: rgba(240, 247, 255, 0.8);
 }
 
-.ask-history-item:disabled {
+.ask-history-select,
+.ask-history-delete {
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+}
+
+.ask-history-select {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 5px 6px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ask-history-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  min-width: 26px;
+  color: var(--text-muted);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.ask-history-select:disabled,
+.ask-history-delete:disabled {
   cursor: not-allowed;
   opacity: 0.72;
 }
 
-.ask-history-item span {
+.ask-history-delete:hover,
+.ask-history-delete:focus-visible {
+  color: #9d2d26;
+  background: rgba(157, 45, 38, 0.08);
+  outline: 0;
+}
+
+.ask-history-select:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.18);
+  outline-offset: 1px;
+}
+
+.ask-history-select span {
   min-width: 0;
   overflow: hidden;
   color: var(--text);
@@ -960,7 +1000,7 @@ button {
   white-space: nowrap;
 }
 
-.ask-history-item small {
+.ask-history-select small {
   color: var(--text-muted);
   font-size: 10px;
 }

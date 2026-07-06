@@ -250,6 +250,106 @@ export async function listQaMessagesForThread({ threadId, userId }) {
   }));
 }
 
+export async function deleteQaThread({ threadId, userId }) {
+  await requireQaThread({ threadId, userId });
+
+  const now = new Date().toISOString();
+  const { data: messageRows, error: messageQueryError } = await requireSupabaseServiceClient()
+    .from("user_qa_messages")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("thread_id", threadId)
+    .is("deleted_at", null);
+
+  if (messageQueryError) {
+    throw toSupabaseServiceError(
+      messageQueryError,
+      "qa_thread_messages_query_failed",
+      "Could not read QA thread messages before deletion.",
+    );
+  }
+
+  const messageIds = (messageRows ?? []).map((row) => row.id).filter(Boolean);
+
+  if (messageIds.length > 0) {
+    const { data: stepRows, error: stepQueryError } = await requireSupabaseServiceClient()
+      .from("user_qa_agent_steps")
+      .select("id")
+      .eq("user_id", userId)
+      .in("message_id", messageIds)
+      .is("deleted_at", null);
+
+    if (stepQueryError) {
+      throw toSupabaseServiceError(
+        stepQueryError,
+        "qa_thread_agent_steps_query_failed",
+        "Could not read QA agent steps before deletion.",
+      );
+    }
+
+    const stepIds = (stepRows ?? []).map((row) => row.id).filter(Boolean);
+
+    if (stepIds.length > 0) {
+      await softDeleteRows({
+        code: "qa_thread_tool_calls_delete_failed",
+        filter: (query) => query.in("step_id", stepIds),
+        table: "user_qa_tool_calls",
+        userId,
+        when: now,
+      });
+    }
+
+    await softDeleteRows({
+      code: "qa_thread_agent_steps_delete_failed",
+      filter: (query) => query.in("message_id", messageIds),
+      table: "user_qa_agent_steps",
+      userId,
+      when: now,
+    });
+    await softDeleteRows({
+      code: "qa_thread_citations_delete_failed",
+      filter: (query) => query.in("message_id", messageIds),
+      table: "user_qa_citations",
+      userId,
+      when: now,
+    });
+    await softDeleteRows({
+      code: "qa_thread_messages_delete_failed",
+      filter: (query) => query.eq("thread_id", threadId),
+      table: "user_qa_messages",
+      userId,
+      when: now,
+    });
+  }
+
+  await softDeleteRows({
+    code: "qa_thread_logs_delete_failed",
+    filter: (query) => query.eq("thread_id", threadId),
+    table: "user_qa_api_logs",
+    userId,
+    when: now,
+  });
+
+  const { error } = await requireSupabaseServiceClient()
+    .from("user_qa_threads")
+    .update({
+      deleted_at: now,
+      updated_at: now,
+    })
+    .eq("id", threadId)
+    .eq("user_id", userId)
+    .is("deleted_at", null);
+
+  if (error) {
+    throw toSupabaseServiceError(error, "qa_thread_delete_failed", "Could not delete QA thread.");
+  }
+
+  return {
+    deletedAt: Date.parse(now),
+    threadId,
+  };
+}
+
 export async function createOrReuseQaThread({
   activeUserDocumentId,
   question,
@@ -767,6 +867,25 @@ async function touchQaThread({ threadId, userId }) {
   }
 
   return rowToQaThread(data);
+}
+
+async function softDeleteRows({
+  code,
+  filter,
+  table,
+  userId,
+  when,
+}) {
+  const query = requireSupabaseServiceClient()
+    .from(table)
+    .update({ deleted_at: when })
+    .eq("user_id", userId)
+    .is("deleted_at", null);
+  const { error } = await filter(query);
+
+  if (error) {
+    throw toSupabaseServiceError(error, code, `Could not delete rows from ${table}.`);
+  }
 }
 
 function rowToQaIndexJob(row) {

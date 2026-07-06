@@ -19,6 +19,7 @@ import { retrieveCurrentPaperEvidence } from "../qa/retriever.mjs";
 import {
   createOrUpdateIndexJob,
   createOrReuseQaThread,
+  deleteQaThread,
   getLatestQaIndexJob,
   insertQaApiLog,
   insertQaCitations,
@@ -39,7 +40,13 @@ const NO_EVIDENCE_ANSWER_ZH = "我没有在当前论文索引中找到能支撑�
 
 export async function handleQaRoute(request, response, url, user) {
   try {
+    const threadMatch = url.pathname.match(/^\/api\/qa\/threads\/([^/]+)$/);
     const threadMessagesMatch = url.pathname.match(/^\/api\/qa\/threads\/([^/]+)\/messages$/);
+
+    if (request.method === "DELETE" && threadMatch) {
+      await handleDeleteThread(threadMatch[1], response, user);
+      return;
+    }
 
     if (request.method === "GET" && threadMessagesMatch) {
       await handleGetThreadMessages(threadMessagesMatch[1], response, user);
@@ -524,6 +531,27 @@ async function handleGetThreads(url, response, user) {
   });
 
   writeJson(response, 200, { threads });
+}
+
+async function handleDeleteThread(threadIdPathSegment, response, user) {
+  const threadId = normalizeUuidLike(decodeURIComponent(threadIdPathSegment));
+
+  if (!threadId) {
+    writeJson(response, 400, {
+      error: {
+        code: "invalid_qa_thread_delete_request",
+        message: "threadId is required.",
+      },
+    });
+    return;
+  }
+
+  const result = await deleteQaThread({
+    threadId,
+    userId: user.id,
+  });
+
+  writeJson(response, 200, result);
 }
 
 async function handleGetThreadMessages(threadIdPathSegment, response, user) {

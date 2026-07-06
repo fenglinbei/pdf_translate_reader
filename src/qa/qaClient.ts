@@ -168,6 +168,20 @@ export async function getQaThreadMessages(threadId: string) {
   return payload.messages;
 }
 
+export async function deleteQaThread(threadId: string) {
+  const response = await fetch(`${apiBaseUrl}/qa/threads/${encodeURIComponent(threadId)}`, {
+    headers: {
+      Accept: "application/json",
+      ...await getAuthHeader(),
+    },
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response));
+  }
+}
+
 export async function streamQaAnswer(
   request: QaAnswerStreamRequest,
   handlers: QaStreamHandlers,

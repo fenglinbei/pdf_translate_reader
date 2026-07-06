@@ -10,6 +10,7 @@ import {
   Search,
   Send,
   Square,
+  Trash2,
   X,
 } from "lucide-react";
 import { useI18n } from "../i18n/I18nProvider";
@@ -28,6 +29,7 @@ import type {
   TokenUsage,
 } from "../types/domain";
 import {
+  deleteQaThread,
   getQaThreadMessages,
   getQaThreads,
   streamQaAnswer,
@@ -81,6 +83,7 @@ export function PaperQaPanel({
 }: PaperQaPanelProps) {
   const { t } = useI18n();
   const [answerLanguage] = useState<QaAnswerLanguage>("auto");
+  const [deletingThreadId, setDeletingThreadId] = useState<string>();
   const [draftQuestion, setDraftQuestion] = useState("");
   const [executionMode, setExecutionMode] = useState<QaExecutionMode>("agentic");
   const [historyError, setHistoryError] = useState<string>();
@@ -248,6 +251,51 @@ export function PaperQaPanel({
     setSelectedEvidenceRef(undefined);
     setThreadId(nextThreadId);
   }, [isStreaming, threadId]);
+
+  const handleThreadDelete = useCallback(async (thread: QaThread) => {
+    if (isStreaming || deletingThreadId) {
+      return;
+    }
+
+    const title = thread.title || t("ask.untitledThread");
+
+    if (!window.confirm(t("ask.deleteThreadConfirm", { title }))) {
+      return;
+    }
+
+    setDeletingThreadId(thread.id);
+    setHistoryError(undefined);
+
+    try {
+      await deleteQaThread(thread.id);
+
+      const remainingThreads = threads.filter((item) => item.id !== thread.id);
+
+      setThreads(remainingThreads);
+
+      if (threadId === thread.id) {
+        messagesRequestRef.current += 1;
+        setMessages([]);
+        setRetrievalWarnings([]);
+        setSelectedEvidenceRef(undefined);
+        setVerifierWarnings([]);
+        setThreadId(remainingThreads[0]?.id);
+      }
+
+      void refreshThreads();
+    } catch (error) {
+      setHistoryError(error instanceof Error ? error.message : t("ask.deleteThreadFailed"));
+    } finally {
+      setDeletingThreadId(undefined);
+    }
+  }, [
+    deletingThreadId,
+    isStreaming,
+    refreshThreads,
+    t,
+    threadId,
+    threads,
+  ]);
 
   const handleCitationChipClick = useCallback((
     message: LocalQaMessage,
@@ -478,8 +526,10 @@ export function PaperQaPanel({
 
       <ThreadHistory
         activeThreadId={threadId}
+        deletingThreadId={deletingThreadId}
         disabled={isStreaming}
         isLoading={isLoadingThreads}
+        onDelete={handleThreadDelete}
         onSelect={handleThreadSelect}
         threads={threads}
       />
@@ -590,14 +640,18 @@ export function PaperQaPanel({
 
 function ThreadHistory({
   activeThreadId,
+  deletingThreadId,
   disabled,
   isLoading,
+  onDelete,
   onSelect,
   threads,
 }: {
   activeThreadId?: string;
+  deletingThreadId?: string;
   disabled: boolean;
   isLoading: boolean;
+  onDelete: (thread: QaThread) => void;
   onSelect: (threadId: string) => void;
   threads: QaThread[];
 }) {
@@ -615,17 +669,34 @@ function ThreadHistory({
       </div>
       <div className="ask-history-list">
         {threads.slice(0, 6).map((thread) => (
-          <button
+          <div
             aria-current={thread.id === activeThreadId ? "true" : undefined}
             className="ask-history-item"
-            disabled={disabled}
             key={thread.id}
-            onClick={() => onSelect(thread.id)}
-            type="button"
           >
-            <span>{thread.title || t("ask.untitledThread")}</span>
-            <small>{formatThreadTime(thread.updatedAt)}</small>
-          </button>
+            <button
+              className="ask-history-select"
+              disabled={disabled}
+              onClick={() => onSelect(thread.id)}
+              type="button"
+            >
+              <span>{thread.title || t("ask.untitledThread")}</span>
+              <small>{formatThreadTime(thread.updatedAt)}</small>
+            </button>
+            <button
+              className="ask-history-delete"
+              disabled={disabled || deletingThreadId === thread.id}
+              onClick={() => onDelete(thread)}
+              title={t("ask.deleteThread")}
+              type="button"
+            >
+              {deletingThreadId === thread.id ? (
+                <LoaderCircle aria-hidden="true" className="ask-spin-icon" size={13} strokeWidth={2.2} />
+              ) : (
+                <Trash2 aria-hidden="true" size={13} strokeWidth={2.1} />
+              )}
+            </button>
+          </div>
         ))}
       </div>
     </div>
