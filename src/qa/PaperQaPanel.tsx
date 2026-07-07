@@ -1,7 +1,9 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
+  Check,
   ChevronRight,
+  Copy,
   FileText,
   History,
   LoaderCircle,
@@ -9,6 +11,7 @@ import {
   Minimize2,
   PanelRightOpen,
   Plus,
+  RefreshCw,
   Search,
   Send,
   Sparkles,
@@ -38,6 +41,7 @@ import type {
   TokenUsage,
 } from "../types/domain";
 import {
+  deleteQaMessage,
   deleteQaThread,
   getQaThreadMessages,
   getQaThreads,
@@ -85,9 +89,11 @@ export function PaperQaPanel({
 }: PaperQaPanelProps) {
   const { t } = useI18n();
   const [answerLanguage] = useState<QaAnswerLanguage>("auto");
+  const [copiedMessageId, setCopiedMessageId] = useState<string>();
   const [deletingThreadId, setDeletingThreadId] = useState<string>();
   const [draftQuestion, setDraftQuestion] = useState("");
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [operatingMessageId, setOperatingMessageId] = useState<string>();
   const [historyError, setHistoryError] = useState<string>();
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isLoadingThreads, setIsLoadingThreads] = useState(false);
@@ -105,6 +111,9 @@ export function PaperQaPanel({
   const historyRequestRef = useRef(0);
   const messagesRequestRef = useRef(0);
   const highlightTimerRef = useRef<number>();
+  // Set right after a stream finishes so the threadId effect can skip refetching
+  // the messages we already have from onDone.
+  const justFinishedStreamRef = useRef(false);
   const isReady = Boolean(
     activeDocumentId
     && qaIndexJob?.status === "ready"
@@ -124,7 +133,7 @@ export function PaperQaPanel({
     [messages, selectedEvidenceRef],
   );
 
-  const refreshThreads = useCallback(async (options: { selectLatest?: boolean } = {}) => {
+  const refreshThreads = useCallback(async (options: { selectLatest?: boolean; silent?: boolean } = {}) => {
     if (!activeDocumentId) {
       setThreads([]);
       return [];
@@ -132,7 +141,9 @@ export function PaperQaPanel({
 
     const requestId = historyRequestRef.current + 1;
     historyRequestRef.current = requestId;
-    setIsLoadingThreads(true);
+    if (!options.silent) {
+      setIsLoadingThreads(true);
+    }
     setHistoryError(undefined);
 
     try {
@@ -159,7 +170,7 @@ export function PaperQaPanel({
 
       return [];
     } finally {
-      if (historyRequestRef.current === requestId) {
+      if (historyRequestRef.current === requestId && !options.silent) {
         setIsLoadingThreads(false);
       }
     }
@@ -205,6 +216,13 @@ export function PaperQaPanel({
 
   useEffect(() => {
     if (!threadId || isStreaming) {
+      return;
+    }
+
+    // A stream just finished: onDone already wrote the final messages locally,
+    // so skip the refetch that would otherwise flash the loading placeholder.
+    if (justFinishedStreamRef.current) {
+      justFinishedStreamRef.current = false;
       return;
     }
 
@@ -317,6 +335,242 @@ export function PaperQaPanel({
     t,
     threadId,
     threads,
+  ]);
+
+  const handleCopyMessage = useCallback(async (message: LocalQaMessage) => {
+    if (!message.content) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopiedMessageId(message.id);
+      window.setTimeout(() => {
+        setCopiedMessageId((current) => (current === message.id ? undefined : current));
+      }, 2000);
+    } catch {
+      setHistoryError(t("ask.copyFailed"));
+    }
+  }, [t]);
+
+  const handleMessageDelete = useCallback(async (message: LocalQaMessage) => {
+    if (isStreaming || operatingMessageId) {
+      return;
+    }
+
+    if (!window.confirm(t("ask.deleteAnswerConfirm"))) {
+      return;
+    }
+
+    setOperatingMessageId(message.id);
+    setHistoryError(undefined);
+
+    try {
+      await deleteQaMessage(message.id);
+
+      // Optimistically remove the assistant message and its preceding user turn.
+      setMessages((currentMessages) => {
+        const index = currentMessages.findIndex((item) => item.id === message.id);
+        if (index < 0) {
+          return currentMessages;
+        }
+
+        const nextMessages = [...currentMessages];
+        // Remove the assistant message.
+        nextMessages.splice(index, 1);
+        // If the immediately preceding message is the matching user turn, remove it too.
+        if (index > 0 && nextMessages[index - 1].role === "user") {
+          nextMessages.splice(index - 1, 1);
+        }
+
+        return nextMessages;
+      });
+
+      void refreshThreads({ silent: true });
+    } catch (error) {
+      setHistoryError(error instanceof Error ? error.message : t("ask.deleteAnswerFailed"));
+    } finally {
+      setOperatingMessageId(undefined);
+    }
+  }, [isStreaming, operatingMessageId, refreshThreads, t]);
+
+  const handleRegenerateMessage = useCallback(async (message: LocalQaMessage) => {
+    if (!activeDocumentId || !isReady || isStreaming || operatingMessageId || !threadId) {
+      return;
+    }
+
+    // Find the user question that produced this assistant message.
+    const index = messages.findIndex((item) => item.id === message.id);
+    if (index < 0) {
+      return;
+    }
+
+    const userMessage = [...messages.slice(0, index)].reverse().find((item) => item.role === "user");
+    const question = userMessage?.content ?? "";
+
+    if (!question) {
+      return;
+    }
+
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    setOperatingMessageId(message.id);
+    setHistoryError(undefined);
+    setRetrievalWarnings([]);
+    setSelectedEvidenceRef(undefined);
+    setVerifierWarnings([]);
+
+    // Reset the assistant message to a streaming placeholder so the UI shows
+    // a fresh generation in place.
+    setMessages((currentMessages) => currentMessages.map((item) => (
+      item.id === message.id
+        ? {
+          ...item,
+          agentSteps: [],
+          citations: [],
+          content: "",
+          reasoningText: undefined,
+          retrievalSnapshot: undefined,
+          status: "streaming",
+        }
+        : item
+    )));
+
+    try {
+      setIsStreaming(true);
+      await streamQaAnswer(
+        {
+          activeDocumentId,
+          answerLanguage,
+          executionMode: "agentic",
+          model,
+          question,
+          reasoningEffort,
+          regenerateMessageId: message.id,
+          scope: "current",
+          threadId,
+        },
+        {
+          onAgentStep: (step) => {
+            updateAssistantMessage(message.id, (current) => ({
+              ...current,
+              agentSteps: mergeAgentStep(current.agentSteps ?? [], step),
+            }));
+          },
+          onCitation: (citations) => {
+            updateAssistantMessage(message.id, (current) => ({
+              ...current,
+              citations,
+            }));
+          },
+          onDelta: (text) => {
+            updateAssistantMessage(message.id, (current) => ({
+              ...current,
+              content: `${current.content}${text}`,
+            }));
+          },
+          onDone: (payload) => {
+            const assistantMessage = payload.assistantMessage;
+
+            if (assistantMessage) {
+              updateAssistantMessage(message.id, (current) => ({
+                ...qaMessageToLocal({
+                  ...assistantMessage,
+                  citations: payload.citations ?? assistantMessage.citations ?? [],
+                }),
+                content: current.content || assistantMessage.content,
+                id: assistantMessage.id,
+                reasoningText: current.reasoningText,
+              }));
+            } else {
+              updateAssistantMessage(message.id, (current) => ({
+                ...current,
+                status: "success",
+              }));
+            }
+
+            justFinishedStreamRef.current = true;
+            void refreshThreads({ silent: true });
+          },
+          onGapCheck: (step) => {
+            updateAssistantMessage(message.id, (current) => ({
+              ...current,
+              agentSteps: mergeAgentStep(current.agentSteps ?? [], step),
+            }));
+          },
+          onMeta: (metadata) => {
+            setThreadId(metadata.threadId);
+          },
+          onObservation: (step) => {
+            updateAssistantMessage(message.id, (current) => ({
+              ...current,
+              agentSteps: mergeAgentStep(current.agentSteps ?? [], step),
+            }));
+          },
+          onRetrieval: (retrievalPayload) => {
+            setRetrievalWarnings(retrievalPayload.warnings ?? []);
+            updateAssistantMessage(message.id, (current) => ({
+              ...current,
+              retrievalSnapshot: retrievalPayload.snapshot,
+            }));
+          },
+          onThinking: (text) => {
+            updateAssistantMessage(message.id, (current) => ({
+              ...current,
+              reasoningText: `${current.reasoningText ?? ""}${text}`,
+            }));
+          },
+          onToolCall: ({ step, toolCall }) => {
+            updateAssistantMessage(message.id, (current) => ({
+              ...current,
+              agentSteps: mergeAgentStep(current.agentSteps ?? [], {
+                ...step,
+                toolCall: toolCall ?? step.toolCall,
+              }),
+            }));
+          },
+          onUsage: (usage) => {
+            updateAssistantMessage(message.id, (current) => ({
+              ...current,
+              usage,
+            }));
+          },
+          onVerifier: (verifierPayload: QaVerifierPayload) => {
+            setVerifierWarnings(verifierPayload.warnings ?? []);
+          },
+        },
+        abortController.signal,
+      );
+    } catch (error) {
+      updateAssistantMessage(message.id, (current) => ({
+        ...current,
+        errorMessage: abortController.signal.aborted
+          ? t("ask.stopped")
+          : error instanceof Error
+            ? error.message
+            : t("ask.answerFailed"),
+        status: abortController.signal.aborted ? "aborted" : "error",
+      }));
+    } finally {
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = undefined;
+      }
+
+      setIsStreaming(false);
+      setOperatingMessageId(undefined);
+    }
+  }, [
+    activeDocumentId,
+    answerLanguage,
+    isReady,
+    isStreaming,
+    messages,
+    model,
+    operatingMessageId,
+    reasoningEffort,
+    t,
+    threadId,
+    updateAssistantMessage,
   ]);
 
   const flashEvidence = useCallback((evidenceId: string) => {
@@ -459,6 +713,9 @@ export function PaperQaPanel({
                   ...assistantMessage,
                   citations: payload.citations ?? assistantMessage.citations ?? [],
                 }),
+                // Keep the locally streamed content to avoid a visual flash when the
+                // server version (which should be identical) replaces it.
+                content: message.content || assistantMessage.content,
                 id: assistantMessage.id,
                 // Preserve the streaming reasoning trace; it is not persisted server-side.
                 reasoningText: message.reasoningText,
@@ -470,7 +727,11 @@ export function PaperQaPanel({
               }));
             }
 
-            void refreshThreads();
+            // Signal the threadId effect to skip refetching — we already have
+            // the final messages from onDone.
+            justFinishedStreamRef.current = true;
+            // Silently sync the thread list without toggling the loading spinner.
+            void refreshThreads({ silent: true });
           },
           onGapCheck: (step) => {
             updateAssistantMessage(localAssistantMessageId, (message) => ({
@@ -558,18 +819,9 @@ export function PaperQaPanel({
 
   return (
     <>
-      {isFullscreen ? (
-        <div
-          aria-hidden="true"
-          className="ask-fullscreen-backdrop"
-          onClick={() => setIsFullscreen(false)}
-        />
-      ) : null}
       <section
         aria-label={t("ask.chatSection")}
         className={`ask-workbench ${isFullscreen ? "ask-workbench--fullscreen" : ""}`}
-        role={isFullscreen ? "dialog" : undefined}
-        aria-modal={isFullscreen ? "true" : undefined}
       >
       <header className="ask-workbench-header">
         <div className="ask-workbench-title-block">
@@ -640,11 +892,17 @@ export function PaperQaPanel({
         ) : messages.map((message) => (
           <QaMessageBubble
             activeDocumentId={activeDocumentId}
+            copiedMessageId={copiedMessageId}
+            isStreaming={isStreaming}
             key={message.id}
             message={message}
             onCitationClick={handleCitationChipClick}
             onCitationToken={handleCitationTokenClick}
+            onCopy={handleCopyMessage}
+            onDelete={handleMessageDelete}
             onEvidenceOpen={handleEvidenceOpen}
+            onRegenerate={handleRegenerateMessage}
+            operatingMessageId={operatingMessageId}
           />
         ))}
       </div>
@@ -795,16 +1053,28 @@ function ThreadHistory({
 
 function QaMessageBubble({
   activeDocumentId,
+  copiedMessageId,
+  isStreaming,
   message,
   onCitationClick,
   onCitationToken,
+  onCopy,
+  onDelete,
   onEvidenceOpen,
+  onRegenerate,
+  operatingMessageId,
 }: {
   activeDocumentId?: string;
+  copiedMessageId?: string;
+  isStreaming: boolean;
   message: LocalQaMessage;
   onCitationClick: (message: LocalQaMessage, citation: QaCitation) => void;
   onCitationToken: (message: LocalQaMessage, evidenceId: string) => void;
+  onCopy: (message: LocalQaMessage) => void;
+  onDelete: (message: LocalQaMessage) => void;
   onEvidenceOpen: (message: LocalQaMessage, evidence: QaRetrievedEvidence) => void;
+  onRegenerate: (message: LocalQaMessage) => void;
+  operatingMessageId?: string;
 }) {
   const { t } = useI18n();
   const isAssistant = message.role === "assistant";
@@ -887,6 +1157,17 @@ function QaMessageBubble({
           </div>
         ) : null}
         {isAssistant ? <MessageMeta message={message} /> : null}
+        {isAssistant && message.status !== "streaming" ? (
+          <MessageActions
+            copied={copiedMessageId === message.id}
+            disabled={isStreaming}
+            message={message}
+            onCopy={onCopy}
+            onDelete={onDelete}
+            onRegenerate={onRegenerate}
+            operating={operatingMessageId === message.id}
+          />
+        ) : null}
       </div>
     </article>
   );
@@ -909,6 +1190,62 @@ function MessageMeta({ message }: { message: LocalQaMessage }) {
   return (
     <div className="ask-message-usage">
       {message.status === "streaming" ? t("ask.streaming") : parts.join(" · ")}
+    </div>
+  );
+}
+
+function MessageActions({
+  copied,
+  disabled,
+  message,
+  onCopy,
+  onDelete,
+  onRegenerate,
+  operating,
+}: {
+  copied: boolean;
+  disabled: boolean;
+  message: LocalQaMessage;
+  onCopy: (message: LocalQaMessage) => void;
+  onDelete: (message: LocalQaMessage) => void;
+  onRegenerate: (message: LocalQaMessage) => void;
+  operating: boolean;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <div className="ask-message-actions">
+      <button
+        className="ask-message-action"
+        disabled={operating}
+        onClick={() => onCopy(message)}
+        title={copied ? t("ask.copied") : t("ask.copyAnswer")}
+        type="button"
+      >
+        {copied
+          ? <Check aria-hidden="true" size={13} strokeWidth={2.2} />
+          : <Copy aria-hidden="true" size={13} strokeWidth={2.1} />}
+      </button>
+      <button
+        className="ask-message-action"
+        disabled={disabled || operating}
+        onClick={() => onRegenerate(message)}
+        title={t("ask.regenerate")}
+        type="button"
+      >
+        {operating
+          ? <LoaderCircle aria-hidden="true" className="ask-spin-icon" size={13} strokeWidth={2.2} />
+          : <RefreshCw aria-hidden="true" size={13} strokeWidth={2.1} />}
+      </button>
+      <button
+        className="ask-message-action ask-message-action--danger"
+        disabled={operating}
+        onClick={() => onDelete(message)}
+        title={t("ask.deleteAnswer")}
+        type="button"
+      >
+        <Trash2 aria-hidden="true" size={13} strokeWidth={2.1} />
+      </button>
     </div>
   );
 }

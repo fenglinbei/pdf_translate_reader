@@ -467,6 +467,7 @@ export type QaAnswerStreamRequest = {
   model: QaChatModel;
   question: string;
   reasoningEffort: QaReasoningEffort;
+  regenerateMessageId?: string;
   scope: "current";
   threadId?: string;
 };

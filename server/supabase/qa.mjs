@@ -350,6 +350,104 @@ export async function deleteQaThread({ threadId, userId }) {
   };
 }
 
+/**
+ * Soft-delete a single QA message and its cascade (tool calls, agent steps,
+ * citations, api logs). Used by message-level delete and regenerate flows.
+ */
+export async function deleteQaMessage({ messageId, userId }) {
+  const now = new Date().toISOString();
+
+  // Verify ownership via the message's thread.
+  const { data: messageRow, error: messageQueryError } = await requireSupabaseServiceClient()
+    .from("user_qa_messages")
+    .select("id, thread_id")
+    .eq("id", messageId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (messageQueryError) {
+    throw toSupabaseServiceError(
+      messageQueryError,
+      "qa_message_query_failed",
+      "Could not read QA message before deletion.",
+    );
+  }
+
+  if (!messageRow) {
+    throw new SupabaseServiceError(
+      404,
+      "qa_message_not_found",
+      "QA message was not found for this user.",
+    );
+  }
+
+  const { data: stepRows, error: stepQueryError } = await requireSupabaseServiceClient()
+    .from("user_qa_agent_steps")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("message_id", messageId)
+    .is("deleted_at", null);
+
+  if (stepQueryError) {
+    throw toSupabaseServiceError(
+      stepQueryError,
+      "qa_message_agent_steps_query_failed",
+      "Could not read QA agent steps before deletion.",
+    );
+  }
+
+  const stepIds = (stepRows ?? []).map((row) => row.id).filter(Boolean);
+
+  if (stepIds.length > 0) {
+    await softDeleteRows({
+      code: "qa_message_tool_calls_delete_failed",
+      filter: (query) => query.in("step_id", stepIds),
+      table: "user_qa_tool_calls",
+      userId,
+      when: now,
+    });
+  }
+
+  await softDeleteRows({
+    code: "qa_message_agent_steps_delete_failed",
+    filter: (query) => query.eq("message_id", messageId),
+    table: "user_qa_agent_steps",
+    userId,
+    when: now,
+  });
+  await softDeleteRows({
+    code: "qa_message_citations_delete_failed",
+    filter: (query) => query.eq("message_id", messageId),
+    table: "user_qa_citations",
+    userId,
+    when: now,
+  });
+  await softDeleteRows({
+    code: "qa_message_logs_delete_failed",
+    filter: (query) => query.eq("message_id", messageId),
+    table: "user_qa_api_logs",
+    userId,
+    when: now,
+  });
+
+  const { error } = await requireSupabaseServiceClient()
+    .from("user_qa_messages")
+    .update({ deleted_at: now })
+    .eq("id", messageId)
+    .eq("user_id", userId)
+    .is("deleted_at", null);
+
+  if (error) {
+    throw toSupabaseServiceError(error, "qa_message_delete_failed", "Could not delete QA message.");
+  }
+
+  return {
+    deletedAt: Date.parse(now),
+    messageId,
+  };
+}
+
 export async function createOrReuseQaThread({
   activeUserDocumentId,
   question,

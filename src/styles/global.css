@@ -543,6 +543,10 @@ button {
   align-items: center;
   gap: 8px;
   padding-right: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--surface);
 }
 
 .pane-heading-row .pane-heading {
@@ -877,29 +881,20 @@ button {
   padding-bottom: 12px;
 }
 
-.ask-fullscreen-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 89;
-  background: rgba(24, 32, 42, 0.36);
-  backdrop-filter: blur(2px);
-}
-
+/*
+ * In-place fullscreen: instead of a floating modal card, expand the workbench
+ * to fill its translation-pane container (which is position:relative). The
+ * workbench sits above the status strip so chat gets the full pane height.
+ */
 .ask-workbench--fullscreen {
-  position: fixed;
+  position: absolute;
   inset: 0;
-  z-index: 90;
+  z-index: 20;
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
-  gap: 14px;
-  width: min(960px, calc(100vw - 32px));
-  height: min(88vh, calc(100vh - 32px));
-  margin: auto;
-  padding: 18px 20px;
+  gap: 12px;
+  padding: 10px 12px 12px;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  box-shadow: var(--shadow-soft);
   overflow: hidden;
 }
 
@@ -1522,6 +1517,54 @@ button {
 .ask-message-usage {
   color: var(--text-muted);
   font-size: 11px;
+}
+
+.ask-message-actions {
+  display: flex;
+  gap: 2px;
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.ask-message:hover .ask-message-actions,
+.ask-message:focus-within .ask-message-actions {
+  opacity: 1;
+}
+
+.ask-message-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.ask-message-action:hover:not(:disabled) {
+  background: rgba(103, 112, 122, 0.12);
+  color: var(--text);
+}
+
+.ask-message-action:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.2);
+  outline-offset: 1px;
+}
+
+.ask-message-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ask-message-action--danger:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.12);
+  color: rgb(220, 38, 38);
 }
 
 .ask-evidence-link-row {

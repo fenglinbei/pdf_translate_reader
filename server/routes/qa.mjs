@@ -21,6 +21,7 @@ import { loadCurrentPaperFullText } from "../qa/retriever.mjs";
 import {
   createOrUpdateIndexJob,
   createOrReuseQaThread,
+  deleteQaMessage,
   deleteQaThread,
   getLatestQaIndexJob,
   insertQaApiLog,
@@ -47,6 +48,12 @@ export async function handleQaRoute(request, response, url, user) {
   try {
     const threadMatch = url.pathname.match(/^\/api\/qa\/threads\/([^/]+)$/);
     const threadMessagesMatch = url.pathname.match(/^\/api\/qa\/threads\/([^/]+)\/messages$/);
+    const messageMatch = url.pathname.match(/^\/api\/qa\/messages\/([^/]+)$/);
+
+    if (request.method === "DELETE" && messageMatch) {
+      await handleDeleteMessage(messageMatch[1], response, user);
+      return;
+    }
 
     if (request.method === "DELETE" && threadMatch) {
       await handleDeleteThread(threadMatch[1], response, user);
@@ -137,13 +144,36 @@ async function handleQaStream(request, response, user) {
       question: requestBody.question,
     });
 
-    const userMessage = await insertQaMessage({
-      content: requestBody.question,
-      role: "user",
-      status: "success",
-      threadId: thread.id,
-      userId: user.id,
-    });
+    // In regenerate mode, delete the old assistant message and reuse the
+    // existing user message instead of inserting a duplicate user turn.
+    let userMessageId;
+    if (requestBody.regenerateMessageId) {
+      await deleteQaMessage({
+        messageId: requestBody.regenerateMessageId,
+        userId: user.id,
+      });
+      // The user message is the most recent non-deleted user turn before the
+      // regenerated assistant message; reuse it.
+      const priorMessages = await listQaMessagesForThread({
+        threadId: thread.id,
+        userId: user.id,
+      });
+      const lastUserMessage = [...priorMessages]
+        .reverse()
+        .find((message) => message.role === "user");
+      userMessageId = lastUserMessage?.id;
+    }
+
+    if (!requestBody.regenerateMessageId) {
+      const userMessage = await insertQaMessage({
+        content: requestBody.question,
+        role: "user",
+        status: "success",
+        threadId: thread.id,
+        userId: user.id,
+      });
+      userMessageId = userMessage.id;
+    }
 
     assistantMessage = await insertQaMessage({
       content: "",
@@ -165,7 +195,7 @@ async function handleQaStream(request, response, user) {
       reasoningEffort: requestBody.reasoningEffort,
       scope: requestBody.scope,
       threadId: thread.id,
-      userMessageId: userMessage.id,
+      userMessageId: userMessageId,
     });
 
     const retrievalStartedAt = Date.now();
@@ -649,6 +679,27 @@ async function handleDeleteThread(threadIdPathSegment, response, user) {
   writeJson(response, 200, result);
 }
 
+async function handleDeleteMessage(messageIdPathSegment, response, user) {
+  const messageId = normalizeUuidLike(decodeURIComponent(messageIdPathSegment));
+
+  if (!messageId) {
+    writeJson(response, 400, {
+      error: {
+        code: "invalid_qa_message_delete_request",
+        message: "messageId is required.",
+      },
+    });
+    return;
+  }
+
+  const result = await deleteQaMessage({
+    messageId,
+    userId: user.id,
+  });
+
+  writeJson(response, 200, result);
+}
+
 async function handleGetThreadMessages(threadIdPathSegment, response, user) {
   const threadId = normalizeUuidLike(decodeURIComponent(threadIdPathSegment));
 
@@ -768,6 +819,7 @@ function normalizeQaStreamRequest(body) {
     model: normalizeQaChatModel(body.model),
     question: question.slice(0, 2000),
     reasoningEffort: normalizeReasoningEffort(body.reasoningEffort),
+    regenerateMessageId: normalizeUuidLike(body.regenerateMessageId),
     scope: normalizeQaScope(body.scope),
     threadId,
   };
