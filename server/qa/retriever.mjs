@@ -3,6 +3,7 @@ import { getEmbeddingRuntimeConfig } from "../embedding/config.mjs";
 import { SupabaseServiceError, requireSupabaseServiceClient } from "../supabase/service.mjs";
 import { getLatestQaIndexJob } from "../supabase/qa.mjs";
 import { QA_CHUNKER_VERSION, QA_LONG_CONTEXT_MAX_CHARS, QA_RETRIEVER_VERSION } from "./config.mjs";
+import { computeAnswerContextBudget } from "./contextBudget.mjs";
 import { loadMathpixStructuredDocument } from "./documentParser.mjs";
 import {
   getRerankerRuntimeConfig,
@@ -214,7 +215,7 @@ function rowToEvidence(row, index) {
   };
 }
 
-export async function loadCurrentPaperFullText({ userDocumentId, userId }) {
+export async function loadCurrentPaperFullText({ userDocumentId, userId, model }) {
   const job = await requireUsableIndexJob({ userDocumentId, userId });
   const document = await loadMathpixStructuredDocument({ job });
 
@@ -233,7 +234,8 @@ export async function loadCurrentPaperFullText({ userDocumentId, userId }) {
     );
   }
 
-  const { text, truncated } = truncateForLongContext(rawText);
+  const budget = computeAnswerContextBudget({ model, mode: "long_context" });
+  const { text, truncated } = truncateForLongContext(rawText, budget.fullPaperTextChars);
 
   return {
     estimatedTokens: Math.round(text.length / 3.5),
@@ -243,13 +245,15 @@ export async function loadCurrentPaperFullText({ userDocumentId, userId }) {
   };
 }
 
-function truncateForLongContext(text) {
-  if (text.length <= QA_LONG_CONTEXT_MAX_CHARS) {
+function truncateForLongContext(text, maxChars) {
+  const ceiling = maxChars && maxChars > 0 ? maxChars : QA_LONG_CONTEXT_MAX_CHARS;
+
+  if (text.length <= ceiling) {
     return { text, truncated: false };
   }
 
-  const headLength = Math.round(QA_LONG_CONTEXT_MAX_CHARS * 0.7);
-  const tailLength = Math.max(0, QA_LONG_CONTEXT_MAX_CHARS - headLength - 40);
+  const headLength = Math.round(ceiling * 0.7);
+  const tailLength = Math.max(0, ceiling - headLength - 40);
   const head = text.slice(0, headLength);
   const tail = text.slice(Math.max(headLength, text.length - tailLength));
 

@@ -44,6 +44,7 @@ export type QaStreamHandlers = {
   onMeta?: (metadata: QaStreamMeta) => void;
   onObservation?: (step: QaAgentStep) => void;
   onRetrieval?: (payload: QaRetrievalPayload) => void;
+  onThinking?: (text: string) => void;
   onToolCall?: (payload: QaToolCallPayload) => void;
   onUsage?: (usage: TokenUsage) => void;
   onVerifier?: (payload: QaVerifierPayload) => void;
@@ -311,6 +312,8 @@ async function readQaEventStream(
       }
     } else if (eventName === "retrieval") {
       handlers.onRetrieval?.(payload);
+    } else if (eventName === "thinking" && typeof payload.text === "string") {
+      handlers.onThinking?.(payload.text);
     } else if (eventName === "usage") {
       handlers.onUsage?.(payload);
     } else if (eventName === "finish" && typeof payload.finishReason === "string") {

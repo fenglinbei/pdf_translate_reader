@@ -16,6 +16,7 @@ import {
   createRetrievalSnapshot,
   QA_PROMPT_VERSION,
 } from "../qa/prompt.mjs";
+import { computeAnswerContextBudget } from "../qa/contextBudget.mjs";
 import { loadCurrentPaperFullText } from "../qa/retriever.mjs";
 import {
   createOrUpdateIndexJob,
@@ -32,9 +33,9 @@ import {
 import { SupabaseServiceError } from "../supabase/service.mjs";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
-const QA_CONTEXT_MAX_MESSAGES = 6;
-const QA_CONTEXT_MAX_MESSAGE_CHARS = 700;
-const QA_CONTEXT_MAX_CARRYOVER_EVIDENCE = 8;
+const QA_CONTEXT_MAX_MESSAGES = 12;
+const QA_CONTEXT_MAX_MESSAGE_CHARS = 4000;
+const QA_CONTEXT_MAX_CARRYOVER_EVIDENCE = 20;
 const QA_INDEX_SOURCES = new Set(["mathpix-v3-pdf"]);
 const NO_EVIDENCE_ANSWER_EN = [
   "I could not find indexed evidence in the current paper for this question.",
@@ -189,6 +190,7 @@ async function handleQaStream(request, response, user) {
           model: requestBody.model,
           question: requestBody.question,
           questionType,
+          reasoningEffort: requestBody.reasoningEffort,
           response,
           threadId: thread.id,
           userDocumentId: requestBody.activeDocumentId,
@@ -196,19 +198,23 @@ async function handleQaStream(request, response, user) {
         });
         return;
       } catch (error) {
-        await writeSse(response, "agent_step", {
-          step: {
-            kind: "fallback",
-            messageId: assistantMessage.id,
-            payload: {
-              errorMessage: error instanceof Error ? error.message : "Long-context answering failed.",
-              reason: "long_context_failed",
+        try {
+          writeSse(response, "agent_step", {
+            step: {
+              kind: "fallback",
+              messageId: assistantMessage.id,
+              payload: {
+                errorMessage: error instanceof Error ? error.message : "Long-context answering failed.",
+                reason: "long_context_failed",
+              },
+              status: "error",
+              stepIndex: 0,
+              summary: "长上下文回答失败，已退回 agentic 检索。",
             },
-            status: "error",
-            stepIndex: 0,
-            summary: "长上下文回答失败，已退回 agentic 检索。",
-          },
-        }).catch(() => undefined);
+          });
+        } catch {
+          // writeSse is best-effort here; ignore failures so we still fall through.
+        }
         // fall through to agentic retrieval below
       }
     }
@@ -300,6 +306,7 @@ async function handleQaStream(request, response, user) {
       await streamQaChatCompletion({
         messages: buildQaAnswerMessages({
           answerLanguage: requestBody.answerLanguage,
+          budget: computeAnswerContextBudget({ model: requestBody.model, mode: "direct" }),
           chatContext,
           directReplyOutline: retrieval.diagnostics.agent.directAnswerReason,
           evidence: [],
@@ -307,9 +314,13 @@ async function handleQaStream(request, response, user) {
           question: requestBody.question,
         }),
         model: requestBody.model,
+        reasoningEffort: requestBody.reasoningEffort,
         onDelta: (text) => {
           directAnswerText += text;
           writeSse(response, "delta", { text });
+        },
+        onThinking: (text) => {
+          writeSse(response, "thinking", { text });
         },
         onFinish: (finishReason) => {
           writeSse(response, "finish", { finishReason });
@@ -431,14 +442,19 @@ async function handleQaStream(request, response, user) {
     await streamQaChatCompletion({
       messages: buildQaAnswerMessages({
         answerLanguage: requestBody.answerLanguage,
+        budget: computeAnswerContextBudget({ model: requestBody.model, mode: "answer" }),
         chatContext,
         evidence: retrieval.evidence,
         question: requestBody.question,
       }),
       model: requestBody.model,
+      reasoningEffort: requestBody.reasoningEffort,
       onDelta: (text) => {
         answerText += text;
         writeSse(response, "delta", { text });
+      },
+      onThinking: (text) => {
+        writeSse(response, "thinking", { text });
       },
       onFinish: (finishReason) => {
         writeSse(response, "finish", { finishReason });
@@ -799,12 +815,13 @@ async function handleLongContextAnswer({
   model,
   question,
   questionType,
+  reasoningEffort,
   response,
   threadId,
   userDocumentId,
   userId,
 }) {
-  const fullText = await loadCurrentPaperFullText({ userDocumentId, userId });
+  const fullText = await loadCurrentPaperFullText({ userDocumentId, userId, model });
   const retrievalSnapshot = createRetrievalSnapshot({
     activeDocumentId: userDocumentId,
     evidence: [],
@@ -844,6 +861,7 @@ async function handleLongContextAnswer({
   await streamQaChatCompletion({
     messages: buildQaAnswerMessages({
       answerLanguage,
+      budget: computeAnswerContextBudget({ model, mode: "long_context" }),
       chatContext,
       evidence: [],
       fullPaperText: fullText.text,
@@ -852,9 +870,13 @@ async function handleLongContextAnswer({
       question,
     }),
     model,
+    reasoningEffort,
     onDelta: (text) => {
       answerText += text;
       writeSse(response, "delta", { text });
+    },
+    onThinking: (text) => {
+      writeSse(response, "thinking", { text });
     },
     onFinish: (finishReason) => {
       writeSse(response, "finish", { finishReason });

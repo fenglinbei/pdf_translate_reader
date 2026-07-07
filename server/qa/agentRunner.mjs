@@ -779,8 +779,8 @@ function buildReasoningControllerMessages({
           opened: openedEvidenceIds.includes(item.evidenceId),
           page: item.pageStart,
           preview: openedEvidenceIds.includes(item.evidenceId)
-            ? truncateForController(item.text ?? item.textPreview, 1600)
-            : truncateForController(item.textPreview, 360),
+            ? truncateForController(item.text ?? item.textPreview, 3000)
+            : truncateForController(item.textPreview, 800),
           score: item.score,
           sectionPath: item.sectionPath,
         })),

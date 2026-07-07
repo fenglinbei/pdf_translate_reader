@@ -61,6 +61,7 @@ type LocalQaMessage = {
   errorMessage?: string;
   id: string;
   model?: QaChatModel;
+  reasoningText?: string;
   retrievalSnapshot?: QaRetrievalSnapshot;
   role: "user" | "assistant";
   status: "streaming" | "success" | "error" | "aborted";
@@ -453,12 +454,14 @@ export function PaperQaPanel({
             const assistantMessage = payload.assistantMessage;
 
             if (assistantMessage) {
-              updateAssistantMessage(localAssistantMessageId, () => ({
+              updateAssistantMessage(localAssistantMessageId, (message) => ({
                 ...qaMessageToLocal({
                   ...assistantMessage,
                   citations: payload.citations ?? assistantMessage.citations ?? [],
                 }),
                 id: assistantMessage.id,
+                // Preserve the streaming reasoning trace; it is not persisted server-side.
+                reasoningText: message.reasoningText,
               }));
             } else {
               updateAssistantMessage(localAssistantMessageId, (message) => ({
@@ -489,6 +492,12 @@ export function PaperQaPanel({
             updateAssistantMessage(localAssistantMessageId, (message) => ({
               ...message,
               retrievalSnapshot: payload.snapshot,
+            }));
+          },
+          onThinking: (text) => {
+            updateAssistantMessage(localAssistantMessageId, (message) => ({
+              ...message,
+              reasoningText: `${message.reasoningText ?? ""}${text}`,
             }));
           },
           onUsage: (usage) => {
@@ -814,9 +823,15 @@ function QaMessageBubble({
           {isAssistant ? t("ask.assistant") : t("ask.you")}
         </div>
         <div className="ask-message-content">
+          {isAssistant && message.reasoningText ? (
+            <ReasoningPanel
+              text={message.reasoningText}
+              isStreaming={message.status === "streaming" && !message.content}
+            />
+          ) : null}
           {message.content
             ? <QaMarkdown content={message.content} onCitationToken={handleCitationToken} />
-            : message.status === "streaming"
+            : message.status === "streaming" && !message.reasoningText
               ? <span className="ask-thinking">{t("ask.thinking")}</span>
               : null}
         </div>
@@ -894,6 +909,37 @@ function MessageMeta({ message }: { message: LocalQaMessage }) {
   return (
     <div className="ask-message-usage">
       {message.status === "streaming" ? t("ask.streaming") : parts.join(" · ")}
+    </div>
+  );
+}
+
+function ReasoningPanel({ text, isStreaming }: { text: string; isStreaming: boolean }) {
+  const { t } = useI18n();
+  // Auto-expand while the model is still thinking (no answer yet), collapse once
+  // the answer starts streaming. Users can still toggle manually afterwards.
+  const [expanded, setExpanded] = useState(true);
+
+  useEffect(() => {
+    if (!isStreaming) {
+      setExpanded(false);
+    }
+  }, [isStreaming]);
+
+  return (
+    <div className="ask-reasoning-panel">
+      <button
+        aria-expanded={expanded}
+        className="ask-reasoning-toggle"
+        onClick={() => setExpanded((current) => !current)}
+        type="button"
+      >
+        <ChevronRight aria-hidden="true" className="ask-reasoning-toggle-icon" size={14} strokeWidth={2.2} />
+        <span>{t("ask.reasoningPanel")}</span>
+        {isStreaming ? <small>{t("ask.reasoningThinking")}</small> : null}
+      </button>
+      {expanded ? (
+        <div className="ask-reasoning-text">{text}</div>
+      ) : null}
     </div>
   );
 }

@@ -1,13 +1,37 @@
 import { QA_PROMPT_VERSION } from "./config.mjs";
 
-const MAX_EVIDENCE_CHARS = 1800;
-const MAX_EVIDENCE_PACK_CHARS = 16000;
-const MAX_CONVERSATION_CONTEXT_CHARS = 5000;
-const MAX_CONTEXT_MESSAGE_CHARS = 900;
-const MAX_QUESTION_CHARS = 2000;
+// Fallback caps used when no token-aware budget is supplied by the caller.
+// These mirror the pre-1M behavior and keep the function safe to call on its own.
+const DEFAULT_MAX_EVIDENCE_CHARS = 1800;
+const DEFAULT_MAX_EVIDENCE_PACK_CHARS = 16000;
+const DEFAULT_MAX_CONVERSATION_CONTEXT_CHARS = 5000;
+const DEFAULT_MAX_CONTEXT_MESSAGE_CHARS = 900;
+const DEFAULT_MAX_QUESTION_CHARS = 2000;
+
+function resolveLimits(budget) {
+  if (!budget) {
+    return {
+      maxEvidenceChars: DEFAULT_MAX_EVIDENCE_CHARS,
+      maxEvidencePackChars: DEFAULT_MAX_EVIDENCE_PACK_CHARS,
+      maxConversationContextChars: DEFAULT_MAX_CONVERSATION_CONTEXT_CHARS,
+      maxContextMessageChars: DEFAULT_MAX_CONTEXT_MESSAGE_CHARS,
+      maxQuestionChars: DEFAULT_MAX_QUESTION_CHARS,
+    };
+  }
+
+  return {
+    maxEvidenceChars: budget.perEvidenceChars || DEFAULT_MAX_EVIDENCE_CHARS,
+    maxEvidencePackChars: budget.evidencePackChars || DEFAULT_MAX_EVIDENCE_PACK_CHARS,
+    maxConversationContextChars:
+      budget.conversationContextChars || DEFAULT_MAX_CONVERSATION_CONTEXT_CHARS,
+    maxContextMessageChars: budget.perMessageChars || DEFAULT_MAX_CONTEXT_MESSAGE_CHARS,
+    maxQuestionChars: budget.questionChars || DEFAULT_MAX_QUESTION_CHARS,
+  };
+}
 
 export function buildQaAnswerMessages({
   answerLanguage = "auto",
+  budget,
   chatContext,
   directReplyOutline,
   evidence,
@@ -16,7 +40,8 @@ export function buildQaAnswerMessages({
   mode = "answer",
   question,
 }) {
-  const conversationContext = formatConversationContext(chatContext);
+  const limits = resolveLimits(budget);
+  const conversationContext = formatConversationContext(chatContext, limits);
 
   if (mode === "direct") {
     return [
@@ -41,7 +66,7 @@ export function buildQaAnswerMessages({
           ...(directReplyOutline ? ["", "[Reply outline]", directReplyOutline] : []),
           "",
           "[User message]",
-          truncateText(question, MAX_QUESTION_CHARS),
+          truncateText(question, limits.maxQuestionChars),
         ].join("\n"),
       },
     ];
@@ -77,7 +102,7 @@ export function buildQaAnswerMessages({
           fullPaperText ?? "(full paper text unavailable)",
           "",
           "[Question]",
-          truncateText(question, MAX_QUESTION_CHARS),
+          truncateText(question, limits.maxQuestionChars),
         ].join("\n"),
       },
     ];
@@ -113,10 +138,10 @@ export function buildQaAnswerMessages({
             ]
           : []),
         "[Question]",
-        truncateText(question, MAX_QUESTION_CHARS),
+        truncateText(question, limits.maxQuestionChars),
         "",
         "[Evidence pack]",
-        formatEvidencePack(evidence),
+        formatEvidencePack(evidence, limits),
         "",
         "[Required output]",
         "Answer the question using inline citations such as [C1].",
@@ -159,13 +184,15 @@ export function createRetrievalSnapshot({
 
 export { QA_PROMPT_VERSION };
 
-function formatEvidencePack(evidence) {
+function formatEvidencePack(evidence, limits) {
+  const maxEvidenceChars = limits?.maxEvidenceChars ?? DEFAULT_MAX_EVIDENCE_CHARS;
+  const maxEvidencePackChars = limits?.maxEvidencePackChars ?? DEFAULT_MAX_EVIDENCE_PACK_CHARS;
   let usedCharacters = 0;
   const blocks = [];
 
   for (const item of evidence) {
-    const text = truncateText(item.text ?? item.textPreview ?? "", MAX_EVIDENCE_CHARS);
-    const mmd = item.mmd ? truncateText(item.mmd, MAX_EVIDENCE_CHARS) : "";
+    const text = truncateText(item.text ?? item.textPreview ?? "", maxEvidenceChars);
+    const mmd = item.mmd ? truncateText(item.mmd, maxEvidenceChars) : "";
     const block = [
       `[${item.evidenceId}]`,
       `Document: ${item.documentTitle || "Current paper"}`,
@@ -176,7 +203,7 @@ function formatEvidencePack(evidence) {
       ...(mmd ? ["", "LaTeX:", mmd] : []),
     ].join("\n");
 
-    if (usedCharacters + block.length > MAX_EVIDENCE_PACK_CHARS && blocks.length > 0) {
+    if (usedCharacters + block.length > maxEvidencePackChars && blocks.length > 0) {
       break;
     }
 
@@ -187,11 +214,14 @@ function formatEvidencePack(evidence) {
   return blocks.length > 0 ? blocks.join("\n\n") : "(no evidence retrieved)";
 }
 
-function formatConversationContext(chatContext) {
+function formatConversationContext(chatContext, limits) {
   if (!chatContext || typeof chatContext !== "object") {
     return "";
   }
 
+  const maxContextMessageChars = limits?.maxContextMessageChars ?? DEFAULT_MAX_CONTEXT_MESSAGE_CHARS;
+  const maxConversationContextChars =
+    limits?.maxConversationContextChars ?? DEFAULT_MAX_CONVERSATION_CONTEXT_CHARS;
   const lines = [
     "Use this only to understand the user's follow-up. Do not treat it as paper evidence.",
   ];
@@ -208,7 +238,7 @@ function formatConversationContext(chatContext) {
 
     for (const message of recentMessages) {
       const role = message?.role === "assistant" ? "assistant" : "user";
-      const content = stripPriorCitationIds(truncateText(message?.content ?? "", MAX_CONTEXT_MESSAGE_CHARS));
+      const content = stripPriorCitationIds(truncateText(message?.content ?? "", maxContextMessageChars));
 
       if (content) {
         lines.push(`- ${role}: ${content}`);
@@ -216,7 +246,7 @@ function formatConversationContext(chatContext) {
     }
   }
 
-  return truncateText(lines.join("\n"), MAX_CONVERSATION_CONTEXT_CHARS);
+  return truncateText(lines.join("\n"), maxConversationContextChars);
 }
 
 function stripPriorCitationIds(text) {

@@ -1,10 +1,52 @@
 import { getDeepSeekRuntimeConfig } from "../deepseek/config.mjs";
+import { getModelMaxTokens } from "../qa/contextBudget.mjs";
 
 const DEFAULT_DEEPSEEK_QA_MODEL = "deepseek-v4-pro";
 const DEFAULT_GLM_API_BASE_URL = "https://open.bigmodel.cn/api/paas/v4";
 const DEFAULT_GLM_QA_MODEL = "glm-5.2";
 
 export const QA_CHAT_MODELS = new Set(["deepseek-v4-pro", "glm-5.2"]);
+
+// Both providers expose thinking via { type: "enabled" | "disabled" }.
+// Effort enums differ per provider:
+//   DeepSeek: "high" | "max"  (low/medium mapped to high)
+//   GLM-5.2:  "max" | "xhigh" | "high" | "medium" | "low" | "minimal" | "none"
+const DEEPSEEK_EFFORT_MAP = {
+  quick: null,        // thinking disabled
+  standard: "high",
+  deep: "max",
+};
+const GLM_EFFORT_MAP = {
+  quick: "none",      // thinking enabled but skipped
+  standard: "high",
+  deep: "max",
+};
+
+/**
+ * Resolve a frontend reasoningEffort (quick/standard/deep/auto) into a
+ * per-provider thinking configuration.
+ *
+ * `auto` is resolved upstream (agentRunner.inferReasoningEffort) into one of
+ * quick/standard/deep before reaching here; if it leaks through we default to
+ * "standard".
+ *
+ * @returns {{ enabled: boolean, effort?: string }}
+ */
+export function resolveThinkingConfig(model, reasoningEffort) {
+  const normalizedModel = normalizeQaChatModel(model);
+  const effortKey = reasoningEffort === "auto" ? "standard" : (reasoningEffort ?? "standard");
+  const provider = normalizedModel === "glm-5.2" ? "glm" : "deepseek";
+  const effortMap = provider === "glm" ? GLM_EFFORT_MAP : DEEPSEEK_EFFORT_MAP;
+  // null is a valid map value (DeepSeek quick = thinking disabled); only fall
+  // back when the key itself is missing (undefined).
+  const effort = effortMap[effortKey] === undefined ? effortMap.standard : effortMap[effortKey];
+
+  if (effort === null) {
+    return { enabled: false };
+  }
+
+  return { enabled: true, effort };
+}
 
 export function normalizeQaChatModel(model) {
   if (QA_CHAT_MODELS.has(model)) {
@@ -21,9 +63,11 @@ export function normalizeQaChatModel(model) {
 export async function streamQaChatCompletion({
   messages,
   model,
+  reasoningEffort,
   onDelta,
   onFinish,
   onUsage,
+  onThinking,
   signal,
 }) {
   const normalizedModel = normalizeQaChatModel(model);
@@ -37,14 +81,17 @@ export async function streamQaChatCompletion({
     );
   }
 
+  const thinkingConfig = resolveThinkingConfig(normalizedModel, reasoningEffort);
   let response;
 
   try {
     response = await fetch(`${providerConfig.apiBaseUrl}/chat/completions`, {
       body: JSON.stringify(createChatCompletionBody({
         messages,
+        model: normalizedModel,
         provider: providerConfig.provider,
         providerModel: providerConfig.providerModel,
+        thinkingConfig,
       })),
       headers: {
         Authorization: `Bearer ${providerConfig.apiKey}`,
@@ -88,6 +135,7 @@ export async function streamQaChatCompletion({
     onDelta,
     onFinish,
     onUsage,
+    onThinking,
   });
 }
 
@@ -114,10 +162,12 @@ export async function createQaChatCompletion({
     response = await fetch(`${providerConfig.apiBaseUrl}/chat/completions`, {
       body: JSON.stringify(createChatCompletionBody({
         messages,
+        model: normalizedModel,
         provider: providerConfig.provider,
         providerModel: providerConfig.providerModel,
         stream: false,
         temperature,
+        thinkingConfig: { enabled: false },
       })),
       headers: {
         Authorization: `Bearer ${providerConfig.apiKey}`,
@@ -194,17 +244,24 @@ function getProviderConfig(model) {
 
 function createChatCompletionBody({
   messages,
+  model,
   provider,
   providerModel,
   stream = true,
   temperature = 0.2,
+  thinkingConfig,
 }) {
   const body = {
     messages,
     model: providerModel,
     stream,
-    temperature,
   };
+
+  // Both providers ignore temperature in thinking mode, but we still pass it
+  // for the non-thinking path (controller/router non-stream calls).
+  if (temperature !== undefined) {
+    body.temperature = temperature;
+  }
 
   if (stream) {
     body.stream_options = {
@@ -212,11 +269,20 @@ function createChatCompletionBody({
     };
   }
 
-  if (provider === "deepseek") {
-    body.thinking = {
-      type: "disabled",
-    };
+  // Thinking configuration. Both providers accept { type: "enabled" | "disabled" }.
+  // GLM-5.2 additionally supports reasoning_effort across the full enum;
+  // DeepSeek only honors "high" | "max".
+  if (thinkingConfig && thinkingConfig.enabled) {
+    body.thinking = { type: "enabled" };
+    if (thinkingConfig.effort) {
+      body.reasoning_effort = thinkingConfig.effort;
+    }
+  } else {
+    body.thinking = { type: "disabled" };
   }
+
+  // Bound generated output so a runaway answer cannot exhaust the window.
+  body.max_tokens = getModelMaxTokens(model);
 
   return body;
 }
@@ -258,9 +324,25 @@ function processOpenAiCompatibleSseLine(line, handlers) {
     return;
   }
 
-  const chunk = JSON.parse(data);
-  const content = chunk.choices?.[0]?.delta?.content;
+  let chunk;
+
+  try {
+    chunk = JSON.parse(data);
+  } catch {
+    // Ignore malformed keep-alive / partial chunks.
+    return;
+  }
+
+  const delta = chunk.choices?.[0]?.delta;
+  const reasoningContent = delta?.reasoning_content;
+  const content = delta?.content;
   const finishReason = chunk.choices?.[0]?.finish_reason;
+
+  // In thinking mode the model emits reasoning_content first, then content.
+  // They are mutually exclusive within a single delta.
+  if (typeof reasoningContent === "string" && reasoningContent.length > 0) {
+    handlers.onThinking?.(reasoningContent);
+  }
 
   if (typeof content === "string" && content.length > 0) {
     handlers.onDelta?.(content);
@@ -285,6 +367,10 @@ function normalizeUsage(usage) {
       usage.prompt_cache_miss_tokens ?? usage.promptCacheMissTokens,
     ),
     promptTokens: normalizeNumber(usage.prompt_tokens ?? usage.promptTokens),
+    reasoningTokens: normalizeNumber(
+      usage.completion_tokens_details?.reasoning_tokens
+        ?? usage.completionTokensDetails?.reasoningTokens,
+    ),
     totalTokens: normalizeNumber(usage.total_tokens ?? usage.totalTokens),
   };
 }
