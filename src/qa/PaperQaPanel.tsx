@@ -140,10 +140,6 @@ export function PaperQaPanel({
     ]),
     [historyError, retrievalWarnings, verifierWarnings],
   );
-  const selectedEvidence = useMemo(
-    () => findSelectedEvidence(messages, selectedEvidenceRef),
-    [messages, selectedEvidenceRef],
-  );
 
   const refreshThreads = useCallback(async (options: { selectLatest?: boolean; silent?: boolean } = {}) => {
     if (!activeDocumentId) {
@@ -613,12 +609,9 @@ export function PaperQaPanel({
     message: LocalQaMessage,
     evidence: QaRetrievedEvidence,
   ) => {
-    setSelectedEvidenceRef({
-      evidenceId: evidence.evidenceId,
-      messageId: message.id,
-    });
+    onEvidenceClick(evidence);
     flashEvidence(evidence.evidenceId);
-  }, [flashEvidence]);
+  }, [flashEvidence, onEvidenceClick]);
 
   const handleCitationTokenClick = useCallback((
     message: LocalQaMessage,
@@ -918,15 +911,6 @@ export function PaperQaPanel({
           />
         ))}
       </div>
-
-      <EvidenceDrawer
-        evidence={selectedEvidence?.evidence}
-        highlighted={Boolean(selectedEvidence?.evidence && highlightedEvidenceId === selectedEvidence.evidence.evidenceId)}
-        message={selectedEvidence?.message}
-        onClose={() => setSelectedEvidenceRef(undefined)}
-        onEvidenceClick={onEvidenceClick}
-        relatedCitation={selectedEvidence?.citation}
-      />
 
       <form
         className="ask-composer"

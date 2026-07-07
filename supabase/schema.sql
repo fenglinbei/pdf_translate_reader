@@ -815,6 +815,19 @@ create index if not exists user_paper_chunks_embedding_idx
     and embedding_model = 'voyage-4-large'
     and embedding_dimensions = 1024;
 
+-- PostgreSQL does not allow CREATE OR REPLACE FUNCTION to change the return
+-- type (OUT parameters), so drop the existing function first when its shape
+-- changes (e.g. adding line_regions to the returned table).
+drop function if exists public.match_user_paper_chunks_current(
+  uuid,
+  uuid,
+  text,
+  vector(1024),
+  text,
+  integer,
+  integer
+);
+
 create or replace function public.match_user_paper_chunks_current(
   p_user_id uuid,
   p_user_document_id uuid,
@@ -941,6 +954,7 @@ as $$
     scored_chunks.page_end,
     scored_chunks.text,
     scored_chunks.mmd,
+    scored_chunks.line_regions,
     scored_chunks.vector_score,
     scored_chunks.full_text_score,
     scored_chunks.metadata_boost,

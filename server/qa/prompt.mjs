@@ -165,6 +165,7 @@ export function createRetrievalSnapshot({
       cloudDocumentId: item.cloudDocumentId,
       documentTitle: item.documentTitle,
       evidenceId: item.evidenceId,
+      lineRegions: item.lineRegions,
       mmd: item.mmd,
       pageEnd: item.pageEnd,
       pageStart: item.pageStart,

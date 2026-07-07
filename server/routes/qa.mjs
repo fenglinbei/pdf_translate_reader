@@ -1049,6 +1049,7 @@ function findLatestCarryoverEvidence({
       cloudDocumentId: item.cloudDocumentId,
       documentTitle: item.documentTitle,
       evidenceId: item.evidenceId,
+      lineRegions: item.lineRegions,
       pageEnd: item.pageEnd,
       pageStart: item.pageStart,
       pdfFingerprint: item.pdfFingerprint,
