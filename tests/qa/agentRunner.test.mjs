@@ -189,6 +189,68 @@ describe("runReasoningAgenticRetrieval", () => {
     ]);
   });
 
+  it("passes recent context and prior evidence to the reasoning controller", async () => {
+    const store = createAgentStore();
+    let controllerInput;
+
+    const result = await runReasoningAgenticRetrieval({
+      callController: async (input) => {
+        controllerInput = input;
+
+        return {
+          action: "finish_retrieval",
+          answerOutline: "Reuse the prior evidence for the follow-up.",
+          evidenceIds: ["C1"],
+          summary: "Prior evidence already answers the follow-up.",
+        };
+      },
+      chatContext: {
+        carryoverEvidence: [
+          {
+            ...makeEvidence("chunk-9", 7, 0.71),
+            evidenceId: "C9",
+          },
+        ],
+        mentionedEvidenceIds: ["C9"],
+        recentMessages: [
+          {
+            content: "What does the method optimize?",
+            role: "user",
+          },
+          {
+            content: "It optimizes a contrastive objective [C9].",
+            role: "assistant",
+          },
+        ],
+        summary: "Loaded 2 previous messages.",
+        userIntent: "follow_up",
+      },
+      emit: () => undefined,
+      insertStep: store.insertStep,
+      insertToolCall: store.insertToolCall,
+      messageId: "message-reasoning-context",
+      model: "deepseek-v4-pro",
+      question: "Can you expand on that?",
+      reasoningEffort: "quick",
+      retrieveEvidence: async () => {
+        throw new Error("search should not run when controller finishes with prior evidence");
+      },
+      userDocumentId: "doc-1",
+      userId: "user-1",
+    });
+
+    assert.equal(controllerInput.chatContext.userIntent, "follow_up");
+    assert.deepEqual(controllerInput.chatContext.carryoverEvidenceIds, ["C1"]);
+    assert.match(controllerInput.chatContext.recentMessages[1].content, /prior citation/);
+    assert.equal(result.evidence.length, 1);
+    assert.equal(result.evidence[0].chunkId, "chunk-9");
+    assert.equal(result.evidence[0].evidenceId, "C1");
+    assert.equal(result.diagnostics.agent.chatContext.recentMessageCount, 2);
+    assert.deepEqual(result.agentSteps.map((step) => step.kind), ["plan", "answer_outline"]);
+    assert.deepEqual(result.agentSteps[0].evidenceIds, ["C1"]);
+    assert.match(result.agentSteps[0].summary, /已加载最近 2 条对话/);
+  });
+
   it("rejects unsupported controller actions as runner errors", async () => {
     const store = createAgentStore();
 

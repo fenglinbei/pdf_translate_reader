@@ -2,19 +2,25 @@ import { QA_PROMPT_VERSION } from "./config.mjs";
 
 const MAX_EVIDENCE_CHARS = 1800;
 const MAX_EVIDENCE_PACK_CHARS = 16000;
+const MAX_CONVERSATION_CONTEXT_CHARS = 5000;
+const MAX_CONTEXT_MESSAGE_CHARS = 900;
 const MAX_QUESTION_CHARS = 2000;
 
 export function buildQaAnswerMessages({
   answerLanguage = "auto",
+  chatContext,
   evidence,
   question,
 }) {
+  const conversationContext = formatConversationContext(chatContext);
+
   return [
     {
       role: "system",
       content: [
         "You are a careful academic paper QA assistant.",
         "Answer only from the provided evidence pack.",
+        "Conversation context may help resolve follow-up references, but it is not paper evidence.",
         "Every factual claim that depends on the paper must cite one or more evidence ids like [C1].",
         "Do not cite papers, pages, chunks, or evidence ids that are not present in the evidence pack.",
         "If the evidence is insufficient, say what is missing instead of guessing.",
@@ -30,6 +36,13 @@ export function buildQaAnswerMessages({
         "[Answer language]",
         normalizeAnswerLanguage(answerLanguage),
         "",
+        ...(conversationContext
+          ? [
+              "[Conversation context]",
+              conversationContext,
+              "",
+            ]
+          : []),
         "[Question]",
         truncateText(question, MAX_QUESTION_CHARS),
         "",
@@ -100,6 +113,42 @@ function formatEvidencePack(evidence) {
   }
 
   return blocks.length > 0 ? blocks.join("\n\n") : "(no evidence retrieved)";
+}
+
+function formatConversationContext(chatContext) {
+  if (!chatContext || typeof chatContext !== "object") {
+    return "";
+  }
+
+  const lines = [
+    "Use this only to understand the user's follow-up. Do not treat it as paper evidence.",
+  ];
+  const recentMessages = Array.isArray(chatContext.recentMessages)
+    ? chatContext.recentMessages
+    : [];
+
+  if (chatContext.userIntent) {
+    lines.push(`User intent: ${chatContext.userIntent}.`);
+  }
+
+  if (recentMessages.length > 0) {
+    lines.push("Recent messages:");
+
+    for (const message of recentMessages) {
+      const role = message?.role === "assistant" ? "assistant" : "user";
+      const content = stripPriorCitationIds(truncateText(message?.content ?? "", MAX_CONTEXT_MESSAGE_CHARS));
+
+      if (content) {
+        lines.push(`- ${role}: ${content}`);
+      }
+    }
+  }
+
+  return truncateText(lines.join("\n"), MAX_CONVERSATION_CONTEXT_CHARS);
+}
+
+function stripPriorCitationIds(text) {
+  return String(text ?? "").replace(/\[C\d+\]/g, "[prior citation]");
 }
 
 function normalizeAnswerLanguage(value) {

@@ -59,4 +59,47 @@ describe("QA prompt helpers", () => {
     assert.equal(snapshot.evidence[0].textPreview, "Preview text.");
     assert.equal(Object.hasOwn(snapshot.evidence[0], "text"), false);
   });
+
+  it("adds conversation context for follow-up questions without preserving old citation ids", () => {
+    const messages = buildQaAnswerMessages({
+      answerLanguage: "en",
+      chatContext: {
+        carryoverEvidence: [
+          {
+            evidenceId: "C2",
+            textPreview: "Prior evidence preview.",
+          },
+        ],
+        recentMessages: [
+          {
+            content: "Summarize the objective.",
+            role: "user",
+          },
+          {
+            content: "The objective is described in the method section [C2].",
+            role: "assistant",
+          },
+        ],
+        userIntent: "follow_up",
+      },
+      evidence: [
+        {
+          documentTitle: "Paper QA",
+          evidenceId: "C1",
+          pageEnd: 4,
+          pageStart: 4,
+          sectionPath: ["Method"],
+          text: "The current evidence pack uses a fresh citation id.",
+        },
+      ],
+      question: "Can you expand on that?",
+    });
+
+    assert.match(messages[0].content, /Conversation context may help resolve follow-up/);
+    assert.match(messages[1].content, /\[Conversation context\]/);
+    assert.match(messages[1].content, /User intent: follow_up/);
+    assert.match(messages[1].content, /prior citation/);
+    assert.doesNotMatch(messages[1].content, /method section \[C2\]/);
+    assert.match(messages[1].content, /\[C1\]/);
+  });
 });

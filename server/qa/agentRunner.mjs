@@ -69,6 +69,7 @@ export async function runCurrentPaperReasoningRetrieval(input) {
 
 export async function runReasoningAgenticRetrieval({
   callController = callReasoningController,
+  chatContext,
   emit,
   insertStep,
   insertToolCall,
@@ -97,7 +98,8 @@ export async function runReasoningAgenticRetrieval({
   const retrievals = [];
   const toolHistory = [];
   const warnings = [];
-  let evidence = [];
+  const carryoverEvidence = normalizeCarryoverEvidence(chatContext?.carryoverEvidence, budget.maxEvidence);
+  let evidence = carryoverEvidence;
   let finishAction;
   let openCalls = 0;
   let retrievalCalls = 0;
@@ -107,16 +109,30 @@ export async function runReasoningAgenticRetrieval({
       kind: "plan",
       payload: {
         budget,
+        chatContext: summarizeChatContextForStep(chatContext, carryoverEvidence),
         queryPlan,
         requestedReasoningEffort: reasoningEffort,
         runnerVersion: QA_AGENT_RUNNER_VERSION,
       },
-      summary: `模型将以 ${budget.effectiveEffort} 强度自主规划当前论文检索。`,
+      evidenceIds: carryoverEvidence.map((item) => item.evidenceId),
+      summary: createReasoningPlanSummary({ budget, carryoverEvidence, chatContext }),
     });
+
+    if (carryoverEvidence.length > 0) {
+      toolHistory.push({
+        action: "reuse_context_evidence",
+        evidenceIds: carryoverEvidence.map((item) => item.evidenceId),
+        summary: `Loaded ${carryoverEvidence.length} evidence snippets from the previous answer snapshot.`,
+      });
+    }
 
     for (let turnIndex = 0; turnIndex < budget.maxControllerCalls; turnIndex += 1) {
       const controllerResult = await callController({
         budget,
+        chatContext: summarizeChatContextForController(
+          chatContext,
+          mapCarryoverEvidenceToCurrentIds(evidence, carryoverEvidence),
+        ),
         evidence,
         model,
         openedEvidenceIds: Array.from(openedEvidenceIds),
@@ -246,6 +262,10 @@ export async function runReasoningAgenticRetrieval({
       diagnostics: {
         ...finalRetrieval.diagnostics,
         agent: {
+          chatContext: summarizeChatContextForStep(
+            chatContext,
+            mapCarryoverEvidenceToCurrentIds(evidence, carryoverEvidence),
+          ),
           controller: "llm-json-v1",
           effectiveReasoningEffort: budget.effectiveEffort,
           mode: "agentic",
@@ -661,6 +681,7 @@ async function runOpenChunkTool({
 
 async function callReasoningController({
   budget,
+  chatContext,
   evidence,
   model,
   openedEvidenceIds,
@@ -673,6 +694,7 @@ async function callReasoningController({
   const result = await createQaChatCompletion({
     messages: buildReasoningControllerMessages({
       budget,
+      chatContext,
       evidence,
       openedEvidenceIds,
       queryPlan,
@@ -690,6 +712,7 @@ async function callReasoningController({
 
 function buildReasoningControllerMessages({
   budget,
+  chatContext,
   evidence,
   openedEvidenceIds,
   queryPlan,
@@ -730,6 +753,7 @@ function buildReasoningControllerMessages({
           score: item.score,
           sectionPath: item.sectionPath,
         })),
+        conversationContext: chatContext,
         queryPlan,
         question,
         toolHistory: toolHistory.slice(-6),
@@ -737,6 +761,101 @@ function buildReasoningControllerMessages({
       }),
     },
   ];
+}
+
+function normalizeCarryoverEvidence(values, maxEvidence) {
+  const evidenceByChunkId = new Map();
+
+  for (const item of Array.isArray(values) ? values : []) {
+    if (!item || typeof item.chunkId !== "string" || evidenceByChunkId.has(item.chunkId)) {
+      continue;
+    }
+
+    evidenceByChunkId.set(item.chunkId, {
+      chunkId: item.chunkId,
+      cloudDocumentId: item.cloudDocumentId,
+      documentTitle: item.documentTitle,
+      evidenceId: item.evidenceId,
+      pageEnd: item.pageEnd,
+      pageStart: item.pageStart,
+      pdfFingerprint: item.pdfFingerprint,
+      score: Number.isFinite(Number(item.score)) ? Number(item.score) : 0,
+      scoreBreakdown: item.scoreBreakdown,
+      sectionPath: Array.isArray(item.sectionPath) ? item.sectionPath : [],
+      text: item.text,
+      textPreview: item.textPreview ?? item.text ?? "",
+    });
+  }
+
+  return Array.from(evidenceByChunkId.values())
+    .sort((left, right) => Number(right.score) - Number(left.score))
+    .slice(0, maxEvidence)
+    .map((item, index) => ({
+      ...item,
+      evidenceId: `C${index + 1}`,
+    }));
+}
+
+function mapCarryoverEvidenceToCurrentIds(currentEvidence, carryoverEvidence) {
+  if (!Array.isArray(currentEvidence) || !Array.isArray(carryoverEvidence) || carryoverEvidence.length === 0) {
+    return [];
+  }
+
+  const carryoverChunkIds = new Set(carryoverEvidence.map((item) => item.chunkId));
+
+  return currentEvidence.filter((item) => carryoverChunkIds.has(item.chunkId));
+}
+
+function createReasoningPlanSummary({
+  budget,
+  carryoverEvidence,
+  chatContext,
+}) {
+  const contextCount = chatContext?.recentMessages?.length ?? 0;
+
+  if (contextCount > 0 || carryoverEvidence.length > 0) {
+    return `已加载最近 ${contextCount} 条对话，并带入 ${carryoverEvidence.length} 条上轮证据；模型将以 ${budget.effectiveEffort} 强度自主决定是否继续检索。`;
+  }
+
+  return `模型将以 ${budget.effectiveEffort} 强度自主规划当前论文检索。`;
+}
+
+function summarizeChatContextForStep(chatContext, carryoverEvidence) {
+  if (!chatContext) {
+    return undefined;
+  }
+
+  return {
+    carryoverEvidenceIds: carryoverEvidence.map((item) => item.evidenceId),
+    mentionedEvidenceIds: chatContext.mentionedEvidenceIds ?? [],
+    recentMessageCount: chatContext.recentMessages?.length ?? 0,
+    summary: chatContext.summary,
+    userIntent: chatContext.userIntent,
+  };
+}
+
+function summarizeChatContextForController(chatContext, carryoverEvidence) {
+  if (!chatContext) {
+    return undefined;
+  }
+
+  return {
+    carryoverEvidenceIds: carryoverEvidence.map((item) => item.evidenceId),
+    instruction: [
+      "Use the recent messages only to resolve follow-up references and decide whether prior evidence is still relevant.",
+      "Paper facts must be supported by currentEvidence and final citations must use current evidence ids only.",
+    ].join(" "),
+    mentionedEvidenceIds: chatContext.mentionedEvidenceIds ?? [],
+    recentMessages: (chatContext.recentMessages ?? []).map((message) => ({
+      content: truncateForController(stripPriorCitationIds(message.content), 700),
+      role: message.role,
+    })),
+    userIntent: chatContext.userIntent,
+  };
+}
+
+function stripPriorCitationIds(text) {
+  return String(text ?? "").replace(/\[C\d+\]/g, "[prior citation]");
 }
 
 function parseControllerJson(content) {

@@ -31,6 +31,9 @@ import {
 import { SupabaseServiceError } from "../supabase/service.mjs";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
+const QA_CONTEXT_MAX_MESSAGES = 6;
+const QA_CONTEXT_MAX_MESSAGE_CHARS = 700;
+const QA_CONTEXT_MAX_CARRYOVER_EVIDENCE = 8;
 const QA_INDEX_SOURCES = new Set(["mathpix-v3-pdf"]);
 const NO_EVIDENCE_ANSWER_EN = [
   "I could not find indexed evidence in the current paper for this question.",
@@ -122,6 +125,16 @@ async function handleQaStream(request, response, user) {
     });
     requestThreadId = thread.id;
 
+    const previousMessages = await listQaMessagesForThread({
+      threadId: thread.id,
+      userId: user.id,
+    });
+    const chatContext = buildQaChatContext({
+      activeDocumentId: requestBody.activeDocumentId,
+      messages: previousMessages,
+      question: requestBody.question,
+    });
+
     const userMessage = await insertQaMessage({
       content: requestBody.question,
       role: "user",
@@ -167,6 +180,7 @@ async function handleQaStream(request, response, user) {
             question: requestBody.question,
             reasoningEffort: requestBody.reasoningEffort,
             signal: abortController.signal,
+            chatContext,
             userDocumentId: requestBody.activeDocumentId,
             userId: user.id,
           });
@@ -227,6 +241,7 @@ async function handleQaStream(request, response, user) {
         messageId: assistantMessage.id,
         model: requestBody.model,
         payload: {
+          chatContext: summarizeQaChatContextForLog(chatContext),
           diagnostics: retrieval.diagnostics,
           evidenceCount: retrieval.evidence.length,
           queryPlan: retrieval.queryPlan,
@@ -356,6 +371,7 @@ async function handleQaStream(request, response, user) {
     await streamQaChatCompletion({
       messages: buildQaAnswerMessages({
         answerLanguage: requestBody.answerLanguage,
+        chatContext,
         evidence: retrieval.evidence,
         question: requestBody.question,
       }),
@@ -712,6 +728,149 @@ function createNoEvidenceAnswer(requestBody) {
   }
 
   return NO_EVIDENCE_ANSWER_EN;
+}
+
+function buildQaChatContext({
+  activeDocumentId,
+  messages,
+  question,
+}) {
+  const successfulMessages = (Array.isArray(messages) ? messages : [])
+    .filter((message) =>
+      (message.role === "user" || message.role === "assistant") &&
+      message.status === "success" &&
+      typeof message.content === "string" &&
+      message.content.trim()
+    );
+  const recentMessages = successfulMessages
+    .slice(-QA_CONTEXT_MAX_MESSAGES)
+    .map((message) => ({
+      content: truncateQaContextText(message.content, QA_CONTEXT_MAX_MESSAGE_CHARS),
+      createdAt: message.createdAt,
+      id: message.id,
+      role: message.role,
+    }));
+  const carryoverEvidence = findLatestCarryoverEvidence({
+    activeDocumentId,
+    messages: successfulMessages,
+  });
+  const mentionedEvidenceIds = uniqueStrings([
+    ...recentMessages.flatMap((message) => extractEvidenceIdsFromText(message.content)),
+    ...carryoverEvidence.map((item) => item.evidenceId),
+  ]);
+
+  if (recentMessages.length === 0 && carryoverEvidence.length === 0) {
+    return undefined;
+  }
+
+  return {
+    carryoverEvidence,
+    mentionedEvidenceIds,
+    recentMessages,
+    summary: [
+      recentMessages.length > 0 ? `Loaded ${recentMessages.length} previous messages.` : "",
+      carryoverEvidence.length > 0 ? `Loaded ${carryoverEvidence.length} prior evidence snippets.` : "",
+    ].filter(Boolean).join(" "),
+    userIntent: inferQaContextIntent(question, successfulMessages.length),
+  };
+}
+
+function findLatestCarryoverEvidence({
+  activeDocumentId,
+  messages,
+}) {
+  const latestAssistantMessage = [...messages]
+    .reverse()
+    .find((message) =>
+      message.role === "assistant" &&
+      isRetrievalSnapshotForDocument(message.retrievalSnapshot, activeDocumentId) &&
+      Array.isArray(message.retrievalSnapshot?.evidence) &&
+      message.retrievalSnapshot.evidence.length > 0
+    );
+
+  if (!latestAssistantMessage) {
+    return [];
+  }
+
+  const evidenceByChunkId = new Map();
+
+  for (const item of latestAssistantMessage.retrievalSnapshot.evidence) {
+    if (!item || typeof item.chunkId !== "string" || evidenceByChunkId.has(item.chunkId)) {
+      continue;
+    }
+
+    evidenceByChunkId.set(item.chunkId, {
+      chunkId: item.chunkId,
+      cloudDocumentId: item.cloudDocumentId,
+      documentTitle: item.documentTitle,
+      evidenceId: item.evidenceId,
+      pageEnd: item.pageEnd,
+      pageStart: item.pageStart,
+      pdfFingerprint: item.pdfFingerprint,
+      score: item.score,
+      scoreBreakdown: item.scoreBreakdown,
+      sectionPath: item.sectionPath,
+      textPreview: truncateQaContextText(item.textPreview ?? item.text ?? "", QA_CONTEXT_MAX_MESSAGE_CHARS),
+    });
+
+    if (evidenceByChunkId.size >= QA_CONTEXT_MAX_CARRYOVER_EVIDENCE) {
+      break;
+    }
+  }
+
+  return Array.from(evidenceByChunkId.values());
+}
+
+function isRetrievalSnapshotForDocument(snapshot, activeDocumentId) {
+  if (!snapshot || typeof snapshot !== "object") {
+    return false;
+  }
+
+  return !snapshot.activeCloudDocumentId || snapshot.activeCloudDocumentId === activeDocumentId;
+}
+
+function inferQaContextIntent(question, previousMessageCount) {
+  if (previousMessageCount === 0) {
+    return "new_question";
+  }
+
+  const normalized = String(question ?? "").toLowerCase();
+
+  if (
+    /(它|这个|那个|上述|上面|前面|刚才|继续|展开|第二点|第三点|上一轮|前一轮)/.test(normalized) ||
+    /\b(it|that|those|this|above|previous|earlier|continue|second|third)\b/.test(normalized)
+  ) {
+    return "follow_up";
+  }
+
+  return "contextual_question";
+}
+
+function extractEvidenceIdsFromText(text) {
+  return Array.from(String(text ?? "").matchAll(/\[C(\d+)\]/g), (match) => `C${Number(match[1])}`);
+}
+
+function truncateQaContextText(value, maxCharacters) {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+
+  if (text.length <= maxCharacters) {
+    return text;
+  }
+
+  return `${text.slice(0, Math.max(0, maxCharacters - 3)).trim()}...`;
+}
+
+function summarizeQaChatContextForLog(chatContext) {
+  if (!chatContext) {
+    return undefined;
+  }
+
+  return {
+    carryoverEvidenceCount: chatContext.carryoverEvidence.length,
+    mentionedEvidenceIds: chatContext.mentionedEvidenceIds,
+    recentMessageCount: chatContext.recentMessages.length,
+    userIntent: chatContext.userIntent,
+  };
 }
 
 async function readJsonBody(request) {
