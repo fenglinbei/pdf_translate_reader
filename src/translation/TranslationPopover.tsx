@@ -253,12 +253,7 @@ export function TranslationPopover({
         : favoriteStatus === "saved"
           ? "idle"
           : favoriteStatus;
-  const savedAnnotationNote = annotationNote ?? "";
-  const savedAnnotationColor = annotationColor ?? DEFAULT_ANNOTATION_COLOR;
   const hasSavedAnnotation = Boolean(annotationNote?.trim()) || Boolean(annotationColor);
-  const hasAnnotationDraftChanges =
-    (annotationDraft.note ?? "").trim() !== savedAnnotationNote ||
-    annotationDraft.color !== savedAnnotationColor;
   const canSaveAnnotation =
     Boolean(onAnnotationSave) &&
     status === "success" &&
@@ -1024,7 +1019,7 @@ export function TranslationPopover({
               <button
                 aria-label={t("annotation.save")}
                 className="icon-button icon-button--small pinned-translation-card-action"
-                disabled={!canSaveAnnotation || !hasAnnotationDraftChanges}
+                disabled={!canSaveAnnotation}
                 onClick={() => void handleAnnotationSave()}
                 title={t("annotation.save")}
                 type="button"

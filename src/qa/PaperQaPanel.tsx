@@ -1158,7 +1158,26 @@ function QaMarkdown({
 }
 
 function splitCitationTokens(node: ReactNode, onCitationToken?: (evidenceId: string) => void): ReactNode {
-  if (!onCitationToken || typeof node !== "string") {
+  if (!onCitationToken || node === null || node === undefined || typeof node === "boolean") {
+    return node;
+  }
+
+  if (Array.isArray(node)) {
+    let touched = false;
+    const next = node.map((child, index) => {
+      const processed = splitCitationTokens(child, onCitationToken);
+
+      if (processed !== child) {
+        touched = true;
+      }
+
+      return processed;
+    });
+
+    return touched ? next : node;
+  }
+
+  if (typeof node !== "string") {
     return node;
   }
 
