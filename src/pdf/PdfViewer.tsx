@@ -32,6 +32,7 @@ import type {
 import {
   createPageTextIndex,
   createPageTextMetadata,
+  findQuotedTextLocationOnPage,
   getTextSpanPointerHit,
   getTextSpanPointerHitFromPoint,
   pointerHitRangeToWordSelection,
@@ -89,6 +90,7 @@ type PdfViewerProps = {
 export type PinLocateRequest = {
   pageIndex?: number;
   pin?: TranslationPin;
+  quotedText?: string;
   requestId: number;
 };
 
@@ -208,6 +210,8 @@ export function PdfViewer({
   const pageIndexesRef = useRef(new Map<number, PageTextIndex>());
   const emphasizedPinnedCardTimerRef = useRef<number>();
   const locatedPinTimerRef = useRef<number>();
+  const locatedCitationTimerRef = useRef<number>();
+  const pendingCitationLocateRef = useRef<PinLocateRequest>();
   const revealPinnedCardTimerRef = useRef<number>();
   const panDragRef = useRef<PanDragState>();
   const saveTimerRef = useRef<number>();
@@ -240,6 +244,11 @@ export function PdfViewer({
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [locatedPinId, setLocatedPinId] = useState<string>();
+  const [locatedCitation, setLocatedCitation] = useState<{
+    key: string;
+    pageIndex: number;
+    rects: Array<{ height: number; left: number; top: number; width: number }>;
+  }>();
   const [errorMessage, setErrorMessage] = useState<string>();
   const [selectionNotice, setSelectionNotice] = useState<string>();
   const [mobilePendingSelection, setMobilePendingSelection] = useState<SentenceSelection>();
@@ -523,6 +532,7 @@ export function PdfViewer({
     return () => {
       window.clearTimeout(emphasizedPinnedCardTimerRef.current);
       window.clearTimeout(locatedPinTimerRef.current);
+      window.clearTimeout(locatedCitationTimerRef.current);
       window.clearTimeout(revealPinnedCardTimerRef.current);
     };
   }, []);
@@ -1154,9 +1164,79 @@ export function PdfViewer({
     }
   }, []);
 
+  const highlightLocatedCitation = useCallback((request: PinLocateRequest) => {
+    const pageIndex = request.pageIndex;
+
+    if (typeof pageIndex !== "number" || !request.quotedText) {
+      return false;
+    }
+
+    const pageTextIndex = pageIndexesRef.current.get(pageIndex);
+
+    if (!pageTextIndex) {
+      return false;
+    }
+
+    const location = findQuotedTextLocationOnPage(pageTextIndex, request.quotedText);
+
+    if (!location) {
+      return false;
+    }
+
+    // rects are in rendered (current-zoom) coordinates relative to the page
+    // element; the overlay lives inside the same page element, so no rescaling
+    // is needed for the transient highlight.
+    const rects = location.rects.map((rect) => ({
+      height: rect.height,
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+    }));
+
+    // Scale the anchor top into stored page coordinates so scrollToStoredSelection
+    // (which applies a pageHeight scale) lands on the right scroll offset.
+    const currentPageHeight = pageLayout.heights[pageIndex];
+    const storedPageHeight = pageTextIndex.pageElement.clientHeight || currentPageHeight;
+    const scaleY = currentPageHeight && storedPageHeight
+      ? currentPageHeight / storedPageHeight
+      : 1;
+    const anchorTop = Math.min(...rects.map((rect) => rect.top)) * scaleY;
+    const scrollElement = scrollRef.current;
+    const pageScrollTop = pageLayout.tops[pageIndex];
+
+    if (scrollElement && pageScrollTop !== undefined) {
+      scrollElement.scrollTo({
+        behavior: "smooth",
+        top: Math.max(0, pageScrollTop + anchorTop - scrollElement.clientHeight * 0.24),
+      });
+    }
+
+    setLocatedCitation({
+      key: `citation-${request.requestId}`,
+      pageIndex,
+      rects,
+    });
+    window.clearTimeout(locatedCitationTimerRef.current);
+    locatedCitationTimerRef.current = window.setTimeout(() => {
+      setLocatedCitation((current) =>
+        current && current.key === `citation-${request.requestId}` ? undefined : current,
+      );
+    }, 2400);
+
+    return true;
+  }, [pageLayout]);
+
   const handleTextIndexReady = useCallback((pageTextIndex: PageTextIndex) => {
     pageIndexesRef.current.set(pageTextIndex.pageIndex, pageTextIndex);
-  }, []);
+
+    const pending = pendingCitationLocateRef.current;
+
+    if (pending && pending.pageIndex === pageTextIndex.pageIndex) {
+      if (highlightLocatedCitation(pending)) {
+        pendingCitationLocateRef.current = undefined;
+      }
+    }
+  }, [highlightLocatedCitation]);
 
   const handleTextIndexClear = useCallback((pageIndex: number) => {
     pageIndexesRef.current.delete(pageIndex);
@@ -1243,11 +1323,33 @@ export function PdfViewer({
 
   useEffect(() => {
     if (locateRequest?.pin) {
+      pendingCitationLocateRef.current = undefined;
       handleLocatePin(locateRequest.pin);
-    } else if (typeof locateRequest?.pageIndex === "number") {
+      return;
+    }
+
+    if (locateRequest?.quotedText && typeof locateRequest.pageIndex === "number") {
+      const located = highlightLocatedCitation(locateRequest);
+
+      if (located) {
+        pendingCitationLocateRef.current = undefined;
+        return;
+      }
+
+      // Target page text layer may not be ready yet (page out of view). Scroll
+      // it into view and remember the request so we can retry once the text
+      // index for that page is built.
+      scrollToPage(locateRequest.pageIndex);
+      pendingCitationLocateRef.current = locateRequest;
+      return;
+    }
+
+    pendingCitationLocateRef.current = undefined;
+
+    if (typeof locateRequest?.pageIndex === "number") {
       scrollToPage(locateRequest.pageIndex);
     }
-  }, [handleLocatePin, locateRequest, scrollToPage]);
+  }, [handleLocatePin, highlightLocatedCitation, locateRequest, scrollToPage]);
 
   useEffect(() => {
     if (!isMobileViewport) {
@@ -1500,6 +1602,11 @@ export function PdfViewer({
                     copyNotice={copyNotice}
                     copySelection={copiedSelection}
                     locatedPinId={locatedPinId}
+                    locatedCitation={
+                      locatedCitation && locatedCitation.pageIndex === (page.pageNumber - 1)
+                        ? locatedCitation
+                        : undefined
+                    }
                     settings={settings}
                     suppressSelectionActions={areSelectionActionsSuppressed}
                   />
@@ -1601,6 +1708,7 @@ const PdfPageView = memo(function PdfPageView({
   collapsedMobileSelectionKey,
   draftSelection,
   emphasizedPinnedCardKey,
+  locatedCitation,
   locatedPinId,
   isMobileViewport,
   onActivateTranslationCard,
@@ -1647,6 +1755,11 @@ const PdfPageView = memo(function PdfPageView({
   emphasizedPinnedCardKey?: string;
   isMobileViewport: boolean;
   locatedPinId?: string;
+  locatedCitation?: {
+    key: string;
+    pageIndex: number;
+    rects: Array<{ height: number; left: number; top: number; width: number }>;
+  };
   onActivateTranslationCard: (selection: SentenceSelection) => void;
   onCloseTranslationCard: (selection: SentenceSelection) => void;
   onClearSelection: () => void;
@@ -1861,6 +1974,7 @@ const PdfPageView = memo(function PdfPageView({
             emphasizedPinnedCardKey={emphasizedPinnedCardKey}
             isMobileViewport={isMobileViewport}
             locatedPinId={locatedPinId}
+            locatedCitation={locatedCitation}
             onActivateTranslationCard={onActivateTranslationCard}
             onCollapseMobileTranslationCard={onCollapseMobileTranslationCard}
             onCloseTranslationCard={onCloseTranslationCard}

@@ -55,6 +55,10 @@ type PageOverlayLayerProps = {
   emphasizedPinnedCardKey?: string;
   isMobileViewport: boolean;
   locatedPinId?: string;
+  locatedCitation?: {
+    key: string;
+    rects: Array<{ height: number; left: number; top: number; width: number }>;
+  };
   onActivateTranslationCard: (selection: SentenceSelection) => void;
   onCollapseMobileTranslationCard: (selection: SentenceSelection, isPinned: boolean) => void;
   onCloseTranslationCard: (selection: SentenceSelection) => void;
@@ -105,6 +109,7 @@ export function PageOverlayLayer({
   emphasizedPinnedCardKey,
   isMobileViewport,
   locatedPinId,
+  locatedCitation,
   onActivateTranslationCard,
   onCollapseMobileTranslationCard,
   onCloseTranslationCard,
@@ -379,6 +384,21 @@ export function PageOverlayLayer({
               aria-hidden="true"
               className="selection-highlight selection-highlight--located"
               key={`${locatedPin.id}-located-${index}`}
+              style={{
+                height: rect.height,
+                left: rect.left,
+                top: rect.top,
+                width: rect.width,
+              }}
+            />
+          ))
+        : null}
+      {locatedCitation
+        ? locatedCitation.rects.map((rect, index) => (
+            <div
+              aria-hidden="true"
+              className="selection-highlight selection-highlight--citation"
+              key={`${locatedCitation.key}-${index}`}
               style={{
                 height: rect.height,
                 left: rect.left,

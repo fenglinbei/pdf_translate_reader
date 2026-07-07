@@ -1836,6 +1836,7 @@ export function ReaderShell() {
     locateRequestIdRef.current += 1;
     setLocateRequest({
       pageIndex: Math.max(0, citation.pageStart - 1),
+      quotedText: citation.quotedText,
       requestId: locateRequestIdRef.current,
     });
     setMobilePanel(null);
@@ -1849,6 +1850,7 @@ export function ReaderShell() {
     locateRequestIdRef.current += 1;
     setLocateRequest({
       pageIndex: Math.max(0, evidence.pageStart - 1),
+      quotedText: evidence.textPreview,
       requestId: locateRequestIdRef.current,
     });
     setMobilePanel(null);

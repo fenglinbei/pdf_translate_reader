@@ -352,22 +352,23 @@ export function PaperQaPanel({
     message: LocalQaMessage,
     evidenceId: string,
   ) => {
-    const evidence = (message.retrievalSnapshot?.evidence ?? [])
-      .find((item) => item.evidenceId === evidenceId);
-
-    if (!evidence) {
-      return;
-    }
+    const evidenceList = message.retrievalSnapshot?.evidence ?? [];
+    const evidence = evidenceList.find((item) => item.evidenceId === evidenceId);
 
     setSelectedEvidenceRef({
+      chunkId: evidence?.chunkId,
       evidenceId,
       messageId: message.id,
     });
-    flashEvidence(evidenceId);
 
-    const citation = message.citations.find((item) => item.chunkId === evidence.chunkId);
-    if (citation && citation.cloudDocumentId === activeDocumentId) {
-      onCitationClick(citation);
+    if (evidence) {
+      flashEvidence(evidence.evidenceId);
+
+      const citation = message.citations.find((item) => item.chunkId === evidence.chunkId);
+
+      if (citation && citation.cloudDocumentId === activeDocumentId) {
+        onCitationClick(citation);
+      }
     }
   }, [activeDocumentId, flashEvidence, onCitationClick]);
 

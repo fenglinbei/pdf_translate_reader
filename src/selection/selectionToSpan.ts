@@ -837,3 +837,74 @@ function isTextItem(item: TextContent["items"][number]): item is TextItem {
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
+
+function collapseWhitespace(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Locate a quoted snippet within a page's text index and return the bounding
+ * rects (relative to the page element) plus the normalized character range.
+ * Used to scroll to and highlight a citation's source text on the PDF page.
+ */
+export function findQuotedTextLocationOnPage(
+  pageTextIndex: PageTextIndex,
+  quotedText: string,
+): { normalizedEnd: number; normalizedStart: number; rects: DOMRectLike[] } | undefined {
+  const needle = collapseWhitespace(quotedText);
+
+  if (!needle) {
+    return undefined;
+  }
+
+  const pageText = pageTextIndex.text;
+  const normalizedPageText = collapseWhitespace(pageText);
+
+  // The text index stores positions against `pageText`, but whitespace may have
+  // been collapsed differently. Map a match in the collapsed text back to the
+  // original page text by reconstructing the offset mapping.
+  const needleIndex = normalizedPageText.toLowerCase().indexOf(needle.toLowerCase());
+
+  if (needleIndex < 0) {
+    return undefined;
+  }
+
+  const matchEnd = needleIndex + needle.length;
+
+  // Map collapsed offsets back to the original (non-collapsed) page text.
+  let normalizedStart = -1;
+  let normalizedEnd = -1;
+  let collapsedWalker = 0;
+
+  for (let i = 0; i <= pageText.length && collapsedWalker <= matchEnd; i += 1) {
+    const ch = pageText[i];
+
+    if (i === pageText.length || /\s/.test(ch)) {
+      // A run of whitespace collapses to a single space (or nothing at trim edges).
+      // Advance the collapsed walker only when a boundary is crossed.
+      if (i > 0 && !/\s/.test(pageText[i - 1]) && collapsedWalker > 0 && collapsedWalker < normalizedPageText.length) {
+        collapsedWalker += 1;
+      }
+    } else {
+      if (collapsedWalker === needleIndex) {
+        normalizedStart = i;
+      }
+      collapsedWalker += 1;
+      if (collapsedWalker === matchEnd) {
+        normalizedEnd = i + 1;
+      }
+    }
+  }
+
+  if (normalizedStart < 0 || normalizedEnd < 0) {
+    return undefined;
+  }
+
+  const rects = getRangeRectsOnPage(pageTextIndex, normalizedStart, normalizedEnd);
+
+  if (rects.length === 0) {
+    return undefined;
+  }
+
+  return { normalizedEnd, normalizedStart, rects };
+}
