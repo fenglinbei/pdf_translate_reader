@@ -52,6 +52,8 @@ import type { MessageKey } from "../i18n/messages";
 
 type PaperQaPanelProps = {
   activeDocumentId?: string;
+  isFullscreen?: boolean;
+  onFullscreenChange?: (fullscreen: boolean) => void;
   qaIndexJob?: QaIndexJob;
   onCitationClick: (citation: QaCitation) => void;
   onEvidenceClick: (evidence: QaRetrievedEvidence) => void;
@@ -83,8 +85,10 @@ const QA_REASONING_EFFORTS: QaReasoningEffort[] = ["auto", "quick", "standard", 
 
 export function PaperQaPanel({
   activeDocumentId,
+  isFullscreen: isFullscreenProp,
   onCitationClick,
   onEvidenceClick,
+  onFullscreenChange,
   qaIndexJob,
 }: PaperQaPanelProps) {
   const { t } = useI18n();
@@ -92,7 +96,15 @@ export function PaperQaPanel({
   const [copiedMessageId, setCopiedMessageId] = useState<string>();
   const [deletingThreadId, setDeletingThreadId] = useState<string>();
   const [draftQuestion, setDraftQuestion] = useState("");
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isFullscreenInternal, setIsFullscreenInternal] = useState(false);
+  const isFullscreen = onFullscreenChange ? Boolean(isFullscreenProp) : isFullscreenInternal;
+  const setFullscreen = useCallback((next: boolean) => {
+    if (onFullscreenChange) {
+      onFullscreenChange(next);
+    } else {
+      setIsFullscreenInternal(next);
+    }
+  }, [onFullscreenChange]);
   const [operatingMessageId, setOperatingMessageId] = useState<string>();
   const [historyError, setHistoryError] = useState<string>();
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
@@ -206,7 +218,7 @@ export function PaperQaPanel({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        setIsFullscreen(false);
+        setFullscreen(false);
       }
     };
 
@@ -846,7 +858,7 @@ export function PaperQaPanel({
           </button>
           <button
             className="ask-icon-button"
-            onClick={() => setIsFullscreen((current) => !current)}
+            onClick={() => setFullscreen(!isFullscreen)}
             title={isFullscreen ? t("ask.exitFullscreen") : t("ask.enterFullscreen")}
             type="button"
           >

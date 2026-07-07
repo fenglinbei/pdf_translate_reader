@@ -173,6 +173,11 @@ const LIBRARY_PANE_MIN_WIDTH = 180;
 const PINS_PANE_DEFAULT_WIDTH = 380;
 const PINS_PANE_MAX_WIDTH = 560;
 const PINS_PANE_MIN_WIDTH = 300;
+// When QA chat enters fullscreen we widen the right pane itself (in place) and
+// expand the draggable range so long answers get more room.
+const PINS_PANE_FULLSCREEN_DEFAULT_WIDTH = 760;
+const PINS_PANE_FULLSCREEN_MAX_WIDTH = 1100;
+const PINS_PANE_FULLSCREEN_MIN_WIDTH = 480;
 const TRANSLATION_CARD_BASE_Z_INDEX = 20;
 
 function getHighestTranslationCardZIndex(
@@ -471,6 +476,10 @@ export function ReaderShell() {
   const [pinsPaneWidth, setPinsPaneWidth] = useState(PINS_PANE_DEFAULT_WIDTH);
   const [rightPaneTab, setRightPaneTab] = useState<RightPaneTab>("annotations");
   const [isPaneResizing, setIsPaneResizing] = useState(false);
+  // QA chat fullscreen. While on, the right pane is widened in place and the
+  // resizer range is expanded. The user's normal pane width is restored on exit.
+  const [isQaFullscreen, setIsQaFullscreen] = useState(false);
+  const preFullscreenPaneWidthRef = useRef(PINS_PANE_DEFAULT_WIDTH);
   const [paperContext, setPaperContext] = useState<PaperContextRecord>();
   const [mathpixParsedPages, setMathpixParsedPages] = useState<Map<number, MathpixParsedPage>>(
     () => new Map(),
@@ -689,12 +698,14 @@ export function ReaderShell() {
       isPinsPaneOpen,
       libraryPaneWidth,
       mobileInteractionMode,
-      pinsPaneWidth,
+      // Don't persist the transient fullscreen width; keep the user's normal layout.
+      pinsPaneWidth: isQaFullscreen ? preFullscreenPaneWidthRef.current : pinsPaneWidth,
       selectionMode,
     });
   }, [
     isLibraryPaneOpen,
     isPinsPaneOpen,
+    isQaFullscreen,
     libraryPaneWidth,
     mobileInteractionMode,
     pinsPaneWidth,
@@ -1902,6 +1913,33 @@ export function ReaderShell() {
     setIsPinsPaneOpen((isOpen) => rightPaneTab === "ask" ? !isOpen : true);
   }, [isNarrowViewport, rightPaneTab]);
 
+  const handleQaFullscreenChange = useCallback((fullscreen: boolean) => {
+    setIsQaFullscreen((wasFullscreen) => {
+      if (fullscreen === wasFullscreen) {
+        return wasFullscreen;
+      }
+
+      if (fullscreen) {
+        // Entering fullscreen: remember current width and widen the pane.
+        preFullscreenPaneWidthRef.current = pinsPaneWidth;
+        setPinsPaneWidth(clamp(
+          PINS_PANE_FULLSCREEN_DEFAULT_WIDTH,
+          PINS_PANE_FULLSCREEN_MIN_WIDTH,
+          PINS_PANE_FULLSCREEN_MAX_WIDTH,
+        ));
+      } else {
+        // Exiting fullscreen: restore the user's previous width.
+        setPinsPaneWidth(clamp(
+          preFullscreenPaneWidthRef.current,
+          PINS_PANE_MIN_WIDTH,
+          PINS_PANE_MAX_WIDTH,
+        ));
+      }
+
+      return fullscreen;
+    });
+  }, [pinsPaneWidth]);
+
   const handleRightPaneTabSelect = useCallback(
     (tab: RightPaneTab) => {
       setRightPaneTab(tab);
@@ -1946,17 +1984,19 @@ export function ReaderShell() {
         ),
       );
     } else {
+      const min = isQaFullscreen ? PINS_PANE_FULLSCREEN_MIN_WIDTH : PINS_PANE_MIN_WIDTH;
+      const max = isQaFullscreen ? PINS_PANE_FULLSCREEN_MAX_WIDTH : PINS_PANE_MAX_WIDTH;
       setPinsPaneWidth(
         clamp(
           resizeState.startWidth + resizeState.startX - event.clientX,
-          PINS_PANE_MIN_WIDTH,
-          PINS_PANE_MAX_WIDTH,
+          min,
+          max,
         ),
       );
     }
 
     event.preventDefault();
-  }, []);
+  }, [isQaFullscreen]);
 
   const handlePaneResizeEnd = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (paneResizeStateRef.current) {
@@ -2241,8 +2281,10 @@ export function ReaderShell() {
           </div>
           <PaperQaPanel
             activeDocumentId={currentEntry?.cloudDocumentId}
+            isFullscreen={isQaFullscreen}
             onCitationClick={handleLocateQaCitation}
             onEvidenceClick={handleLocateQaEvidence}
+            onFullscreenChange={handleQaFullscreenChange}
             qaIndexJob={qaIndexJob}
           />
         </div>

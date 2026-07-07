@@ -882,24 +882,19 @@ button {
 }
 
 /*
- * In-place fullscreen: instead of a floating modal card, expand the workbench
- * to fill its translation-pane container (which is position:relative). The
- * workbench sits above the status strip so chat gets the full pane height.
+ * In-place fullscreen: the right pane is widened by ReaderShell (via the
+ * isQaFullscreen state), so the workbench itself just needs to claim more
+ * vertical room. We hide the index status strip while fullscreen so the chat
+ * gets the full pane height. The width change is driven by the grid column
+ * variable, not by styling here.
  */
-.ask-workbench--fullscreen {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
-  gap: 12px;
-  padding: 10px 12px 12px;
-  background: var(--surface);
-  overflow: hidden;
+.ask-workbench--fullscreen .ask-message-stream {
+  min-height: 240px;
 }
 
-.ask-workbench--fullscreen .ask-message-stream {
-  min-height: 200px;
+/* Hide the index status strip while QA chat is fullscreen to maximize space. */
+.translation-pane:has(.ask-workbench--fullscreen) .ask-status-strip {
+  display: none;
 }
 
 .ask-workbench-header {
