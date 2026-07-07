@@ -4,18 +4,17 @@ import {
   streamQaChatCompletion,
   QaChatModelError,
 } from "../chatModels/client.mjs";
+import { EmbeddingProviderError } from "../embedding/client.mjs";
 import { verifyAnswerCitations } from "../qa/citationVerifier.mjs";
 import {
-  recordAgentFallbackStep,
   runCurrentPaperReasoningRetrieval,
-  QaAgentRunnerError,
 } from "../qa/agentRunner.mjs";
+import { RerankerProviderError } from "../qa/reranker.mjs";
 import {
   buildQaAnswerMessages,
   createRetrievalSnapshot,
   QA_PROMPT_VERSION,
 } from "../qa/prompt.mjs";
-import { retrieveCurrentPaperEvidence } from "../qa/retriever.mjs";
 import {
   createOrUpdateIndexJob,
   createOrReuseQaThread,
@@ -171,71 +170,18 @@ async function handleQaStream(request, response, user) {
     let agentSteps = [];
 
     try {
-      if (requestBody.executionMode === "agentic") {
-        try {
-          retrieval = await runCurrentPaperReasoningRetrieval({
-            emit: (eventName, payload) => writeSse(response, eventName, payload),
-            messageId: assistantMessage.id,
-            model: requestBody.model,
-            question: requestBody.question,
-            reasoningEffort: requestBody.reasoningEffort,
-            signal: abortController.signal,
-            chatContext,
-            userDocumentId: requestBody.activeDocumentId,
-            userId: user.id,
-          });
-          agentSteps = retrieval.agentSteps ?? [];
-        } catch (error) {
-          const failedSteps = error instanceof QaAgentRunnerError ? error.agentSteps : [];
-          const fallbackStepIndex = error instanceof QaAgentRunnerError ? error.nextStepIndex : failedSteps.length;
-          let fallbackStep;
-
-          try {
-            fallbackStep = await recordAgentFallbackStep({
-              emit: (eventName, payload) => writeSse(response, eventName, payload),
-              error,
-              messageId: assistantMessage.id,
-              stepIndex: fallbackStepIndex,
-              userId: user.id,
-            });
-          } catch (fallbackError) {
-            console.warn(
-              "QA fallback step write skipped:",
-              fallbackError instanceof Error ? fallbackError.message : fallbackError,
-            );
-          }
-
-          agentSteps = fallbackStep ? [...failedSteps, fallbackStep] : failedSteps;
-          retrieval = await retrieveCurrentPaperEvidence({
-            question: requestBody.question,
-            signal: abortController.signal,
-            userDocumentId: requestBody.activeDocumentId,
-            userId: user.id,
-          });
-          retrieval = {
-            ...retrieval,
-            diagnostics: {
-              ...retrieval.diagnostics,
-              agent: {
-                fallback: true,
-                failedMessage: error instanceof Error ? error.message : "Agentic retrieval failed.",
-                mode: "agentic",
-              },
-            },
-            warnings: uniqueStrings([
-              ...(retrieval.warnings ?? []),
-              "Agentic retrieval failed; automatically fell back to single-pass RAG.",
-            ]),
-          };
-        }
-      } else {
-        retrieval = await retrieveCurrentPaperEvidence({
-          question: requestBody.question,
-          signal: abortController.signal,
-          userDocumentId: requestBody.activeDocumentId,
-          userId: user.id,
-        });
-      }
+      retrieval = await runCurrentPaperReasoningRetrieval({
+        emit: (eventName, payload) => writeSse(response, eventName, payload),
+        messageId: assistantMessage.id,
+        model: requestBody.model,
+        question: requestBody.question,
+        reasoningEffort: requestBody.reasoningEffort,
+        signal: abortController.signal,
+        chatContext,
+        userDocumentId: requestBody.activeDocumentId,
+        userId: user.id,
+      });
+      agentSteps = retrieval.agentSteps ?? [];
 
       await writeQaLogSilent({
         messageId: assistantMessage.id,
@@ -302,6 +248,76 @@ async function handleQaStream(request, response, user) {
       snapshot: retrievalSnapshot,
       warnings: retrieval.warnings,
     });
+
+    if (retrieval.diagnostics?.agent?.directAnswer) {
+      let directAnswerText = "";
+      let directUsage;
+
+      await streamQaChatCompletion({
+        messages: buildQaAnswerMessages({
+          answerLanguage: requestBody.answerLanguage,
+          chatContext,
+          directReplyOutline: retrieval.diagnostics.agent.directAnswerReason,
+          evidence: [],
+          mode: "direct",
+          question: requestBody.question,
+        }),
+        model: requestBody.model,
+        onDelta: (text) => {
+          directAnswerText += text;
+          writeSse(response, "delta", { text });
+        },
+        onFinish: (finishReason) => {
+          writeSse(response, "finish", { finishReason });
+        },
+        onUsage: (usage) => {
+          directUsage = usage;
+          writeSse(response, "usage", { usage });
+        },
+        signal: abortController.signal,
+      });
+
+      const updatedMessage = await updateQaMessage({
+        content: directAnswerText,
+        messageId: assistantMessage.id,
+        retrievalSnapshot,
+        status: "success",
+        userId: user.id,
+      });
+      await writeQaLogSilent({
+        messageId: assistantMessage.id,
+        model: requestBody.model,
+        payload: {
+          directAnswer: true,
+          directAnswerReason: retrieval.diagnostics.agent.directAnswerReason,
+          evidenceCount: 0,
+        },
+        promptVersion: QA_PROMPT_VERSION,
+        requestFinishedAt: Date.now(),
+        requestKind: "answer-stream",
+        requestStartedAt: answerStartedAt,
+        status: "success",
+        threadId: thread.id,
+        usage: directUsage,
+        userDocumentId: requestBody.activeDocumentId,
+        userId: user.id,
+      });
+
+      writeSse(response, "verifier", {
+        rejected: [],
+        warnings: [],
+      });
+      writeSse(response, "done", {
+        assistantMessage: {
+          ...updatedMessage,
+          agentSteps,
+        },
+        citations: [],
+        threadId: thread.id,
+      });
+      response.end();
+      return;
+    }
 
     if (retrieval.evidence.length === 0) {
       const noEvidenceAnswer = createNoEvidenceAnswer(requestBody);
@@ -701,8 +717,8 @@ function normalizeAnswerLanguage(value) {
   return value === "zh" || value === "en" ? value : "auto";
 }
 
-function normalizeExecutionMode(value) {
-  return value === "rag" ? "rag" : "agentic";
+function normalizeExecutionMode() {
+  return "agentic";
 }
 
 function normalizeReasoningEffort(value) {
@@ -938,6 +954,13 @@ function serializeError(error) {
     };
   }
 
+  if (error instanceof EmbeddingProviderError || error instanceof RerankerProviderError) {
+    return {
+      code: error.code,
+      message: error.message,
+    };
+  }
+
   return {
     code: "qa_route_error",
     message: error instanceof Error ? error.message : "QA request failed.",
@@ -945,7 +968,12 @@ function serializeError(error) {
 }
 
 function getErrorStatusCode(error) {
-  if (error instanceof SupabaseServiceError || error instanceof QaChatModelError) {
+  if (
+    error instanceof SupabaseServiceError ||
+    error instanceof QaChatModelError ||
+    error instanceof EmbeddingProviderError ||
+    error instanceof RerankerProviderError
+  ) {
     return error.statusCode;
   }
 

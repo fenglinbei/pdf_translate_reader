@@ -279,15 +279,6 @@ export function PageOverlayLayer({
     selectionKey,
   ]);
 
-  const [isTranslationTriggered, setIsTranslationTriggered] = useState(false);
-  const selectionIdentity = selection
-    ? `${selection.pageIndex}:${selection.normalizedSentence}`
-    : undefined;
-
-  useEffect(() => {
-    setIsTranslationTriggered(false);
-  }, [selectionIdentity]);
-
   if (
     !hasSelection &&
     !hasCopySelection &&
@@ -340,13 +331,13 @@ export function PageOverlayLayer({
         }
       : popoverPlacement;
   const shouldShowActiveSelectionAction = Boolean(
-    !isTranslationTriggered &&
+    isMobileViewport &&
       activeSelectionActionPlacement &&
       !hasDraftSelection &&
       !isActiveSelectionMobileCollapsed,
   );
   const shouldShowActiveTranslationPopover = Boolean(
-    (isTranslationTriggered || readerMode === "translate") &&
+    (!isMobileViewport || readerMode === "translate") &&
       activeSelectionTranslationPlacement &&
       !isActiveSelectionMobileCollapsed,
   );
@@ -535,7 +526,7 @@ export function PageOverlayLayer({
               onCreateAnnotation={(annotation) =>
                 onCreateAnnotation(activePopoverSelection, annotation)
               }
-              onTranslate={() => setIsTranslationTriggered(true)}
+              onTranslate={() => undefined}
               placement={activeSelectionActionPlacement.placement}
               selection={activePopoverSelection}
               style={{

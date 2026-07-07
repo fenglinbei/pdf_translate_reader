@@ -18,6 +18,10 @@ const ACTION_POPOVER_ESTIMATED_HEIGHT = 58;
 const ACTION_POPOVER_MAX_WIDTH = 380;
 const ACTION_POPOVER_MIN_WIDTH = 320;
 const ACTION_POPOVER_MIN_HEIGHT = 44;
+// When placing the popover on a side gutter (outside the page), require the
+// selection to be within this many pixels of that side, otherwise the popover
+// ends up far from the selected text.
+const OUTSIDE_ANCHOR_PROXIMITY = 120;
 
 export function getSelectionBounds(rects: DOMRectLike[]): SelectionBounds {
   const left = Math.min(...rects.map((rect) => rect.left));
@@ -43,9 +47,111 @@ export function getPopoverPlacement(
   style: CSSProperties;
 } {
   const insidePopoverWidth = getPopoverWidth(pageSize.width - PAGE_MARGIN * 2);
-  const preferredOutsideSide = anchor.left + anchor.width / 2 >= pageSize.width / 2 ? "right" : "left";
-  const outsideRight = getOutsidePlacement("right", pageSize.gutters.right, anchor, pageSize);
-  const outsideLeft = getOutsidePlacement("left", pageSize.gutters.left, anchor, pageSize);
+  const widthStyle = {
+    "--translation-popover-width": `${insidePopoverWidth}px`,
+  } as CSSProperties;
+  const anchorCenterX = anchor.left + anchor.width / 2;
+  const preferredInsideSide: "left" | "right" = anchorCenterX < pageSize.width / 2 ? "right" : "left";
+
+  // 1. Prefer placing directly below the selection (close and unambiguous).
+  const belowTop = anchor.bottom + POPOVER_GAP;
+  const hasBelowRoom = belowTop + POPOVER_MIN_HEIGHT <= pageSize.height - PAGE_MARGIN;
+  const belowLeft = clamp(
+    anchor.left,
+    PAGE_MARGIN,
+    Math.max(PAGE_MARGIN, pageSize.width - PAGE_MARGIN - insidePopoverWidth),
+  );
+  if (hasBelowRoom) {
+    return {
+      placement: "below",
+      style: {
+        ...widthStyle,
+        left: belowLeft,
+        top: Math.min(belowTop, pageSize.height - PAGE_MARGIN - POPOVER_MIN_HEIGHT),
+      },
+    };
+  }
+
+  // 2. Then above the selection.
+  const hasAboveRoom = anchor.top - POPOVER_GAP - POPOVER_MIN_HEIGHT >= PAGE_MARGIN;
+  if (hasAboveRoom) {
+    return {
+      placement: "above",
+      style: {
+        ...widthStyle,
+        bottom: pageSize.height - anchor.top + POPOVER_GAP,
+        left: belowLeft,
+      },
+    };
+  }
+
+  // 3. Inside-page side placement, vertically centered on the selection.
+  const rightSpace = pageSize.width - PAGE_MARGIN - anchor.right - POPOVER_GAP;
+  const leftSpace = anchor.left - PAGE_MARGIN - POPOVER_GAP;
+  const sideThreshold = Math.min(260, insidePopoverWidth);
+  const sideTop = getSideTop(anchor, POPOVER_ESTIMATED_HEIGHT, pageSize.height);
+
+  if (preferredInsideSide === "right" && rightSpace >= sideThreshold) {
+    return {
+      placement: "right",
+      style: {
+        ...widthStyle,
+        left: clamp(anchor.right + POPOVER_GAP, PAGE_MARGIN, pageSize.width - PAGE_MARGIN - insidePopoverWidth),
+        top: sideTop,
+      },
+    };
+  }
+
+  if (preferredInsideSide === "left" && leftSpace >= sideThreshold) {
+    return {
+      placement: "left",
+      style: {
+        ...widthStyle,
+        left: clamp(
+          anchor.left - POPOVER_GAP - insidePopoverWidth,
+          PAGE_MARGIN,
+          pageSize.width - PAGE_MARGIN - insidePopoverWidth,
+        ),
+        top: sideTop,
+      },
+    };
+  }
+
+  if (rightSpace >= sideThreshold) {
+    return {
+      placement: "right",
+      style: {
+        ...widthStyle,
+        left: clamp(anchor.right + POPOVER_GAP, PAGE_MARGIN, pageSize.width - PAGE_MARGIN - insidePopoverWidth),
+        top: sideTop,
+      },
+    };
+  }
+
+  if (leftSpace >= sideThreshold) {
+    return {
+      placement: "left",
+      style: {
+        ...widthStyle,
+        left: clamp(
+          anchor.left - POPOVER_GAP - insidePopoverWidth,
+          PAGE_MARGIN,
+          pageSize.width - PAGE_MARGIN - insidePopoverWidth,
+        ),
+        top: sideTop,
+      },
+    };
+  }
+
+  // 4. Outside the page in the gutter, but only when the selection is near
+  // that side so the popover stays close to the text.
+  const preferredOutsideSide: "left" | "right" = anchorCenterX >= pageSize.width / 2 ? "right" : "left";
+  const outsideRight = isAnchorNearSide(anchor, "right", pageSize.width)
+    ? getOutsidePlacement("right", pageSize.gutters.right, anchor, pageSize)
+    : undefined;
+  const outsideLeft = isAnchorNearSide(anchor, "left", pageSize.width)
+    ? getOutsidePlacement("left", pageSize.gutters.left, anchor, pageSize)
+    : undefined;
 
   if (preferredOutsideSide === "right" && outsideRight) {
     return outsideRight;
@@ -63,81 +169,13 @@ export function getPopoverPlacement(
     return outsideLeft;
   }
 
-  const sideThreshold = Math.min(260, insidePopoverWidth);
-  const rightSpace = pageSize.width - PAGE_MARGIN - anchor.right - POPOVER_GAP;
-  const leftSpace = anchor.left - PAGE_MARGIN - POPOVER_GAP;
-  const top = clamp(
-    anchor.top,
-    PAGE_MARGIN,
-    Math.max(PAGE_MARGIN, pageSize.height - PAGE_MARGIN - POPOVER_ESTIMATED_HEIGHT),
-  );
-  const widthStyle = {
-    "--translation-popover-width": `${insidePopoverWidth}px`,
-  } as CSSProperties;
-  const preferredInsideSide = anchor.left + anchor.width / 2 < pageSize.width / 2 ? "right" : "left";
-
-  if (preferredInsideSide === "right" && rightSpace >= sideThreshold) {
-    return {
-      placement: "right",
-      style: {
-        ...widthStyle,
-        left: clamp(anchor.right + POPOVER_GAP, PAGE_MARGIN, pageSize.width - PAGE_MARGIN - insidePopoverWidth),
-        top,
-      },
-    };
-  }
-
-  if (preferredInsideSide === "left" && leftSpace >= sideThreshold) {
-    return {
-      placement: "left",
-      style: {
-        ...widthStyle,
-        left: clamp(
-          anchor.left - POPOVER_GAP - insidePopoverWidth,
-          PAGE_MARGIN,
-          pageSize.width - PAGE_MARGIN - insidePopoverWidth,
-        ),
-        top,
-      },
-    };
-  }
-
-  if (rightSpace >= sideThreshold) {
-    return {
-      placement: "right",
-      style: {
-        ...widthStyle,
-        left: clamp(anchor.right + POPOVER_GAP, PAGE_MARGIN, pageSize.width - PAGE_MARGIN - insidePopoverWidth),
-        top,
-      },
-    };
-  }
-
-  if (leftSpace >= sideThreshold) {
-    return {
-      placement: "left",
-      style: {
-        ...widthStyle,
-        left: clamp(
-          anchor.left - POPOVER_GAP - insidePopoverWidth,
-          PAGE_MARGIN,
-          pageSize.width - PAGE_MARGIN - insidePopoverWidth,
-        ),
-        top,
-      },
-    };
-  }
-
-  const left = clamp(anchor.left, PAGE_MARGIN, pageSize.width - PAGE_MARGIN - insidePopoverWidth);
-  const belowTop = anchor.bottom + POPOVER_GAP;
-  const hasBelowRoom = belowTop + POPOVER_MIN_HEIGHT <= pageSize.height - PAGE_MARGIN;
-
+  // 5. Fallback: below (clamped) then above.
   if (hasBelowRoom || anchor.top < pageSize.height / 2) {
     return {
       placement: "below",
       style: {
         ...widthStyle,
-        left,
+        left: belowLeft,
         top: Math.min(belowTop, pageSize.height - PAGE_MARGIN - POPOVER_MIN_HEIGHT),
       },
     };
@@ -148,7 +186,7 @@ export function getPopoverPlacement(
     style: {
       ...widthStyle,
       bottom: pageSize.height - anchor.top + POPOVER_GAP,
-      left,
+      left: belowLeft,
     },
   };
 }
@@ -164,11 +202,46 @@ export function getActionPopoverPlacement(
   const widthStyle = {
     "--selection-action-popover-width": `${popoverWidth}px`,
   } as CSSProperties;
+  const anchorCenterX = anchor.left + anchor.width / 2;
+  const preferredInsideSide: "left" | "right" = anchorCenterX < pageSize.width / 2 ? "right" : "left";
+  const horizontalLeft = clamp(
+    anchor.left,
+    PAGE_MARGIN,
+    Math.max(PAGE_MARGIN, pageSize.width - PAGE_MARGIN - popoverWidth),
+  );
+
+  // 1. Prefer above the selection (keeps the action bar pinned to the text).
+  const hasAboveRoom = anchor.top - ACTION_POPOVER_GAP - ACTION_POPOVER_MIN_HEIGHT >= PAGE_MARGIN;
+  if (hasAboveRoom) {
+    return {
+      placement: "above",
+      style: {
+        ...widthStyle,
+        bottom: pageSize.height - anchor.top + ACTION_POPOVER_GAP,
+        left: horizontalLeft,
+      },
+    };
+  }
+
+  // 2. Then below the selection.
+  const belowTop = anchor.bottom + ACTION_POPOVER_GAP;
+  const hasBelowRoom = belowTop + ACTION_POPOVER_MIN_HEIGHT <= pageSize.height - PAGE_MARGIN;
+  if (hasBelowRoom) {
+    return {
+      placement: "below",
+      style: {
+        ...widthStyle,
+        left: horizontalLeft,
+        top: belowTop,
+      },
+    };
+  }
+
+  // 3. Inside-page side placement, vertically centered on the selection.
   const sideThreshold = Math.min(ACTION_POPOVER_MIN_WIDTH, popoverWidth);
   const rightSpace = pageSize.width - PAGE_MARGIN - anchor.right - ACTION_POPOVER_GAP;
   const leftSpace = anchor.left - PAGE_MARGIN - ACTION_POPOVER_GAP;
-  const top = getActionSideTop(anchor, pageSize.height);
-  const preferredInsideSide = anchor.left + anchor.width / 2 < pageSize.width / 2 ? "right" : "left";
+  const sideTop = getSideTop(anchor, ACTION_POPOVER_ESTIMATED_HEIGHT, pageSize.height);
 
   if (preferredInsideSide === "right" && rightSpace >= sideThreshold) {
     return {
@@ -176,7 +249,7 @@ export function getActionPopoverPlacement(
       style: {
         ...widthStyle,
         left: clamp(anchor.right + ACTION_POPOVER_GAP, PAGE_MARGIN, pageSize.width - PAGE_MARGIN - popoverWidth),
-        top,
+        top: sideTop,
       },
     };
   }
@@ -191,7 +264,7 @@ export function getActionPopoverPlacement(
           PAGE_MARGIN,
           pageSize.width - PAGE_MARGIN - popoverWidth,
         ),
-        top,
+        top: sideTop,
       },
     };
   }
@@ -202,7 +275,7 @@ export function getActionPopoverPlacement(
       style: {
         ...widthStyle,
         left: clamp(anchor.right + ACTION_POPOVER_GAP, PAGE_MARGIN, pageSize.width - PAGE_MARGIN - popoverWidth),
-        top,
+        top: sideTop,
       },
     };
   }
@@ -217,30 +290,19 @@ export function getActionPopoverPlacement(
           PAGE_MARGIN,
           pageSize.width - PAGE_MARGIN - popoverWidth,
         ),
-        top,
+        top: sideTop,
       },
     };
   }
 
-  const left = clamp(anchor.left, PAGE_MARGIN, pageSize.width - PAGE_MARGIN - popoverWidth);
-  const hasAboveRoom = anchor.top - ACTION_POPOVER_GAP - ACTION_POPOVER_MIN_HEIGHT >= PAGE_MARGIN;
-  const belowTop = anchor.bottom + ACTION_POPOVER_GAP;
-  const hasBelowRoom = belowTop + ACTION_POPOVER_MIN_HEIGHT <= pageSize.height - PAGE_MARGIN;
-
-  if (hasAboveRoom) {
-    return {
-      placement: "above",
-      style: {
-        ...widthStyle,
-        bottom: pageSize.height - anchor.top + ACTION_POPOVER_GAP,
-        left,
-      },
-    };
-  }
-
-  const preferredOutsideSide = anchor.left + anchor.width / 2 >= pageSize.width / 2 ? "right" : "left";
-  const outsideRight = getOutsideActionPlacement("right", pageSize.gutters.right, anchor, pageSize);
-  const outsideLeft = getOutsideActionPlacement("left", pageSize.gutters.left, anchor, pageSize);
+  // 4. Outside gutter, only when the selection is close to that side.
+  const preferredOutsideSide: "left" | "right" = anchorCenterX >= pageSize.width / 2 ? "right" : "left";
+  const outsideRight = isAnchorNearSide(anchor, "right", pageSize.width)
+    ? getOutsideActionPlacement("right", pageSize.gutters.right, anchor, pageSize)
+    : undefined;
+  const outsideLeft = isAnchorNearSide(anchor, "left", pageSize.width)
+    ? getOutsideActionPlacement("left", pageSize.gutters.left, anchor, pageSize)
+    : undefined;
 
   if (preferredOutsideSide === "right" && outsideRight) {
     return outsideRight;
@@ -258,12 +320,13 @@ export function getActionPopoverPlacement(
     return outsideLeft;
   }
 
+  // 5. Fallbacks.
   if (hasBelowRoom) {
     return {
       placement: "below",
       style: {
         ...widthStyle,
-        left,
+        left: horizontalLeft,
         top: belowTop,
       },
     };
@@ -274,9 +337,17 @@ export function getActionPopoverPlacement(
     style: {
       ...widthStyle,
       bottom: PAGE_MARGIN,
-      left,
+      left: horizontalLeft,
     },
   };
+}
+
+function isAnchorNearSide(anchor: SelectionBounds, side: "left" | "right", pageWidth: number) {
+  if (side === "left") {
+    return anchor.left <= OUTSIDE_ANCHOR_PROXIMITY;
+  }
+
+  return anchor.right >= pageWidth - OUTSIDE_ANCHOR_PROXIMITY;
 }
 
 function getOutsideActionPlacement(
@@ -306,7 +377,7 @@ function getOutsideActionPlacement(
     style: {
       ...widthStyle,
       left: side === "right" ? pageSize.width + ACTION_POPOVER_GAP : -popoverWidth - ACTION_POPOVER_GAP,
-      top: getActionSideTop(anchor, pageSize.height),
+      top: getSideTop(anchor, ACTION_POPOVER_ESTIMATED_HEIGHT, pageSize.height),
     },
   };
 }
@@ -332,18 +403,13 @@ function getOutsidePlacement(
   const widthStyle = {
     "--translation-popover-width": `${popoverWidth}px`,
   } as CSSProperties;
-  const top = clamp(
-    anchor.top,
-    PAGE_MARGIN,
-    Math.max(PAGE_MARGIN, pageSize.height - PAGE_MARGIN - POPOVER_ESTIMATED_HEIGHT),
-  );
 
   return {
     placement: side,
     style: {
       ...widthStyle,
       left: side === "right" ? pageSize.width + POPOVER_GAP : -popoverWidth - POPOVER_GAP,
-      top,
+      top: getSideTop(anchor, POPOVER_ESTIMATED_HEIGHT, pageSize.height),
     },
   };
 }
@@ -356,11 +422,13 @@ function getActionPopoverWidth(availableWidth: number) {
   return Math.min(ACTION_POPOVER_MAX_WIDTH, Math.max(ACTION_POPOVER_MIN_WIDTH, availableWidth));
 }
 
-function getActionSideTop(anchor: SelectionBounds, pageHeight: number) {
+function getSideTop(anchor: SelectionBounds, estimatedHeight: number, pageHeight: number) {
+  const anchorCenter = anchor.top + anchor.height / 2;
+
   return clamp(
-    anchor.top,
+    anchorCenter - estimatedHeight / 2,
     PAGE_MARGIN,
-    Math.max(PAGE_MARGIN, pageHeight - PAGE_MARGIN - ACTION_POPOVER_ESTIMATED_HEIGHT),
+    Math.max(PAGE_MARGIN, pageHeight - PAGE_MARGIN - estimatedHeight),
   );
 }
 

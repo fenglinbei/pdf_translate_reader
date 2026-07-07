@@ -60,10 +60,7 @@ export async function retrieveCurrentPaperEvidence({
     rerankerUsage: rerankResult.usage,
     rerankerVersion: rerankResult.diagnostics?.model,
     retrieverVersion: QA_RETRIEVER_VERSION,
-    warnings: [
-      ...(queryEmbedding.warning ? [queryEmbedding.warning] : []),
-      ...rerankResult.warnings,
-    ],
+    warnings: [...rerankResult.warnings],
   };
 }
 
@@ -102,11 +99,13 @@ async function requireUsableIndexJob({ userDocumentId, userId }) {
     );
   }
 
-  if (job.status !== "ready" && job.status !== "ready_degraded") {
+  if (job.status !== "ready") {
     throw new SupabaseServiceError(
       409,
       "qa_index_not_ready",
-      "The QA index is not ready yet.",
+      job.status === "ready_degraded"
+        ? "The QA index is incomplete (semantic search unavailable). Rebuild the index to enable semantic retrieval."
+        : "The QA index is not ready yet.",
     );
   }
 
@@ -120,47 +119,33 @@ async function createQueryEmbedding({ indexJob, question }) {
     indexJob.embeddingModel === "none" ||
     !indexJob.embeddingDimensions
   ) {
-    return {
-      dimensions: undefined,
-      model: undefined,
-      vector: undefined,
-      warning: "Semantic retrieval is unavailable for this index; using text retrieval only.",
-    };
+    throw new SupabaseServiceError(
+      503,
+      "embedding_unavailable",
+      "Semantic retrieval is unavailable for this index. Rebuild the index with embeddings enabled.",
+    );
   }
 
   const config = getEmbeddingRuntimeConfig();
 
   if (!config.configured) {
-    return {
-      dimensions: undefined,
-      model: undefined,
-      vector: undefined,
-      warning: "Embedding provider is not configured; using text retrieval only.",
-    };
+    throw new SupabaseServiceError(
+      503,
+      "embedding_not_configured",
+      "Embedding provider is not configured. Set VOYAGE_API_KEY to enable semantic retrieval.",
+    );
   }
 
-  try {
-    const result = await embedTexts({
-      inputType: "query",
-      texts: [question],
-    });
+  const result = await embedTexts({
+    inputType: "query",
+    texts: [question],
+  });
 
-    return {
-      dimensions: result.dimensions,
-      model: result.model,
-      vector: result.vectors[0],
-      warning: undefined,
-    };
-  } catch (error) {
-    return {
-      dimensions: undefined,
-      model: undefined,
-      vector: undefined,
-      warning: error instanceof Error
-        ? `Embedding query failed; using text retrieval only. ${error.message}`
-        : "Embedding query failed; using text retrieval only.",
-    };
-  }
+  return {
+    dimensions: result.dimensions,
+    model: result.model,
+    vector: result.vectors[0],
+  };
 }
 
 async function matchChunks({

@@ -95,7 +95,7 @@ describe("rerankEvidence", () => {
     assert.equal(result.evidence[0].scoreBreakdown.rerank, 0.91);
   });
 
-  it("falls back to hybrid order when rerank fails", async () => {
+  it("throws when rerank fails instead of degrading", async () => {
     process.env.QA_RERANK_PROVIDER = "voyage";
     process.env.QA_RERANK_TOP_K = "1";
     process.env.VOYAGE_API_KEY = "test-key";
@@ -106,14 +106,49 @@ describe("rerankEvidence", () => {
       status: 503,
     });
 
+    await assert.rejects(
+      () => rerankEvidence({
+        evidence,
+        question: "Trigger failure",
+      }),
+      (error) => {
+        assert.equal(error.name, "RerankerProviderError");
+        assert.equal(error.code, "reranker_failed");
+        assert.equal(error.statusCode, 503);
+        assert.match(error.message, /provider unavailable/);
+        return true;
+      },
+    );
+  });
+
+  it("throws when rerank provider is not configured", async () => {
+    delete process.env.QA_RERANK_PROVIDER;
+    delete process.env.VOYAGE_API_KEY;
+
+    await assert.rejects(
+      () => rerankEvidence({
+        evidence,
+        question: "No reranker configured",
+      }),
+      (error) => {
+        assert.equal(error.name, "RerankerProviderError");
+        assert.equal(error.code, "reranker_not_configured");
+        assert.equal(error.statusCode, 503);
+        return true;
+      },
+    );
+  });
+
+  it("returns empty evidence when there are no candidates", async () => {
+    process.env.QA_RERANK_PROVIDER = "voyage";
+    process.env.VOYAGE_API_KEY = "test-key";
+
     const result = await rerankEvidence({
-      evidence,
-      question: "Trigger failure",
+      evidence: [],
+      question: "No candidates",
     });
 
-    assert.equal(result.diagnostics.skippedReason, "reranker_failed");
-    assert.match(result.warnings[0], /provider unavailable/);
-    assert.deepEqual(result.evidence.map((item) => item.chunkId), ["chunk-1"]);
-    assert.equal(result.evidence[0].scoreBreakdown.rerank, undefined);
+    assert.equal(result.evidence.length, 0);
+    assert.equal(result.diagnostics.skippedReason, "no_candidates");
   });
 });

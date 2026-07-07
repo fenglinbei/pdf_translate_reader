@@ -9,10 +9,41 @@ const MAX_QUESTION_CHARS = 2000;
 export function buildQaAnswerMessages({
   answerLanguage = "auto",
   chatContext,
+  directReplyOutline,
   evidence,
+  mode = "answer",
   question,
 }) {
   const conversationContext = formatConversationContext(chatContext);
+
+  if (mode === "direct") {
+    return [
+      {
+        role: "system",
+        content: [
+          "You are a friendly academic paper reading assistant embedded in a PDF reader.",
+          "The retrieval controller decided this message does not require evidence from the current paper.",
+          "Respond naturally and concisely. Do not invent paper details and do not use [Cn] citations.",
+          "Keep it short and helpful. You may briefly remind the user they can ask about the paper's content.",
+          "When the user writes in Chinese, reply in Chinese; when in English, reply in English.",
+        ].join("\n"),
+      },
+      {
+        role: "user",
+        content: [
+          "[Answer language]",
+          normalizeAnswerLanguage(answerLanguage),
+          ...(conversationContext
+            ? ["", "[Conversation context]", conversationContext]
+            : []),
+          ...(directReplyOutline ? ["", "[Reply outline]", directReplyOutline] : []),
+          "",
+          "[User message]",
+          truncateText(question, MAX_QUESTION_CHARS),
+        ].join("\n"),
+      },
+    ];
+  }
 
   return [
     {

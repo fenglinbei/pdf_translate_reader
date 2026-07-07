@@ -13,7 +13,12 @@ const DEFAULT_MAX_STEPS = 8;
 const DEFAULT_MAX_RETRIEVAL_CALLS = 2;
 const DEFAULT_MAX_EVIDENCE = 12;
 const LOW_SCORE_THRESHOLD = 0.12;
-const CONTROLLER_ACTIONS = new Set(["search_current_paper", "open_chunk", "finish_retrieval"]);
+const CONTROLLER_ACTIONS = new Set([
+  "search_current_paper",
+  "open_chunk",
+  "finish_retrieval",
+  "direct_answer",
+]);
 const REASONING_BUDGETS = {
   quick: {
     maxControllerCalls: 2,
@@ -101,6 +106,7 @@ export async function runReasoningAgenticRetrieval({
   const carryoverEvidence = normalizeCarryoverEvidence(chatContext?.carryoverEvidence, budget.maxEvidence);
   let evidence = carryoverEvidence;
   let finishAction;
+  let directAnswer;
   let openCalls = 0;
   let retrievalCalls = 0;
 
@@ -143,6 +149,11 @@ export async function runReasoningAgenticRetrieval({
         turnIndex,
       });
       const action = normalizeControllerAction(controllerResult);
+
+      if (action.action === "direct_answer") {
+        directAnswer = action;
+        break;
+      }
 
       if (action.action === "finish_retrieval") {
         finishAction = action;
@@ -237,6 +248,43 @@ export async function runReasoningAgenticRetrieval({
             : "没有可打开的证据块。",
         });
       }
+    }
+
+    if (directAnswer) {
+      await recordStep(state, "agent_step", {
+        evidenceIds: [],
+        kind: "answer_outline",
+        payload: {
+          directAnswer: true,
+          reason: directAnswer.reason,
+          replyOutline: directAnswer.replyOutline,
+        },
+        summary: directAnswer.summary ||
+          directAnswer.replyOutline ||
+          "跳过检索，将直接回答（非论文内容问题）。",
+      });
+
+      const emptyRetrieval = createEmptyRetrieval(queryPlan);
+
+      return {
+        ...emptyRetrieval,
+        agentSteps: state.agentSteps,
+        diagnostics: {
+          ...emptyRetrieval.diagnostics,
+          agent: {
+            controller: "llm-json-v1",
+            directAnswer: true,
+            directAnswerReason: directAnswer.reason ?? "general_knowledge",
+            mode: "agentic",
+            requestedReasoningEffort: reasoningEffort,
+            runnerVersion: QA_AGENT_RUNNER_VERSION,
+            stepCount: state.agentSteps.length,
+          },
+        },
+        evidence: [],
+        queryPlan: { ...queryPlan, intent: "direct_answer" },
+        warnings: [],
+      };
     }
 
     const selectedEvidence = selectFinalEvidence(evidence, finishAction?.evidenceIds);
@@ -452,31 +500,6 @@ export async function runAgenticRetrieval({
       },
     );
   }
-}
-
-export async function recordAgentFallbackStep({
-  emit,
-  error,
-  messageId,
-  stepIndex = 0,
-  userId,
-}) {
-  const step = await insertQaAgentStep({
-    kind: "fallback",
-    messageId,
-    payload: {
-      errorMessage: error instanceof Error ? error.message : "Agentic retrieval failed.",
-      runnerVersion: QA_AGENT_RUNNER_VERSION,
-    },
-    status: "error",
-    stepIndex,
-    summary: "Agentic 检索失败，已自动退回单轮 RAG。",
-    userId,
-  });
-
-  emit?.("agent_step", { step });
-
-  return step;
 }
 
 async function runSearchTool({
@@ -727,10 +750,18 @@ function buildReasoningControllerMessages({
         "You are a retrieval controller for current-paper QA.",
         "Return only one JSON object. Do not wrap it in Markdown.",
         "Do not reveal chain-of-thought. Put only a concise user-visible rationale in summary.",
+        "Decide whether the user's message actually needs evidence from the paper before searching.",
+        "Use direct_answer (not search_current_paper) when the message does NOT require paper content, such as:",
+        "- greetings, thanks, or social replies (hi, hello, thanks, 嗨, 你好, 谢谢)",
+        "- questions about your identity or capabilities (who are you, what can you do)",
+        "- meta questions about the conversation (can you explain your previous answer)",
+        "- general-knowledge questions unrelated to the paper's specific content",
+        "Anything that depends on THIS paper's content (methods, results, figures, claims) MUST use search_current_paper.",
         "Allowed actions:",
         '{"action":"search_current_paper","summary":"...","query":"...","topK":8}',
         '{"action":"open_chunk","summary":"...","evidenceIds":["C1"]}',
         '{"action":"finish_retrieval","summary":"...","evidenceIds":["C1","C2"],"answerOutline":"..."}',
+        '{"action":"direct_answer","summary":"...","reason":"greeting|chitchat|meta|general_knowledge","replyOutline":"brief reply outline"}',
         "All retrieval must stay inside the current paper.",
       ].join("\n"),
     },
@@ -893,6 +924,8 @@ function normalizeControllerAction(action) {
     answerOutline: typeof action.answerOutline === "string" ? action.answerOutline.trim() : undefined,
     evidenceIds: normalizeEvidenceIds(action.evidenceIds),
     query: typeof action.query === "string" ? action.query.trim() : undefined,
+    reason: typeof action.reason === "string" ? action.reason.trim() : undefined,
+    replyOutline: typeof action.replyOutline === "string" ? action.replyOutline.trim() : undefined,
     summary: typeof action.summary === "string" ? action.summary.trim() : undefined,
     topK: normalizePositiveInteger(action.topK, undefined),
   };

@@ -4,6 +4,7 @@ import {
   Activity,
   Archive,
   Check,
+  ChevronRight,
   CircleAlert,
   Combine,
   Download,
@@ -169,8 +170,8 @@ type MathpixProcessView = {
 const LIBRARY_PANE_DEFAULT_WIDTH = 240;
 const LIBRARY_PANE_MAX_WIDTH = 380;
 const LIBRARY_PANE_MIN_WIDTH = 180;
-const PINS_PANE_DEFAULT_WIDTH = 280;
-const PINS_PANE_MAX_WIDTH = 460;
+const PINS_PANE_DEFAULT_WIDTH = 380;
+const PINS_PANE_MAX_WIDTH = 560;
 const PINS_PANE_MIN_WIDTH = 300;
 const TRANSLATION_CARD_BASE_Z_INDEX = 20;
 
@@ -440,7 +441,6 @@ function getQaIndexStatusLabelKey(status: QaIndexJob["status"]): MessageKey {
     case "ready":
       return "ask.indexStatus.ready";
     case "ready_degraded":
-      return "ask.indexStatus.readyDegraded";
     case "error":
       return "ask.indexStatus.error";
     default:
@@ -497,6 +497,7 @@ export function ReaderShell() {
   const [mathpixRuntimeError, setMathpixRuntimeError] = useState<string>();
   const [qaIndexError, setQaIndexError] = useState<string>();
   const [qaIndexJob, setQaIndexJob] = useState<QaIndexJob>();
+  const [isAskStatusExpanded, setIsAskStatusExpanded] = useState(false);
   const [isCreatingQaIndexJob, setIsCreatingQaIndexJob] = useState(false);
   const [isLoadingQaIndexJob, setIsLoadingQaIndexJob] = useState(false);
   const [readerSessionHydratedUserId, setReaderSessionHydratedUserId] = useState<string>();
@@ -2134,7 +2135,33 @@ export function ReaderShell() {
           <div className="pins-clear-actions">{closeButton}</div>
         </div>
         <div className="ask-panel">
-          <div className="ask-status-strip" aria-label={t("ask.statusSection")}>
+          <div
+            aria-expanded={isAskStatusExpanded}
+            className={`ask-status-strip ${isAskStatusExpanded ? "ask-status-strip--expanded" : "ask-status-strip--collapsed"}`}
+          >
+            <button
+              className="ask-status-summary"
+              onClick={() => setIsAskStatusExpanded((current) => !current)}
+              type="button"
+            >
+              <span className="ask-status-summary-label">
+                {qaIndexJob?.status === "ready"
+                  ? t("ask.statusReadySummary")
+                  : qaIndexJob?.status === "error"
+                    ? t("ask.indexStatus.error")
+                    : qaIndexJob
+                      ? qaIndexStatus
+                      : t("ask.indexNotBuilt")}
+              </span>
+              <ChevronRight
+                aria-hidden="true"
+                className={`ask-status-summary-icon ${isAskStatusExpanded ? "ask-status-summary-icon--open" : ""}`}
+                size={14}
+                strokeWidth={2.2}
+              />
+            </button>
+            {isAskStatusExpanded ? (
+              <div className="ask-status-detail-grid">
             <section className="ask-status-item" aria-label={t("ask.mathpixSection")}>
               <div className="ask-status-main">
                 <div className="ask-section-title">{t("mathpix.label")}</div>
@@ -2169,9 +2196,6 @@ export function ReaderShell() {
                 <div className="ask-section-title">{t("ask.indexTitle")}</div>
                 <div className="ask-section-status">{qaIndexStatus}</div>
                 {qaIndexProgress ? <div className="ask-detail">{qaIndexProgress}</div> : null}
-                {qaIndexJob?.status === "ready_degraded" ? (
-                  <div className="ask-detail">{t("ask.indexReadyDegradedDetail")}</div>
-                ) : null}
                 {qaIndexJob?.errorMessage ? <div className="ask-detail ask-detail--error">{qaIndexJob.errorMessage}</div> : null}
                 {qaIndexError ? <div className="ask-detail ask-detail--error">{qaIndexError}</div> : null}
                 {!currentEntry?.cloudDocumentId ? (
@@ -2183,7 +2207,7 @@ export function ReaderShell() {
                   <LoaderCircle aria-hidden="true" className="ask-spin-icon" size={16} strokeWidth={2.2} />
                 ) : qaIndexJob?.status === "ready" ? (
                   <Check aria-hidden="true" size={16} strokeWidth={2.4} />
-                ) : qaIndexJob?.status === "ready_degraded" || qaIndexJob?.status === "error" ? (
+                ) : qaIndexJob?.status === "error" ? (
                   <CircleAlert aria-hidden="true" size={16} strokeWidth={2.2} />
                 ) : null}
               <button
@@ -2210,6 +2234,8 @@ export function ReaderShell() {
               </button>
               </div>
             </section>
+              </div>
+            ) : null}
           </div>
           <PaperQaPanel
             activeDocumentId={currentEntry?.cloudDocumentId}

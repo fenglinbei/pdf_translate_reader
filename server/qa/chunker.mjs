@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 const DEFAULT_TARGET_TOKENS = 900;
-const DEFAULT_OVERLAP_TOKENS = 150;
+const DEFAULT_OVERLAP_TOKENS = 400;
 const MIN_FINAL_CHUNK_TOKENS = 20;
 
 export function createQaChunks({

@@ -259,7 +259,7 @@ export type ApiCallLog = {
 
 export type QaScope = "current" | "current-plus-references" | "library";
 export type QaChatModel = "deepseek-v4-pro" | "glm-5.2";
-export type QaExecutionMode = "rag" | "agentic";
+export type QaExecutionMode = "agentic";
 export type QaReasoningEffort = "auto" | "quick" | "standard" | "deep";
 export type QaAnswerLanguage = "auto" | "zh" | "en";
 export type QaIndexSource = TextExtractionSource;

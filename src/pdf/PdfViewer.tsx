@@ -925,6 +925,7 @@ export function PdfViewer({
       setMobilePendingSelection(undefined);
       setConfirmedMobileReaderMode(undefined);
       setAreSelectionActionsSuppressed(true);
+      onSentenceSelectionChange(undefined);
       spanDragRef.current = {
         latestHit: pointerHit,
         pointerId: event.pointerId,
@@ -972,6 +973,7 @@ export function PdfViewer({
     draftSelectionRef.current = undefined;
     setDraftSelection(undefined);
     setAreSelectionActionsSuppressed(true);
+    onSentenceSelectionChange(undefined);
     spanDragRef.current = {
       latestHit: pointerHit,
       pointerId: event.pointerId,
@@ -984,6 +986,7 @@ export function PdfViewer({
     event.preventDefault();
   }, [
     isMobileSegmentedSelectionMode,
+    onSentenceSelectionChange,
   ]);
 
   const handleTextPointerMove = useCallback(

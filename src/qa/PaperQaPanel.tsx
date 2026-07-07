@@ -5,21 +5,28 @@ import {
   FileText,
   History,
   LoaderCircle,
+  Maximize2,
+  Minimize2,
   PanelRightOpen,
   Plus,
   Search,
   Send,
+  Sparkles,
   Square,
   Trash2,
+  User,
   X,
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import { useI18n } from "../i18n/I18nProvider";
 import type {
   QaAnswerLanguage,
   QaAgentStep,
   QaChatModel,
   QaCitation,
-  QaExecutionMode,
   QaIndexJob,
   QaMessage,
   QaReasoningEffort,
@@ -65,15 +72,6 @@ type SelectedEvidenceRef = {
   messageId: string;
 };
 
-type MarkdownBlock =
-  | { type: "blockquote"; text: string }
-  | { type: "code"; code: string; language?: string }
-  | { type: "heading"; level: 1 | 2 | 3 | 4; text: string }
-  | { type: "ordered-list"; items: string[] }
-  | { type: "paragraph"; text: string }
-  | { type: "table"; headers: string[]; rows: string[][] }
-  | { type: "unordered-list"; items: string[] };
-
 const QA_MODELS: QaChatModel[] = ["deepseek-v4-pro", "glm-5.2"];
 const QA_REASONING_EFFORTS: QaReasoningEffort[] = ["auto", "quick", "standard", "deep"];
 
@@ -87,7 +85,7 @@ export function PaperQaPanel({
   const [answerLanguage] = useState<QaAnswerLanguage>("auto");
   const [deletingThreadId, setDeletingThreadId] = useState<string>();
   const [draftQuestion, setDraftQuestion] = useState("");
-  const [executionMode, setExecutionMode] = useState<QaExecutionMode>("agentic");
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [historyError, setHistoryError] = useState<string>();
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isLoadingThreads, setIsLoadingThreads] = useState(false);
@@ -100,13 +98,12 @@ export function PaperQaPanel({
   const [threadId, setThreadId] = useState<string>();
   const [threads, setThreads] = useState<QaThread[]>([]);
   const [verifierWarnings, setVerifierWarnings] = useState<string[]>([]);
+  const [highlightedEvidenceId, setHighlightedEvidenceId] = useState<string>();
   const abortControllerRef = useRef<AbortController>();
   const historyRequestRef = useRef(0);
   const messagesRequestRef = useRef(0);
-  const isReady = Boolean(
-    activeDocumentId &&
-    (qaIndexJob?.status === "ready" || qaIndexJob?.status === "ready_degraded"),
-  );
+  const highlightTimerRef = useRef<number>();
+  const isReady = Boolean(activeDocumentId && qaIndexJob?.status === "ready");
 
   const warnings = useMemo(
     () => uniqueStrings([
@@ -183,6 +180,22 @@ export function PaperQaPanel({
       void refreshThreads({ selectLatest: true });
     }
   }, [activeDocumentId, refreshThreads]);
+
+  useEffect(() => {
+    if (!isFullscreen) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setIsFullscreen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isFullscreen]);
 
   useEffect(() => {
     if (!threadId || isStreaming) {
@@ -300,16 +313,29 @@ export function PaperQaPanel({
     threads,
   ]);
 
+  const flashEvidence = useCallback((evidenceId: string) => {
+    setHighlightedEvidenceId(evidenceId);
+    window.clearTimeout(highlightTimerRef.current);
+    highlightTimerRef.current = window.setTimeout(() => {
+      setHighlightedEvidenceId((current) => (current === evidenceId ? undefined : current));
+    }, 1800);
+  }, []);
+
   const handleCitationChipClick = useCallback((
     message: LocalQaMessage,
     citation: QaCitation,
   ) => {
+    const linkedEvidence = (message.retrievalSnapshot?.evidence ?? [])
+      .find((item) => item.chunkId === citation.chunkId);
     onCitationClick(citation);
     setSelectedEvidenceRef({
       chunkId: citation.chunkId,
       messageId: message.id,
     });
-  }, [onCitationClick]);
+    if (linkedEvidence) {
+      flashEvidence(linkedEvidence.evidenceId);
+    }
+  }, [flashEvidence, onCitationClick]);
 
   const handleEvidenceOpen = useCallback((
     message: LocalQaMessage,
@@ -319,7 +345,31 @@ export function PaperQaPanel({
       evidenceId: evidence.evidenceId,
       messageId: message.id,
     });
-  }, []);
+    flashEvidence(evidence.evidenceId);
+  }, [flashEvidence]);
+
+  const handleCitationTokenClick = useCallback((
+    message: LocalQaMessage,
+    evidenceId: string,
+  ) => {
+    const evidence = (message.retrievalSnapshot?.evidence ?? [])
+      .find((item) => item.evidenceId === evidenceId);
+
+    if (!evidence) {
+      return;
+    }
+
+    setSelectedEvidenceRef({
+      evidenceId,
+      messageId: message.id,
+    });
+    flashEvidence(evidenceId);
+
+    const citation = message.citations.find((item) => item.chunkId === evidence.chunkId);
+    if (citation && citation.cloudDocumentId === activeDocumentId) {
+      onCitationClick(citation);
+    }
+  }, [activeDocumentId, flashEvidence, onCitationClick]);
 
   const handleSubmit = useCallback(async () => {
     const question = draftQuestion.trim();
@@ -366,7 +416,7 @@ export function PaperQaPanel({
         {
           activeDocumentId,
           answerLanguage,
-          executionMode,
+          executionMode: "agentic",
           model,
           question,
           reasoningEffort,
@@ -477,7 +527,6 @@ export function PaperQaPanel({
     activeDocumentId,
     answerLanguage,
     draftQuestion,
-    executionMode,
     isReady,
     isStreaming,
     model,
@@ -493,7 +542,20 @@ export function PaperQaPanel({
   }, []);
 
   return (
-    <section className="ask-workbench" aria-label={t("ask.chatSection")}>
+    <>
+      {isFullscreen ? (
+        <div
+          aria-hidden="true"
+          className="ask-fullscreen-backdrop"
+          onClick={() => setIsFullscreen(false)}
+        />
+      ) : null}
+      <section
+        aria-label={t("ask.chatSection")}
+        className={`ask-workbench ${isFullscreen ? "ask-workbench--fullscreen" : ""}`}
+        role={isFullscreen ? "dialog" : undefined}
+        aria-modal={isFullscreen ? "true" : undefined}
+      >
       <header className="ask-workbench-header">
         <div className="ask-workbench-title-block">
           <div className="ask-workbench-title">{t("ask.chatTitle")}</div>
@@ -514,6 +576,16 @@ export function PaperQaPanel({
             type="button"
           >
             <Plus aria-hidden="true" size={16} strokeWidth={2.2} />
+          </button>
+          <button
+            className="ask-icon-button"
+            onClick={() => setIsFullscreen((current) => !current)}
+            title={isFullscreen ? t("ask.exitFullscreen") : t("ask.enterFullscreen")}
+            type="button"
+          >
+            {isFullscreen
+              ? <Minimize2 aria-hidden="true" size={15} strokeWidth={2.2} />
+              : <Maximize2 aria-hidden="true" size={15} strokeWidth={2.2} />}
           </button>
         </div>
       </header>
@@ -556,6 +628,7 @@ export function PaperQaPanel({
             key={message.id}
             message={message}
             onCitationClick={handleCitationChipClick}
+            onCitationToken={handleCitationTokenClick}
             onEvidenceOpen={handleEvidenceOpen}
           />
         ))}
@@ -563,6 +636,7 @@ export function PaperQaPanel({
 
       <EvidenceDrawer
         evidence={selectedEvidence?.evidence}
+        highlighted={Boolean(selectedEvidence?.evidence && highlightedEvidenceId === selectedEvidence.evidence.evidenceId)}
         message={selectedEvidence?.message}
         onClose={() => setSelectedEvidenceRef(undefined)}
         onEvidenceClick={onEvidenceClick}
@@ -577,27 +651,10 @@ export function PaperQaPanel({
         }}
       >
         <div className="ask-composer-toolbar">
-          <div className="ask-mode-control" aria-label={t("ask.executionMode")}>
-            <span>{t("ask.executionMode")}</span>
-            <div className="ask-segmented-control">
-              {(["agentic", "rag"] as QaExecutionMode[]).map((option) => (
-                <button
-                  aria-pressed={executionMode === option}
-                  className={executionMode === option ? "is-active" : undefined}
-                  disabled={isStreaming}
-                  key={option}
-                  onClick={() => setExecutionMode(option)}
-                  type="button"
-                >
-                  {t(option === "agentic" ? "ask.mode.agentic" : "ask.mode.rag")}
-                </button>
-              ))}
-            </div>
-          </div>
           <label className="ask-reasoning-menu">
             <span>{t("ask.reasoningEffort")}</span>
             <select
-              disabled={isStreaming || executionMode !== "agentic"}
+              disabled={isStreaming}
               onChange={(event) => setReasoningEffort(event.currentTarget.value as QaReasoningEffort)}
               value={reasoningEffort}
             >
@@ -652,6 +709,7 @@ export function PaperQaPanel({
         </div>
       </form>
     </section>
+    </>
   );
 }
 
@@ -724,81 +782,91 @@ function QaMessageBubble({
   activeDocumentId,
   message,
   onCitationClick,
+  onCitationToken,
   onEvidenceOpen,
 }: {
   activeDocumentId?: string;
   message: LocalQaMessage;
   onCitationClick: (message: LocalQaMessage, citation: QaCitation) => void;
+  onCitationToken: (message: LocalQaMessage, evidenceId: string) => void;
   onEvidenceOpen: (message: LocalQaMessage, evidence: QaRetrievedEvidence) => void;
 }) {
   const { t } = useI18n();
   const isAssistant = message.role === "assistant";
   const evidence = message.retrievalSnapshot?.evidence ?? [];
+  const handleCitationToken = isAssistant
+    ? (evidenceId: string) => onCitationToken(message, evidenceId)
+    : undefined;
 
   return (
     <article className={`ask-message ask-message--${message.role}`}>
-      <div className="ask-message-role">
-        {isAssistant ? t("ask.assistant") : t("ask.you")}
+      <div className="ask-message-avatar" aria-hidden="true">
+        {isAssistant ? <Sparkles size={15} strokeWidth={2.1} /> : <User size={15} strokeWidth={2.1} />}
       </div>
-      <div className="ask-message-content">
-        {message.content
-          ? renderMessageText(message.content)
-          : message.status === "streaming"
-            ? <span className="ask-thinking">{t("ask.thinking")}</span>
-            : null}
-      </div>
-      {isAssistant && message.agentSteps?.length ? (
-        <AgentStepsPanel steps={message.agentSteps} />
-      ) : null}
-      {message.errorMessage ? (
-        <div className="ask-detail ask-detail--error">{message.errorMessage}</div>
-      ) : null}
-      {message.citations.length > 0 ? (
-        <div className="ask-citation-list" aria-label={t("ask.citations")}>
-          {message.citations.map((citation) => {
-            const linkedEvidence = evidence.find((item) => item.chunkId === citation.chunkId);
-            const canOpen = citation.cloudDocumentId === activeDocumentId;
-            const label = linkedEvidence
-              ? t("ask.citationEvidencePage", {
-                  evidenceId: linkedEvidence.evidenceId,
-                  page: citation.pageStart,
-                })
-              : t("ask.citationPage", { page: citation.pageStart });
+      <div className="ask-message-body">
+        <div className="ask-message-role">
+          {isAssistant ? t("ask.assistant") : t("ask.you")}
+        </div>
+        <div className="ask-message-content">
+          {message.content
+            ? <QaMarkdown content={message.content} onCitationToken={handleCitationToken} />
+            : message.status === "streaming"
+              ? <span className="ask-thinking">{t("ask.thinking")}</span>
+              : null}
+        </div>
+        {isAssistant && message.agentSteps?.length ? (
+          <AgentStepsPanel steps={message.agentSteps} />
+        ) : null}
+        {message.errorMessage ? (
+          <div className="ask-detail ask-detail--error">{message.errorMessage}</div>
+        ) : null}
+        {message.citations.length > 0 ? (
+          <div className="ask-citation-list" aria-label={t("ask.citations")}>
+            {message.citations.map((citation) => {
+              const linkedEvidence = evidence.find((item) => item.chunkId === citation.chunkId);
+              const canOpen = citation.cloudDocumentId === activeDocumentId;
+              const label = linkedEvidence
+                ? t("ask.citationEvidencePage", {
+                    evidenceId: linkedEvidence.evidenceId,
+                    page: citation.pageStart,
+                  })
+                : t("ask.citationPage", { page: citation.pageStart });
 
-            return (
+              return (
+                <button
+                  className="ask-citation-chip"
+                  disabled={!canOpen}
+                  key={citation.id}
+                  onClick={() => onCitationClick(message, citation)}
+                  title={canOpen ? t("ask.openCitation") : t("ask.citationUnavailable")}
+                  type="button"
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+        {isAssistant && evidence.length > 0 ? (
+          <div className="ask-evidence-link-row" aria-label={t("ask.evidence")}>
+            {evidence.slice(0, 4).map((item) => (
               <button
-                className="ask-citation-chip"
-                disabled={!canOpen}
-                key={citation.id}
-                onClick={() => onCitationClick(message, citation)}
-                title={canOpen ? t("ask.openCitation") : t("ask.citationUnavailable")}
+                className="ask-evidence-mini"
+                key={item.evidenceId}
+                onClick={() => onEvidenceOpen(message, item)}
                 type="button"
               >
-                {label}
+                <FileText aria-hidden="true" size={13} strokeWidth={2.1} />
+                <span>{item.evidenceId}</span>
               </button>
-            );
-          })}
-        </div>
-      ) : null}
-      {isAssistant && evidence.length > 0 ? (
-        <div className="ask-evidence-link-row" aria-label={t("ask.evidence")}>
-          {evidence.slice(0, 4).map((item) => (
-            <button
-              className="ask-evidence-mini"
-              key={item.evidenceId}
-              onClick={() => onEvidenceOpen(message, item)}
-              type="button"
-            >
-              <FileText aria-hidden="true" size={13} strokeWidth={2.1} />
-              <span>{item.evidenceId}</span>
-            </button>
-          ))}
-          {evidence.length > 4 ? (
-            <span className="ask-evidence-overflow">+{evidence.length - 4}</span>
-          ) : null}
-        </div>
-      ) : null}
-      {isAssistant ? <MessageMeta message={message} /> : null}
+            ))}
+            {evidence.length > 4 ? (
+              <span className="ask-evidence-overflow">+{evidence.length - 4}</span>
+            ) : null}
+          </div>
+        ) : null}
+        {isAssistant ? <MessageMeta message={message} /> : null}
+      </div>
     </article>
   );
 }
@@ -904,12 +972,14 @@ function ToolCallSummary({
 
 function EvidenceDrawer({
   evidence,
+  highlighted,
   message,
   onClose,
   onEvidenceClick,
   relatedCitation,
 }: {
   evidence?: QaRetrievedEvidence;
+  highlighted?: boolean;
   message?: LocalQaMessage;
   onClose: () => void;
   onEvidenceClick: (evidence: QaRetrievedEvidence) => void;
@@ -961,7 +1031,7 @@ function EvidenceDrawer({
         />
       </div>
 
-      <div className="ask-evidence-text">{evidence.textPreview}</div>
+      <div className={`ask-evidence-text ${highlighted ? "ask-evidence-text--flash" : ""}`}>{evidence.textPreview}</div>
     </aside>
   );
 }
@@ -1038,341 +1108,97 @@ function findSelectedEvidence(
   };
 }
 
-function renderMessageText(content: string) {
-  const blocks = parseMarkdownBlocks(content);
-
-  if (blocks.length === 0) {
-    return null;
-  }
-
-  return blocks.map((block, index) => renderMarkdownBlock(block, index));
+function renderMessageText(content: string, onCitationToken?: (evidenceId: string) => void) {
+  return <QaMarkdown content={content} onCitationToken={onCitationToken} />;
 }
 
-function parseMarkdownBlocks(content: string): MarkdownBlock[] {
-  const lines = content.replace(/\r\n?/g, "\n").split("\n");
-  const blocks: MarkdownBlock[] = [];
-  let index = 0;
+const CITATION_TOKEN_PATTERN = /\[C(\d+)\]/g;
 
-  while (index < lines.length) {
-    const line = lines[index];
+function QaMarkdown({
+  content,
+  onCitationToken,
+}: {
+  content: string;
+  onCitationToken?: (evidenceId: string) => void;
+}) {
+  const components = useMemo(
+    () => ({
+      p: ({ children }: { children?: ReactNode }) => (
+        <p>{splitCitationTokens(children, onCitationToken)}</p>
+      ),
+      li: ({ children }: { children?: ReactNode }) => (
+        <li>{splitCitationTokens(children, onCitationToken)}</li>
+      ),
+      td: ({ children }: { children?: ReactNode }) => (
+        <td>{splitCitationTokens(children, onCitationToken)}</td>
+      ),
+      th: ({ children }: { children?: ReactNode }) => (
+        <th>{splitCitationTokens(children, onCitationToken)}</th>
+      ),
+      a: ({ href, children }: { href?: string; children?: ReactNode }) => (
+        <a href={href} rel="noreferrer" target="_blank">
+          {children}
+        </a>
+      ),
+    }),
+    [onCitationToken],
+  );
 
-    if (!line.trim()) {
-      index += 1;
-      continue;
-    }
-
-    const codeFence = line.match(/^\s*```([A-Za-z0-9_-]+)?\s*$/);
-
-    if (codeFence) {
-      const codeLines: string[] = [];
-      index += 1;
-
-      while (index < lines.length && !/^\s*```\s*$/.test(lines[index])) {
-        codeLines.push(lines[index]);
-        index += 1;
-      }
-
-      if (index < lines.length) {
-        index += 1;
-      }
-
-      blocks.push({
-        code: codeLines.join("\n"),
-        language: codeFence[1],
-        type: "code",
-      });
-      continue;
-    }
-
-    const heading = line.match(/^(#{1,4})\s+(.+)$/);
-
-    if (heading) {
-      blocks.push({
-        level: heading[1].length as 1 | 2 | 3 | 4,
-        text: heading[2].trim(),
-        type: "heading",
-      });
-      index += 1;
-      continue;
-    }
-
-    if (isTableStart(lines, index)) {
-      const headers = parseTableRow(lines[index]);
-      const rows: string[][] = [];
-      index += 2;
-
-      while (index < lines.length && parseTableRow(lines[index]).length > 0) {
-        rows.push(parseTableRow(lines[index]));
-        index += 1;
-      }
-
-      blocks.push({
-        headers,
-        rows,
-        type: "table",
-      });
-      continue;
-    }
-
-    if (/^>\s?/.test(line)) {
-      const quoteLines: string[] = [];
-
-      while (index < lines.length && /^>\s?/.test(lines[index])) {
-        quoteLines.push(lines[index].replace(/^>\s?/, "").trim());
-        index += 1;
-      }
-
-      blocks.push({
-        text: quoteLines.join("\n").trim(),
-        type: "blockquote",
-      });
-      continue;
-    }
-
-    const unorderedItem = line.match(/^\s*[-*+]\s+(.+)$/);
-
-    if (unorderedItem) {
-      const items: string[] = [];
-
-      while (index < lines.length) {
-        const item = lines[index].match(/^\s*[-*+]\s+(.+)$/);
-
-        if (!item) {
-          break;
-        }
-
-        items.push(item[1].trim());
-        index += 1;
-      }
-
-      blocks.push({
-        items,
-        type: "unordered-list",
-      });
-      continue;
-    }
-
-    const orderedItem = line.match(/^\s*\d+[.)]\s+(.+)$/);
-
-    if (orderedItem) {
-      const items: string[] = [];
-
-      while (index < lines.length) {
-        const item = lines[index].match(/^\s*\d+[.)]\s+(.+)$/);
-
-        if (!item) {
-          break;
-        }
-
-        items.push(item[1].trim());
-        index += 1;
-      }
-
-      blocks.push({
-        items,
-        type: "ordered-list",
-      });
-      continue;
-    }
-
-    const paragraphLines: string[] = [];
-
-    while (index < lines.length && lines[index].trim() && !isMarkdownBlockStart(lines, index)) {
-      paragraphLines.push(lines[index].trim());
-      index += 1;
-    }
-
-    if (paragraphLines.length > 0) {
-      blocks.push({
-        text: paragraphLines.join(" "),
-        type: "paragraph",
-      });
-      continue;
-    }
-
-    index += 1;
-  }
-
-  return blocks;
+  return (
+    <div className="ask-markdown">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+        components={components as never}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
-function renderMarkdownBlock(block: MarkdownBlock, index: number) {
-  const key = `${block.type}-${index}`;
-
-  if (block.type === "heading") {
-    const HeadingTag = `h${Math.min(block.level + 2, 6)}` as keyof JSX.IntrinsicElements;
-
-    return (
-      <HeadingTag className="ask-markdown-heading" key={key}>
-        {renderInlineMarkdown(block.text, key)}
-      </HeadingTag>
-    );
+function splitCitationTokens(node: ReactNode, onCitationToken?: (evidenceId: string) => void): ReactNode {
+  if (!onCitationToken || typeof node !== "string") {
+    return node;
   }
 
-  if (block.type === "unordered-list" || block.type === "ordered-list") {
-    const ListTag = block.type === "ordered-list" ? "ol" : "ul";
-
-    return (
-      <ListTag className="ask-markdown-list" key={key}>
-        {block.items.map((item, itemIndex) => (
-          <li key={`${key}-${itemIndex}`}>
-            {renderInlineMarkdown(item, `${key}-${itemIndex}`)}
-          </li>
-        ))}
-      </ListTag>
-    );
-  }
-
-  if (block.type === "blockquote") {
-    return (
-      <blockquote className="ask-markdown-quote" key={key}>
-        {block.text.split("\n").map((line, lineIndex) => (
-          <p key={`${key}-${lineIndex}`}>{renderInlineMarkdown(line, `${key}-${lineIndex}`)}</p>
-        ))}
-      </blockquote>
-    );
-  }
-
-  if (block.type === "code") {
-    return (
-      <pre className="ask-markdown-code-block" key={key}>
-        {block.language ? <span className="ask-markdown-code-language">{block.language}</span> : null}
-        <code>{block.code}</code>
-      </pre>
-    );
-  }
-
-  if (block.type === "table") {
-    return (
-      <div className="ask-markdown-table-scroll" key={key}>
-        <table className="ask-markdown-table">
-          <thead>
-            <tr>
-              {block.headers.map((header, cellIndex) => (
-                <th key={`${key}-head-${cellIndex}`}>
-                  {renderInlineMarkdown(header, `${key}-head-${cellIndex}`)}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {block.rows.map((row, rowIndex) => (
-              <tr key={`${key}-row-${rowIndex}`}>
-                {normalizeTableRow(row, block.headers.length).map((cell, cellIndex) => (
-                  <td key={`${key}-row-${rowIndex}-${cellIndex}`}>
-                    {renderInlineMarkdown(cell, `${key}-row-${rowIndex}-${cellIndex}`)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  }
-
-  return <p key={key}>{renderInlineMarkdown(block.text, key)}</p>;
-}
-
-function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  const pattern = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*\n]+\*|\[[^\]\n]+\]\((?:https?:\/\/|mailto:)[^\s)]+\))/g;
+  const segments: ReactNode[] = [];
   let lastIndex = 0;
   let matchIndex = 0;
 
-  for (const match of text.matchAll(pattern)) {
-    const raw = match[0];
+  for (const match of node.matchAll(CITATION_TOKEN_PATTERN)) {
     const start = match.index ?? 0;
 
     if (start > lastIndex) {
-      nodes.push(text.slice(lastIndex, start));
+      segments.push(node.slice(lastIndex, start));
     }
 
-    nodes.push(renderInlineMarkdownToken(raw, `${keyPrefix}-inline-${matchIndex}`));
+    const raw = match[0];
+    const evidenceId = `C${match[1]}`;
+
+    segments.push(
+      <button
+        className="ask-citation-inline"
+        key={`citation-${matchIndex}-${start}`}
+        onClick={() => onCitationToken(evidenceId)}
+        type="button"
+      >
+        {raw}
+      </button>,
+    );
     matchIndex += 1;
     lastIndex = start + raw.length;
   }
 
-  if (lastIndex < text.length) {
-    nodes.push(text.slice(lastIndex));
+  if (matchIndex === 0) {
+    return node;
   }
 
-  return nodes;
-}
-
-function renderInlineMarkdownToken(raw: string, key: string): ReactNode {
-  if (raw.startsWith("`") && raw.endsWith("`")) {
-    return <code className="ask-markdown-inline-code" key={key}>{raw.slice(1, -1)}</code>;
+  if (lastIndex < node.length) {
+    segments.push(node.slice(lastIndex));
   }
 
-  if (raw.startsWith("**") && raw.endsWith("**")) {
-    return <strong key={key}>{renderInlineMarkdown(raw.slice(2, -2), `${key}-strong`)}</strong>;
-  }
-
-  if (raw.startsWith("*") && raw.endsWith("*")) {
-    return <em key={key}>{renderInlineMarkdown(raw.slice(1, -1), `${key}-em`)}</em>;
-  }
-
-  const link = raw.match(/^\[([^\]\n]+)\]\(((?:https?:\/\/|mailto:)[^\s)]+)\)$/);
-
-  if (link) {
-    return (
-      <a href={link[2]} key={key} rel="noreferrer" target="_blank">
-        {link[1]}
-      </a>
-    );
-  }
-
-  return raw;
-}
-
-function isMarkdownBlockStart(lines: string[], index: number) {
-  const line = lines[index];
-
-  return (
-    /^\s*```/.test(line) ||
-    /^(#{1,4})\s+/.test(line) ||
-    /^>\s?/.test(line) ||
-    /^\s*[-*+]\s+/.test(line) ||
-    /^\s*\d+[.)]\s+/.test(line) ||
-    isTableStart(lines, index)
-  );
-}
-
-function isTableStart(lines: string[], index: number) {
-  return parseTableRow(lines[index]).length > 0 && isTableSeparator(lines[index + 1]);
-}
-
-function parseTableRow(line?: string) {
-  if (!line || !line.includes("|")) {
-    return [];
-  }
-
-  const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
-
-  if (!trimmed.includes("|")) {
-    return [];
-  }
-
-  return trimmed.split("|").map((cell) => cell.trim());
-}
-
-function isTableSeparator(line?: string) {
-  const cells = parseTableRow(line);
-
-  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
-}
-
-function normalizeTableRow(row: string[], cellCount: number) {
-  if (row.length === cellCount) {
-    return row;
-  }
-
-  if (row.length > cellCount) {
-    return row.slice(0, cellCount);
-  }
-
-  return [...row, ...Array.from({ length: cellCount - row.length }, () => "")];
+  return segments;
 }
 
 function mergeAgentStep(currentSteps: QaAgentStep[], nextStep: QaAgentStep) {

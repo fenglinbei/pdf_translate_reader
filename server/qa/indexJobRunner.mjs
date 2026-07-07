@@ -173,9 +173,7 @@ async function runQaIndexJob(jobId) {
     const finalPayload = mergePayload(job.payload, {
       chunkCount: chunks.length,
       embedding: {
-        degradedReason: embeddingResult.degradedReason,
         dimensions: embeddingResult.dimensions,
-        errorMessage: embeddingResult.errorMessage,
         model: embeddingResult.model,
         provider: embeddingResult.provider,
         usage: embeddingResult.usage,
@@ -186,12 +184,12 @@ async function runQaIndexJob(jobId) {
     });
 
     await updateJob(job.id, {
-      embedding_dimensions: embeddingResult.degradedReason ? null : embeddingResult.dimensions,
-      embedding_model: embeddingResult.degradedReason ? "none" : embeddingResult.model,
+      embedding_dimensions: embeddingResult.dimensions,
+      embedding_model: embeddingResult.model,
       finished_at: finishedAt,
       payload: finalPayload,
       progress_percent: 100,
-      status: embeddingResult.degradedReason ? "ready_degraded" : "ready",
+      status: "ready",
     });
   } catch (error) {
     await failJob(job, error instanceof Error ? error.message : "QA index job failed.");
@@ -202,54 +200,36 @@ async function tryEmbedChunks({ chunks, onProgress }) {
   const config = getEmbeddingRuntimeConfig();
 
   if (!config.configured) {
-    return {
-      degradedReason: "embedding_not_configured",
-      dimensions: undefined,
-      model: "none",
-      provider: config.provider,
-      usage: undefined,
-      vectors: undefined,
-    };
+    throw new Error(
+      "Embedding provider is not configured. Set VOYAGE_API_KEY to build a QA index with semantic search.",
+    );
   }
 
-  try {
-    const vectors = [];
-    let totalTokens = 0;
+  const vectors = [];
+  let totalTokens = 0;
 
-    for (let start = 0; start < chunks.length; start += config.batchSize) {
-      const batch = chunks.slice(start, start + config.batchSize);
-      const result = await embedBatchWithRetry(batch.map((chunk) => chunk.text));
+  for (let start = 0; start < chunks.length; start += config.batchSize) {
+    const batch = chunks.slice(start, start + config.batchSize);
+    const result = await embedBatchWithRetry(batch.map((chunk) => chunk.text));
 
-      vectors.push(...result.vectors);
-      totalTokens += result.usage?.totalTokens ?? 0;
+    vectors.push(...result.vectors);
+    totalTokens += result.usage?.totalTokens ?? 0;
 
-      const completed = Math.min(chunks.length, start + batch.length);
-      await onProgress(55 + Math.round((completed / chunks.length) * 35));
-    }
-
-    if (vectors.length !== chunks.length) {
-      throw new Error("Embedding provider returned an unexpected number of vectors.");
-    }
-
-    return {
-      degradedReason: undefined,
-      dimensions: config.dimensions,
-      model: config.model,
-      provider: config.provider,
-      usage: totalTokens > 0 ? { totalTokens } : undefined,
-      vectors,
-    };
-  } catch (error) {
-    return {
-      degradedReason: "embedding_failed",
-      dimensions: undefined,
-      errorMessage: error instanceof Error ? error.message : "Embedding failed.",
-      model: "none",
-      provider: config.provider,
-      usage: undefined,
-      vectors: undefined,
-    };
+    const completed = Math.min(chunks.length, start + batch.length);
+    await onProgress(55 + Math.round((completed / chunks.length) * 35));
   }
+
+  if (vectors.length !== chunks.length) {
+    throw new Error("Embedding provider returned an unexpected number of vectors.");
+  }
+
+  return {
+    dimensions: config.dimensions,
+    model: config.model,
+    provider: config.provider,
+    usage: totalTokens > 0 ? { totalTokens } : undefined,
+    vectors,
+  };
 }
 
 async function embedBatchWithRetry(texts) {

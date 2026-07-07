@@ -25,117 +25,103 @@ export function getRerankerRuntimeConfig() {
 export async function rerankEvidence({ evidence, question, signal }) {
   const config = getRerankerRuntimeConfig();
 
-  if (!config.configured || evidence.length === 0) {
+  if (evidence.length === 0) {
     return {
       diagnostics: {
         configured: config.configured,
         provider: config.provider,
-        skippedReason: config.configured ? "no_candidates" : "reranker_not_configured",
+        skippedReason: "no_candidates",
       },
-      evidence: evidence.slice(0, config.topK),
+      evidence: [],
       usage: undefined,
-      warnings: config.configured ? [] : ["Rerank is not configured; using hybrid retrieval order."],
+      warnings: [],
     };
+  }
+
+  if (!config.configured) {
+    throw new RerankerProviderError(
+      "Rerank is not configured. Set VOYAGE_API_KEY to enable reranking.",
+      { code: "reranker_not_configured", statusCode: 503 },
+    );
   }
 
   if (config.provider !== "voyage") {
-    return {
-      diagnostics: {
-        configured: false,
-        provider: config.provider,
-        skippedReason: "reranker_provider_unsupported",
-      },
-      evidence: evidence.slice(0, config.topK),
-      usage: undefined,
-      warnings: [`Unsupported reranker provider: ${config.provider}. Using hybrid retrieval order.`],
-    };
+    throw new RerankerProviderError(
+      `Unsupported reranker provider: ${config.provider}.`,
+      { code: "reranker_provider_unsupported", statusCode: 503 },
+    );
   }
 
-  try {
-    const response = await fetchWithTimeout(`${config.apiBaseUrl}/v1/rerank`, {
-      body: JSON.stringify({
-        documents: evidence.map((item) => formatRerankDocument(item)),
-        model: config.model,
-        query: question,
-        top_k: Math.min(config.topK, evidence.length),
-      }),
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      method: "POST",
-      signal,
-      timeoutMs: config.timeoutMs,
-    });
-    const payload = await readJsonPayload(response);
+  const response = await fetchWithTimeout(`${config.apiBaseUrl}/v1/rerank`, {
+    body: JSON.stringify({
+      documents: evidence.map((item) => formatRerankDocument(item)),
+      model: config.model,
+      query: question,
+      top_k: Math.min(config.topK, evidence.length),
+    }),
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+    signal,
+    timeoutMs: config.timeoutMs,
+  });
+  const payload = await readJsonPayload(response);
 
-    if (!response.ok) {
-      throw new RerankerProviderError(getPayloadErrorMessage(payload) || response.statusText);
-    }
-
-    const rankedEvidence = normalizeRerankResults(payload)
-      .map((result) => {
-        const item = evidence[result.index];
-
-        if (!item) {
-          return undefined;
-        }
-
-        return {
-          ...item,
-          score: result.relevanceScore,
-          scoreBreakdown: {
-            ...item.scoreBreakdown,
-            rerank: result.relevanceScore,
-          },
-        };
-      })
-      .filter(Boolean);
-    const fallbackEvidence = evidence
-      .filter((item) => !rankedEvidence.some((ranked) => ranked.chunkId === item.chunkId))
-      .slice(0, Math.max(0, config.topK - rankedEvidence.length));
-
-    return {
-      diagnostics: {
-        candidateCount: evidence.length,
-        configured: true,
-        model: config.model,
-        provider: config.provider,
-        topK: Math.min(config.topK, evidence.length),
-      },
-      evidence: [...rankedEvidence, ...fallbackEvidence].slice(0, config.topK)
-        .map((item, index) => ({
-          ...item,
-          evidenceId: `C${index + 1}`,
-        })),
-      usage: normalizeUsage(payload?.usage),
-      warnings: [],
-    };
-  } catch (error) {
-    return {
-      diagnostics: {
-        candidateCount: evidence.length,
-        configured: true,
-        errorMessage: error instanceof Error ? error.message : "Rerank failed.",
-        model: config.model,
-        provider: config.provider,
-        skippedReason: "reranker_failed",
-      },
-      evidence: evidence.slice(0, config.topK),
-      usage: undefined,
-      warnings: [
-        error instanceof Error
-          ? `Rerank failed; using hybrid retrieval order. ${error.message}`
-          : "Rerank failed; using hybrid retrieval order.",
-      ],
-    };
+  if (!response.ok) {
+    throw new RerankerProviderError(
+      getPayloadErrorMessage(payload) || response.statusText,
+      { code: "reranker_failed", statusCode: response.status || 502 },
+    );
   }
+
+  const rankedEvidence = normalizeRerankResults(payload)
+    .map((result) => {
+      const item = evidence[result.index];
+
+      if (!item) {
+        return undefined;
+      }
+
+      return {
+        ...item,
+        score: result.relevanceScore,
+        scoreBreakdown: {
+          ...item.scoreBreakdown,
+          rerank: result.relevanceScore,
+        },
+      };
+    })
+    .filter(Boolean);
+  const fallbackEvidence = evidence
+    .filter((item) => !rankedEvidence.some((ranked) => ranked.chunkId === item.chunkId))
+    .slice(0, Math.max(0, config.topK - rankedEvidence.length));
+
+  return {
+    diagnostics: {
+      candidateCount: evidence.length,
+      configured: true,
+      model: config.model,
+      provider: config.provider,
+      topK: Math.min(config.topK, evidence.length),
+    },
+    evidence: [...rankedEvidence, ...fallbackEvidence].slice(0, config.topK)
+      .map((item, index) => ({
+        ...item,
+        evidenceId: `C${index + 1}`,
+      })),
+    usage: normalizeUsage(payload?.usage),
+    warnings: [],
+  };
 }
 
 export class RerankerProviderError extends Error {
-  constructor(message) {
+  constructor(message, options) {
     super(message);
     this.name = "RerankerProviderError";
+    this.code = options?.code ?? "reranker_failed";
+    this.statusCode = options?.statusCode ?? 503;
   }
 }
 
