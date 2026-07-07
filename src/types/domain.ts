@@ -332,6 +332,7 @@ export type QaRetrievedEvidence = {
   cloudDocumentId: string;
   pdfFingerprint: string;
   documentTitle: string;
+  mmd?: string;
   pageStart: number;
   pageEnd: number;
   sectionPath?: string[];

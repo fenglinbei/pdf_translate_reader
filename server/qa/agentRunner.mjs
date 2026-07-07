@@ -807,6 +807,7 @@ function normalizeCarryoverEvidence(values, maxEvidence) {
       cloudDocumentId: item.cloudDocumentId,
       documentTitle: item.documentTitle,
       evidenceId: item.evidenceId,
+      mmd: item.mmd,
       pageEnd: item.pageEnd,
       pageStart: item.pageStart,
       pdfFingerprint: item.pdfFingerprint,

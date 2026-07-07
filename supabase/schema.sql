@@ -831,6 +831,7 @@ returns table (
   page_start integer,
   page_end integer,
   text text,
+  mmd text,
   vector_score double precision,
   full_text_score double precision,
   metadata_boost double precision,
@@ -864,6 +865,7 @@ as $$
       chunks.page_start,
       chunks.page_end,
       chunks.text,
+      chunks.mmd,
       case
         when p_query_embedding is not null
           and p_embedding_model is not null
@@ -932,6 +934,7 @@ as $$
     scored_chunks.page_start,
     scored_chunks.page_end,
     scored_chunks.text,
+    scored_chunks.mmd,
     scored_chunks.vector_score,
     scored_chunks.full_text_score,
     scored_chunks.metadata_boost,

@@ -10,11 +10,13 @@ import {
   runCurrentPaperReasoningRetrieval,
 } from "../qa/agentRunner.mjs";
 import { RerankerProviderError } from "../qa/reranker.mjs";
+import { classifyQuestionType } from "../qa/queryRouter.mjs";
 import {
   buildQaAnswerMessages,
   createRetrievalSnapshot,
   QA_PROMPT_VERSION,
 } from "../qa/prompt.mjs";
+import { loadCurrentPaperFullText } from "../qa/retriever.mjs";
 import {
   createOrUpdateIndexJob,
   createOrReuseQaThread,
@@ -168,6 +170,48 @@ async function handleQaStream(request, response, user) {
     const retrievalStartedAt = Date.now();
     let retrieval;
     let agentSteps = [];
+
+    const questionType = await classifyQuestionType({
+      chatContext,
+      model: requestBody.model,
+      question: requestBody.question,
+      signal: abortController.signal,
+    });
+
+    if (questionType.type === "global") {
+      try {
+        await handleLongContextAnswer({
+          abortController,
+          agentSteps,
+          answerLanguage: requestBody.answerLanguage,
+          assistantMessageId: assistantMessage.id,
+          chatContext,
+          model: requestBody.model,
+          question: requestBody.question,
+          questionType,
+          response,
+          threadId: thread.id,
+          userDocumentId: requestBody.activeDocumentId,
+          userId: user.id,
+        });
+        return;
+      } catch (error) {
+        await writeSse(response, "agent_step", {
+          step: {
+            kind: "fallback",
+            messageId: assistantMessage.id,
+            payload: {
+              errorMessage: error instanceof Error ? error.message : "Long-context answering failed.",
+              reason: "long_context_failed",
+            },
+            status: "error",
+            stepIndex: 0,
+            summary: "长上下文回答失败，已退回 agentic 检索。",
+          },
+        }).catch(() => undefined);
+        // fall through to agentic retrieval below
+      }
+    }
 
     try {
       retrieval = await runCurrentPaperReasoningRetrieval({
@@ -744,6 +788,117 @@ function createNoEvidenceAnswer(requestBody) {
   }
 
   return NO_EVIDENCE_ANSWER_EN;
+}
+
+async function handleLongContextAnswer({
+  abortController,
+  agentSteps,
+  answerLanguage,
+  assistantMessageId,
+  chatContext,
+  model,
+  question,
+  questionType,
+  response,
+  threadId,
+  userDocumentId,
+  userId,
+}) {
+  const fullText = await loadCurrentPaperFullText({ userDocumentId, userId });
+  const retrievalSnapshot = createRetrievalSnapshot({
+    activeDocumentId: userDocumentId,
+    evidence: [],
+    queryPlan: { intent: "global", requiredEvidence: "none" },
+    retrieverVersion: "long-context",
+  });
+
+  const planStep = {
+    kind: "plan",
+    messageId: assistantMessageId,
+    payload: { longContext: true, questionType, truncated: fullText.truncated },
+    status: "success",
+    stepIndex: 0,
+    summary: `识别为全局问题（${questionType.type}），使用长上下文全文阅读${fullText.truncated ? "（已截断）" : ""}。`,
+  };
+  const outlineStep = {
+    kind: "answer_outline",
+    messageId: assistantMessageId,
+    payload: { longContext: true },
+    status: "success",
+    stepIndex: 1,
+    summary: "将基于论文全文生成回答。",
+  };
+  agentSteps.push(planStep, outlineStep);
+
+  writeSse(response, "agent_step", { step: planStep });
+  writeSse(response, "agent_step", { step: outlineStep });
+  writeSse(response, "retrieval", {
+    diagnostics: { agent: { longContext: true, questionType }, candidateCount: 0 },
+    snapshot: retrievalSnapshot,
+    warnings: [],
+  });
+
+  let answerText = "";
+  let usage;
+
+  await streamQaChatCompletion({
+    messages: buildQaAnswerMessages({
+      answerLanguage,
+      chatContext,
+      evidence: [],
+      fullPaperText: fullText.text,
+      mode: "long_context",
+      paperTitle: fullText.title,
+      question,
+    }),
+    model,
+    onDelta: (text) => {
+      answerText += text;
+      writeSse(response, "delta", { text });
+    },
+    onFinish: (finishReason) => {
+      writeSse(response, "finish", { finishReason });
+    },
+    onUsage: (usageValue) => {
+      usage = usageValue;
+      writeSse(response, "usage", { usage: usageValue });
+    },
+    signal: abortController.signal,
+  });
+
+  const updatedMessage = await updateQaMessage({
+    content: answerText,
+    messageId: assistantMessageId,
+    retrievalSnapshot,
+    status: "success",
+    userId,
+  });
+  await writeQaLogSilent({
+    messageId: assistantMessageId,
+    model,
+    payload: {
+      estimatedTokens: fullText.estimatedTokens,
+      longContext: true,
+      questionType: questionType.type,
+      truncated: fullText.truncated,
+    },
+    promptVersion: QA_PROMPT_VERSION,
+    requestFinishedAt: Date.now(),
+    requestKind: "answer-stream",
+    status: "success",
+    threadId,
+    usage,
+    userDocumentId,
+    userId,
+  });
+
+  writeSse(response, "verifier", { rejected: [], warnings: [] });
+  writeSse(response, "done", {
+    assistantMessage: { ...updatedMessage, agentSteps },
+    citations: [],
+    threadId,
+  });
+  response.end();
 }
 
 function buildQaChatContext({

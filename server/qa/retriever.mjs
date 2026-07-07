@@ -2,7 +2,8 @@ import { embedTexts } from "../embedding/client.mjs";
 import { getEmbeddingRuntimeConfig } from "../embedding/config.mjs";
 import { SupabaseServiceError, requireSupabaseServiceClient } from "../supabase/service.mjs";
 import { getLatestQaIndexJob } from "../supabase/qa.mjs";
-import { QA_RETRIEVER_VERSION } from "./config.mjs";
+import { QA_LONG_CONTEXT_MAX_CHARS, QA_RETRIEVER_VERSION } from "./config.mjs";
+import { loadMathpixStructuredDocument } from "./documentParser.mjs";
 import {
   getRerankerRuntimeConfig,
   rerankEvidence,
@@ -189,6 +190,7 @@ function rowToEvidence(row, index) {
     cloudDocumentId: row.user_document_id,
     documentTitle: cleanText(row.document_title) || cleanText(row.title) || "Current paper",
     evidenceId: `C${index + 1}`,
+    mmd: row.mmd ? cleanText(row.mmd) : undefined,
     pageEnd: normalizePositiveInteger(row.page_end, 1),
     pageStart: normalizePositiveInteger(row.page_start, 1),
     pdfFingerprint: cleanText(row.pdf_fingerprint),
@@ -201,6 +203,51 @@ function rowToEvidence(row, index) {
     sectionPath: Array.isArray(row.section_path) ? row.section_path.filter(Boolean) : undefined,
     text,
     textPreview: truncateText(text, MAX_TEXT_PREVIEW_CHARS),
+  };
+}
+
+export async function loadCurrentPaperFullText({ userDocumentId, userId }) {
+  const job = await requireUsableIndexJob({ userDocumentId, userId });
+  const document = await loadMathpixStructuredDocument({ job });
+
+  const rawText = document.fullMmd
+    ? document.fullMmd
+    : (document.pages ?? [])
+        .map((page) => page.pageText)
+        .filter(Boolean)
+        .join("\n\n");
+
+  if (!rawText.trim()) {
+    throw new SupabaseServiceError(
+      502,
+      "long_context_unavailable",
+      "Could not load the paper full text for long-context answering.",
+    );
+  }
+
+  const { text, truncated } = truncateForLongContext(rawText);
+
+  return {
+    estimatedTokens: Math.round(text.length / 3.5),
+    text,
+    title: document.title,
+    truncated,
+  };
+}
+
+function truncateForLongContext(text) {
+  if (text.length <= QA_LONG_CONTEXT_MAX_CHARS) {
+    return { text, truncated: false };
+  }
+
+  const headLength = Math.round(QA_LONG_CONTEXT_MAX_CHARS * 0.7);
+  const tailLength = Math.max(0, QA_LONG_CONTEXT_MAX_CHARS - headLength - 40);
+  const head = text.slice(0, headLength);
+  const tail = text.slice(Math.max(headLength, text.length - tailLength));
+
+  return {
+    text: `${head}\n\n[... content truncated ...]\n\n${tail}`,
+    truncated: true,
   };
 }
 

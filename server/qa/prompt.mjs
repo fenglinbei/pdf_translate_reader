@@ -11,6 +11,8 @@ export function buildQaAnswerMessages({
   chatContext,
   directReplyOutline,
   evidence,
+  fullPaperText,
+  paperTitle,
   mode = "answer",
   question,
 }) {
@@ -39,6 +41,42 @@ export function buildQaAnswerMessages({
           ...(directReplyOutline ? ["", "[Reply outline]", directReplyOutline] : []),
           "",
           "[User message]",
+          truncateText(question, MAX_QUESTION_CHARS),
+        ].join("\n"),
+      },
+    ];
+  }
+
+  if (mode === "long_context") {
+    return [
+      {
+        role: "system",
+        content: [
+          "You are a careful academic paper QA assistant.",
+          "The user is asking a whole-paper question (summary, contribution, methodology outline, etc.).",
+          "The full paper text is provided below in MathPix LaTeX (MMD) format, which preserves formulas and structure.",
+          "Answer based on the full paper. You do not need to cite [Cn] evidence ids (none are provided).",
+          "When you reference a specific part, name the section (e.g. 'see Methods', 'in Section 3').",
+          "If the full text is truncated, work with what is provided and note if a part is missing.",
+          "Structure the answer with headings or bullet points for readability.",
+          "When the user asks in Chinese, answer in Chinese unless they explicitly request another language.",
+          "When the user asks in English, answer in English unless they explicitly request another language.",
+        ].join("\n"),
+      },
+      {
+        role: "user",
+        content: [
+          "[Answer language]",
+          normalizeAnswerLanguage(answerLanguage),
+          ...(conversationContext
+            ? ["", "[Conversation context]", conversationContext]
+            : []),
+          ...(paperTitle ? ["", "[Paper title]", paperTitle] : []),
+          "",
+          "[Full paper (MathPix)]",
+          fullPaperText ?? "(full paper text unavailable)",
+          "",
+          "[Question]",
           truncateText(question, MAX_QUESTION_CHARS),
         ].join("\n"),
       },
@@ -102,6 +140,7 @@ export function createRetrievalSnapshot({
       cloudDocumentId: item.cloudDocumentId,
       documentTitle: item.documentTitle,
       evidenceId: item.evidenceId,
+      mmd: item.mmd,
       pageEnd: item.pageEnd,
       pageStart: item.pageStart,
       pdfFingerprint: item.pdfFingerprint,
@@ -126,6 +165,7 @@ function formatEvidencePack(evidence) {
 
   for (const item of evidence) {
     const text = truncateText(item.text ?? item.textPreview ?? "", MAX_EVIDENCE_CHARS);
+    const mmd = item.mmd ? truncateText(item.mmd, MAX_EVIDENCE_CHARS) : "";
     const block = [
       `[${item.evidenceId}]`,
       `Document: ${item.documentTitle || "Current paper"}`,
@@ -133,6 +173,7 @@ function formatEvidencePack(evidence) {
       `Section: ${formatSectionPath(item.sectionPath)}`,
       "Text:",
       text,
+      ...(mmd ? ["", "LaTeX:", mmd] : []),
     ].join("\n");
 
     if (usedCharacters + block.length > MAX_EVIDENCE_PACK_CHARS && blocks.length > 0) {

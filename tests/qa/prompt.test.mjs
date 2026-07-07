@@ -102,4 +102,43 @@ describe("QA prompt helpers", () => {
     assert.doesNotMatch(messages[1].content, /method section \[C2\]/);
     assert.match(messages[1].content, /\[C1\]/);
   });
+
+  it("appends a LaTeX block to evidence with mmd", () => {
+    const messages = buildQaAnswerMessages({
+      answerLanguage: "en",
+      evidence: [
+        {
+          documentTitle: "Paper QA",
+          evidenceId: "C1",
+          mmd: "\\frac{a}{b} = c",
+          pageEnd: 3,
+          pageStart: 3,
+          sectionPath: ["Method"],
+          text: "The loss function is defined below.",
+        },
+      ],
+      question: "What is the loss function?",
+    });
+
+    assert.match(messages[1].content, /Text:/);
+    assert.match(messages[1].content, /LaTeX:/);
+    assert.match(messages[1].content, /\\frac\{a\}\{b\} = c/);
+  });
+
+  it("builds a long-context prompt with the full paper text", () => {
+    const messages = buildQaAnswerMessages({
+      answerLanguage: "en",
+      evidence: [],
+      fullPaperText: "\\title{Sample Paper}\nThe whole paper goes here.",
+      mode: "long_context",
+      paperTitle: "Sample Paper",
+      question: "Summarize this paper",
+    });
+
+    assert.match(messages[0].content, /whole-paper question/);
+    assert.match(messages[1].content, /\[Full paper \(MathPix\)\]/);
+    assert.match(messages[1].content, /The whole paper goes here\./);
+    assert.match(messages[1].content, /\[Paper title\]/);
+    assert.match(messages[1].content, /Sample Paper/);
+  });
 });
