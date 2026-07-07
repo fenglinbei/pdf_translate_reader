@@ -199,6 +199,7 @@ function rowToEvidence(row, index) {
     cloudDocumentId: row.user_document_id,
     documentTitle: cleanText(row.document_title) || cleanText(row.title) || "Current paper",
     evidenceId: `C${index + 1}`,
+    lineRegions: normalizeLineRegions(row.line_regions),
     mmd: row.mmd ? cleanText(row.mmd) : undefined,
     pageEnd: normalizePositiveInteger(row.page_end, 1),
     pageStart: normalizePositiveInteger(row.page_start, 1),
@@ -213,6 +214,41 @@ function rowToEvidence(row, index) {
     text,
     textPreview: truncateText(text, MAX_TEXT_PREVIEW_CHARS),
   };
+}
+
+// line_regions comes back as a parsed JSON value from the RPC; keep only
+// entries with a usable normalized region so the frontend can draw highlights.
+function normalizeLineRegions(value) {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const regions = [];
+
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+
+    const region = entry.region;
+    const pageNumber = normalizePositiveInteger(entry.pageNumber, undefined);
+
+    if (
+      typeof pageNumber !== "number"
+      || !region
+      || typeof region !== "object"
+      || typeof region.x !== "number"
+      || typeof region.y !== "number"
+      || typeof region.width !== "number"
+      || typeof region.height !== "number"
+    ) {
+      continue;
+    }
+
+    regions.push({ pageNumber, region });
+  }
+
+  return regions.length > 0 ? regions : undefined;
 }
 
 export async function loadCurrentPaperFullText({ userDocumentId, userId, model }) {

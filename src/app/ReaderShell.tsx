@@ -1847,6 +1847,7 @@ export function ReaderShell() {
     locateRequestIdRef.current += 1;
     setLocateRequest({
       pageIndex: Math.max(0, citation.pageStart - 1),
+      lineRegions: citation.lineRegions,
       quotedText: citation.quotedText,
       requestId: locateRequestIdRef.current,
     });
@@ -1861,6 +1862,7 @@ export function ReaderShell() {
     locateRequestIdRef.current += 1;
     setLocateRequest({
       pageIndex: Math.max(0, evidence.pageStart - 1),
+      lineRegions: evidence.lineRegions,
       quotedText: evidence.textPreview,
       requestId: locateRequestIdRef.current,
     });

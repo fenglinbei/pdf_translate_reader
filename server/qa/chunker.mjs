@@ -69,10 +69,25 @@ function createChunkUnits(pages, targetTokens) {
   return pages.flatMap((page) => {
     const units = [];
     const pageLatexByLine = Array.isArray(page.latexByLine) ? page.latexByLine : [];
+    const pageLineRegions = Array.isArray(page.lineRegions) ? page.lineRegions : [];
+    const pageWidth = typeof page.pageWidth === "number" && page.pageWidth > 0 ? page.pageWidth : undefined;
+    const pageHeight = typeof page.pageHeight === "number" && page.pageHeight > 0 ? page.pageHeight : undefined;
 
     page.lines.forEach((line, lineIndex) => {
       const sectionPath = page.sectionsByLine[lineIndex] ?? [];
       const lineLatex = pageLatexByLine[lineIndex];
+      const region = pageLineRegions[lineIndex];
+
+      // Normalize the region to 0..1 ratios so the frontend can scale to any
+      // render size without knowing the MathPix page dimensions.
+      const normalizedRegion = region && pageWidth && pageHeight
+        ? {
+          height: region.height / pageHeight,
+          width: region.width / pageWidth,
+          x: region.x / pageWidth,
+          y: region.y / pageHeight,
+        }
+        : undefined;
 
       splitLongText(line, targetTokens).forEach((text) => {
         const tokenCount = estimateTokenCount(text);
@@ -80,6 +95,7 @@ function createChunkUnits(pages, targetTokens) {
         if (tokenCount > 0) {
           units.push({
             mmd: lineLatex,
+            normalizedRegion,
             pageNumber: page.pageNumber,
             sectionPath,
             text,
@@ -156,6 +172,27 @@ function createChunk({ chunkerVersion, index, source, title, units }) {
     ? mmdUnits.map((unit) => unit.mmd).join("\n").trim()
     : undefined;
 
+  // Collect deduplicated normalized line regions so the frontend can draw a
+  // highlight box per source line without text-layer matching.
+  const seenKeys = new Set();
+  const lineRegions = [];
+  for (const unit of units) {
+    if (!unit.normalizedRegion) {
+      continue;
+    }
+
+    const key = `${unit.pageNumber}:${unit.normalizedRegion.x}:${unit.normalizedRegion.y}`;
+    if (seenKeys.has(key)) {
+      continue;
+    }
+
+    seenKeys.add(key);
+    lineRegions.push({
+      pageNumber: unit.pageNumber,
+      region: unit.normalizedRegion,
+    });
+  }
+
   return {
     chunkHash: createChunkHash({
       chunkerVersion,
@@ -165,6 +202,7 @@ function createChunk({ chunkerVersion, index, source, title, units }) {
       text,
     }),
     chunkIndex: index,
+    lineRegions: lineRegions.length > 0 ? lineRegions : undefined,
     mmd,
     pageEnd,
     pageStart,

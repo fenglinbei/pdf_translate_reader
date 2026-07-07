@@ -321,6 +321,7 @@ export type QaCitation = {
   pageEnd: number;
   sectionPath?: string[];
   quotedText: string;
+  lineRegions?: MathpixLineRegionRef[];
   confidence: QaCitationConfidence;
   createdAt: number;
   deletedAt?: number;
@@ -336,6 +337,7 @@ export type QaRetrievedEvidence = {
   pageStart: number;
   pageEnd: number;
   sectionPath?: string[];
+  lineRegions?: MathpixLineRegionRef[];
   score: number;
   scoreBreakdown: {
     vector?: number;
@@ -489,6 +491,13 @@ export type MathpixLineRegion = {
   y: number;
   width: number;
   height: number;
+};
+
+// A line region tied to a page, with coordinates normalized to 0..1 of the
+// source page dimensions so the frontend can scale to any render size.
+export type MathpixLineRegionRef = {
+  pageNumber: number;
+  region: MathpixLineRegion;
 };
 
 export type MathpixParsedLine = {

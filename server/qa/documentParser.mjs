@@ -93,6 +93,7 @@ function normalizeStoredPage(value, fallbackPageIndex) {
   const rawLines = Array.isArray(pageObject.lines) ? pageObject.lines : [];
   const lines = [];
   const latexByLine = [];
+  const lineRegions = [];
 
   for (const entry of rawLines) {
     const line = normalizeLine(entry);
@@ -100,22 +101,26 @@ function normalizeStoredPage(value, fallbackPageIndex) {
     if (line) {
       lines.push(line.text);
       latexByLine.push(line.latex);
+      lineRegions.push(line.region);
     }
   }
 
   return {
     latexByLine,
+    lineRegions,
     lines,
+    pageHeight: getOptionalNumber(pageObject.pageHeight ?? pageObject.height),
     pageMmd: typeof pageObject.pageMmd === "string" ? pageObject.pageMmd : "",
     pageNumber: normalizePageNumber(pageObject.pageIndex, fallbackPageIndex),
     pageText: typeof pageObject.pageText === "string" ? pageObject.pageText : lines.join(" "),
+    pageWidth: getOptionalNumber(pageObject.pageWidth ?? pageObject.width),
   };
 }
 
 function normalizeLine(value) {
   if (typeof value === "string") {
     const text = cleanText(value);
-    return text ? { latex: undefined, text } : undefined;
+    return text ? { latex: undefined, region: undefined, text } : undefined;
   }
 
   if (!isRecord(value) || typeof value.text !== "string") {
@@ -130,8 +135,69 @@ function normalizeLine(value) {
   const latexRaw = cleanText(typeof value.latex === "string" ? value.latex : "");
   return {
     latex: latexRaw && latexRaw !== text ? latexRaw : undefined,
+    region: normalizeLineRegion(value.region, value.cnt),
     text,
   };
+}
+
+// Replicates src/mathpix/mathpixNormalizer.ts normalizeRegion: prefer the
+// explicit region bbox, otherwise derive one from the cnt contour points.
+function normalizeLineRegion(rawRegion, rawCnt) {
+  const region = isRecord(rawRegion) ? rawRegion : {};
+  const x = getOptionalNumber(region.x ?? region.left);
+  const y = getOptionalNumber(region.y ?? region.top);
+  const width = getOptionalNumber(region.width ?? region.w);
+  const height = getOptionalNumber(region.height ?? region.h);
+
+  if ([x, y, width, height].every((value) => typeof value === "number")) {
+    return { height, width, x, y };
+  }
+
+  const cnt = normalizeCnt(rawCnt);
+
+  if (!cnt || cnt.length === 0) {
+    return undefined;
+  }
+
+  const xs = cnt.map((point) => point[0]);
+  const ys = cnt.map((point) => point[1]);
+  const left = Math.min(...xs);
+  const top = Math.min(...ys);
+
+  return {
+    height: Math.max(...ys) - top,
+    width: Math.max(...xs) - left,
+    x: left,
+    y: top,
+  };
+}
+
+function normalizeCnt(value) {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const points = [];
+
+  for (const entry of value) {
+    if (!Array.isArray(entry) || entry.length < 2) {
+      continue;
+    }
+
+    const x = getOptionalNumber(entry[0]);
+    const y = getOptionalNumber(entry[1]);
+
+    if (typeof x === "number" && typeof y === "number") {
+      points.push([x, y]);
+    }
+  }
+
+  return points.length > 0 ? points : undefined;
+}
+
+function getOptionalNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function normalizePageNumber(value, fallbackPageIndex) {
@@ -162,7 +228,9 @@ function createBodyPages(pages) {
 
     const bodyLines = [];
     const bodyLatexLines = [];
+    const bodyLineRegions = [];
     const sectionsByLine = [];
+    const pageLineRegions = Array.isArray(page.lineRegions) ? page.lineRegions : [];
 
     for (let index = 0; index < endIndex; index += 1) {
       const line = page.lines[index];
@@ -179,16 +247,20 @@ function createBodyPages(pages) {
 
       bodyLines.push(line);
       bodyLatexLines.push(pageLatexByLine[index]);
+      bodyLineRegions.push(pageLineRegions[index]);
       sectionsByLine.push(currentSectionPath);
     }
 
     if (bodyLines.some((line) => line.trim())) {
       bodyPages.push({
         latexByLine: bodyLatexLines,
+        lineRegions: bodyLineRegions,
         lines: bodyLines,
+        pageHeight: page.pageHeight,
         pageMmd: page.pageMmd,
         pageNumber: page.pageNumber,
         pageText: bodyLines.join(" "),
+        pageWidth: page.pageWidth,
         sectionsByLine,
       });
     }

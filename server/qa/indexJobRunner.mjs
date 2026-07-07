@@ -279,6 +279,7 @@ async function replaceDocumentChunks({ chunks, embeddingResult, job }) {
     embedding_model: embeddingResult.vectors?.[index]
       ? embeddingResult.model
       : null,
+    line_regions: chunk.lineRegions ?? null,
     mmd: chunk.mmd,
     page_end: chunk.pageEnd,
     page_start: chunk.pageStart,

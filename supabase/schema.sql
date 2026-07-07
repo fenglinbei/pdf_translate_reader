@@ -759,6 +759,10 @@ create table if not exists public.user_paper_chunks (
   deleted_at timestamptz
 );
 
+-- Normalized line regions (0..1 ratios) for precise citation highlighting.
+alter table public.user_paper_chunks
+  add column if not exists line_regions jsonb;
+
 create unique index if not exists user_paper_chunks_active_chunk_key
   on public.user_paper_chunks (user_document_id, chunker_version, chunk_hash)
   where deleted_at is null;
@@ -832,6 +836,7 @@ returns table (
   page_end integer,
   text text,
   mmd text,
+  line_regions jsonb,
   vector_score double precision,
   full_text_score double precision,
   metadata_boost double precision,
@@ -866,6 +871,7 @@ as $$
       chunks.page_end,
       chunks.text,
       chunks.mmd,
+      chunks.line_regions,
       case
         when p_query_embedding is not null
           and p_embedding_model is not null
@@ -1121,6 +1127,9 @@ create table if not exists public.user_qa_citations (
   created_at timestamptz not null default now(),
   deleted_at timestamptz
 );
+
+alter table public.user_qa_citations
+  add column if not exists line_regions jsonb;
 
 create index if not exists user_qa_citations_message_idx
   on public.user_qa_citations (user_id, message_id, created_at asc)

@@ -83,6 +83,7 @@ const QA_CITATION_COLUMNS = [
   "deleted_at",
   "document_title",
   "id",
+  "line_regions",
   "message_id",
   "page_end",
   "page_start",
@@ -594,6 +595,7 @@ export async function insertQaCitations({ citations, messageId, userId }) {
     chunk_id: citation.chunkId,
     confidence: citation.confidence,
     document_title: citation.documentTitle,
+    line_regions: citation.lineRegions ?? null,
     message_id: messageId,
     page_end: citation.pageEnd,
     page_start: citation.pageStart,
@@ -1091,6 +1093,7 @@ function rowToQaCitation(row) {
     deletedAt: parseIsoTime(row.deleted_at),
     documentTitle: row.document_title,
     id: row.id,
+    lineRegions: normalizeCitationLineRegions(row.line_regions),
     messageId: row.message_id,
     pageEnd: row.page_end,
     pageStart: row.page_start,
@@ -1098,6 +1101,40 @@ function rowToQaCitation(row) {
     quotedText: row.quoted_text,
     sectionPath: row.section_path ?? undefined,
   };
+}
+
+// line_regions is stored as jsonb; validate the shape before exposing it.
+function normalizeCitationLineRegions(value) {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const regions = [];
+
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+
+    const region = entry.region;
+    const pageNumber = Number(entry.pageNumber);
+
+    if (
+      !Number.isInteger(pageNumber)
+      || !region
+      || typeof region !== "object"
+      || typeof region.x !== "number"
+      || typeof region.y !== "number"
+      || typeof region.width !== "number"
+      || typeof region.height !== "number"
+    ) {
+      continue;
+    }
+
+    regions.push({ pageNumber, region });
+  }
+
+  return regions.length > 0 ? regions : undefined;
 }
 
 function createThreadTitle(question) {

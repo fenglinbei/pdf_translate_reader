@@ -8,8 +8,8 @@ export const PROJECT_CONFIG = {
     maxScanPages: 3,
   },
   qa: {
-    answerPromptVersion: "qa-answer-v1",
-    chunkerVersion: "qa-chunker-v2",
+    answerPromptVersion: "qa-answer-v2",
+    chunkerVersion: "qa-chunker-v3",
     indexStatusPollMs: 3000,
     referenceMatcherVersion: "reference-matcher-v1",
     retrieverVersion: "hybrid-retriever-v1",

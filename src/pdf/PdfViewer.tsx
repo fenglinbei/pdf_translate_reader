@@ -13,6 +13,7 @@ import { useI18n } from "../i18n/I18nProvider";
 import type { PinAnnotationInput, PinWriteInput } from "../pins/pinRepository";
 import type {
   AppSettings,
+  MathpixLineRegionRef,
   MobileInteractionMode,
   PaperContext,
   PdfLibraryEntry,
@@ -91,6 +92,7 @@ export type PinLocateRequest = {
   pageIndex?: number;
   pin?: TranslationPin;
   quotedText?: string;
+  lineRegions?: MathpixLineRegionRef[];
   requestId: number;
 };
 
@@ -1167,7 +1169,62 @@ export function PdfViewer({
   const highlightLocatedCitation = useCallback((request: PinLocateRequest) => {
     const pageIndex = request.pageIndex;
 
-    if (typeof pageIndex !== "number" || !request.quotedText) {
+    if (typeof pageIndex !== "number") {
+      return false;
+    }
+
+    // Path 1 (preferred): use MathPix line regions to draw a highlight box per
+    // source line. Regions are normalized to 0..1, so we scale them by the
+    // current rendered page dimensions. This bypasses text-layer matching
+    // entirely and is robust against MathPix/pdf.js text differences.
+    if (request.lineRegions && request.lineRegions.length > 0) {
+      const pageDescriptor = pages[pageIndex];
+      const renderedWidth = pageDescriptor?.width
+        ? pageDescriptor.width * displayScale
+        : undefined;
+      const renderedHeight = pageLayout.heights[pageIndex];
+
+      if (renderedWidth && renderedHeight) {
+        const rects = request.lineRegions
+          .filter((entry) => entry.pageNumber === pageIndex + 1)
+          .map((entry) => ({
+            height: entry.region.height * renderedHeight,
+            left: entry.region.x * renderedWidth,
+            top: entry.region.y * renderedHeight,
+            width: entry.region.width * renderedWidth,
+          }));
+
+        if (rects.length > 0) {
+          const anchorTop = Math.min(...rects.map((rect) => rect.top));
+          const scrollElement = scrollRef.current;
+          const pageScrollTop = pageLayout.tops[pageIndex];
+
+          if (scrollElement && pageScrollTop !== undefined) {
+            scrollElement.scrollTo({
+              behavior: "smooth",
+              top: Math.max(0, pageScrollTop + anchorTop - scrollElement.clientHeight * 0.24),
+            });
+          }
+
+          setLocatedCitation({
+            key: `citation-${request.requestId}`,
+            pageIndex,
+            rects,
+          });
+          window.clearTimeout(locatedCitationTimerRef.current);
+          locatedCitationTimerRef.current = window.setTimeout(() => {
+            setLocatedCitation((current) =>
+              current && current.key === `citation-${request.requestId}` ? undefined : current,
+            );
+          }, 2400);
+
+          return true;
+        }
+      }
+    }
+
+    // Path 2 (fallback): match quotedText against the pdf.js text layer.
+    if (!request.quotedText) {
       return false;
     }
 
@@ -1224,7 +1281,7 @@ export function PdfViewer({
     }, 2400);
 
     return true;
-  }, [pageLayout]);
+  }, [displayScale, pageLayout, pages]);
 
   const handleTextIndexReady = useCallback((pageTextIndex: PageTextIndex) => {
     pageIndexesRef.current.set(pageTextIndex.pageIndex, pageTextIndex);
@@ -1328,7 +1385,10 @@ export function PdfViewer({
       return;
     }
 
-    if (locateRequest?.quotedText && typeof locateRequest.pageIndex === "number") {
+    if (
+      typeof locateRequest?.pageIndex === "number"
+      && (locateRequest.quotedText || (locateRequest.lineRegions && locateRequest.lineRegions.length > 0))
+    ) {
       const located = highlightLocatedCitation(locateRequest);
 
       if (located) {
@@ -1336,9 +1396,9 @@ export function PdfViewer({
         return;
       }
 
-      // Target page text layer may not be ready yet (page out of view). Scroll
-      // it into view and remember the request so we can retry once the text
-      // index for that page is built.
+      // Page layout/pages may not be ready yet (e.g. still loading). Scroll
+      // it into view and remember the request so we can retry once the page
+      // (and, for the text-match fallback, its text index) is built.
       scrollToPage(locateRequest.pageIndex);
       pendingCitationLocateRef.current = locateRequest;
       return;

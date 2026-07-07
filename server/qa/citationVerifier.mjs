@@ -26,6 +26,7 @@ export function verifyAnswerCitations({ answerText, evidence }) {
       confidence: "verified",
       documentTitle: item.documentTitle,
       evidenceId,
+      lineRegions: item.lineRegions,
       pageEnd: item.pageEnd,
       pageStart: item.pageStart,
       pdfFingerprint: item.pdfFingerprint,
