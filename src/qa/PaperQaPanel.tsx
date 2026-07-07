@@ -22,6 +22,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { useI18n } from "../i18n/I18nProvider";
+import { PROJECT_CONFIG } from "../config/projectConfig";
 import type {
   QaAnswerLanguage,
   QaAgentStep,
@@ -103,7 +104,11 @@ export function PaperQaPanel({
   const historyRequestRef = useRef(0);
   const messagesRequestRef = useRef(0);
   const highlightTimerRef = useRef<number>();
-  const isReady = Boolean(activeDocumentId && qaIndexJob?.status === "ready");
+  const isReady = Boolean(
+    activeDocumentId
+    && qaIndexJob?.status === "ready"
+    && qaIndexJob?.chunkerVersion === PROJECT_CONFIG.qa.chunkerVersion,
+  );
 
   const warnings = useMemo(
     () => uniqueStrings([

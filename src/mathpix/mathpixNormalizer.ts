@@ -27,6 +27,7 @@ export function normalizeMathpixLinesJson({
         .map((rawLine, fallbackLineIndex) => normalizeLine(rawLine, fallbackLineIndex))
         .filter((line): line is MathpixParsedLine => Boolean(line && line.text.trim()));
       const pageText = joinMathpixLines(lines.map((line) => line.text));
+      const pageMmd = joinMathpixLines(lines.map((line) => line.latex ?? line.text));
       const minConfidence = getMinConfidence(lines);
 
       return {
@@ -37,7 +38,7 @@ export function normalizeMathpixLinesJson({
         minConfidence,
         pageHeight: getOptionalNumber(pageObject.page_height ?? pageObject.pageHeight ?? pageObject.height),
         pageIndex,
-        pageMmd: pageText,
+        pageMmd,
         pageText,
         pageWidth: getOptionalNumber(pageObject.page_width ?? pageObject.pageWidth ?? pageObject.width),
         pdfFingerprint: entry.fingerprint,
@@ -118,12 +119,16 @@ function normalizeLine(rawLine: unknown, fallbackLineIndex: number): MathpixPars
     return undefined;
   }
 
+  const latexRaw = cleanLineText(lineObject.latex_styled ?? lineObject.latex);
+  const latex = latexRaw && latexRaw !== text ? latexRaw : undefined;
+
   return {
     confidence: getOptionalNumber(lineObject.confidence),
     confidenceRate: getOptionalNumber(lineObject.confidence_rate ?? lineObject.confidenceRate),
     cnt: normalizeCnt(lineObject.cnt),
     isHandwritten: getOptionalBoolean(lineObject.is_handwritten ?? lineObject.isHandwritten),
     isPrinted: getOptionalBoolean(lineObject.is_printed ?? lineObject.isPrinted),
+    latex,
     lineIndex: getOptionalNumber(lineObject.line ?? lineObject.line_index ?? lineObject.lineIndex) ?? fallbackLineIndex,
     region: normalizeRegion(lineObject.region, lineObject.cnt),
     text,

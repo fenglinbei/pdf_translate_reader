@@ -68,15 +68,18 @@ export function createQaChunks({
 function createChunkUnits(pages, targetTokens) {
   return pages.flatMap((page) => {
     const units = [];
+    const pageLatexByLine = Array.isArray(page.latexByLine) ? page.latexByLine : [];
 
     page.lines.forEach((line, lineIndex) => {
       const sectionPath = page.sectionsByLine[lineIndex] ?? [];
+      const lineLatex = pageLatexByLine[lineIndex];
 
       splitLongText(line, targetTokens).forEach((text) => {
         const tokenCount = estimateTokenCount(text);
 
         if (tokenCount > 0) {
           units.push({
+            mmd: lineLatex,
             pageNumber: page.pageNumber,
             sectionPath,
             text,
@@ -148,6 +151,10 @@ function createChunk({ chunkerVersion, index, source, title, units }) {
   const pageEnd = Math.max(...units.map((unit) => unit.pageNumber));
   const sectionPath = getRepresentativeSectionPath(units);
   const tokenCount = estimateTokenCount(text);
+  const mmdUnits = units.filter((unit) => unit.mmd);
+  const mmd = mmdUnits.length > 0
+    ? mmdUnits.map((unit) => unit.mmd).join("\n").trim()
+    : undefined;
 
   return {
     chunkHash: createChunkHash({
@@ -158,7 +165,7 @@ function createChunk({ chunkerVersion, index, source, title, units }) {
       text,
     }),
     chunkIndex: index,
-    mmd: text,
+    mmd,
     pageEnd,
     pageStart,
     sectionPath,

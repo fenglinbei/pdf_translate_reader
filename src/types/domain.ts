@@ -496,6 +496,7 @@ export type MathpixParsedLine = {
   cnt?: Array<[number, number]>;
   isHandwritten?: boolean;
   isPrinted?: boolean;
+  latex?: string;
   lineIndex: number;
   region?: MathpixLineRegion;
   text: string;

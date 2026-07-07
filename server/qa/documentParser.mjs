@@ -90,13 +90,21 @@ function normalizeStoredPages(value) {
 
 function normalizeStoredPage(value, fallbackPageIndex) {
   const pageObject = isRecord(value) ? value : {};
-  const lines = Array.isArray(pageObject.lines)
-    ? pageObject.lines
-      .map((line) => normalizeLine(line))
-      .filter(Boolean)
-    : [];
+  const rawLines = Array.isArray(pageObject.lines) ? pageObject.lines : [];
+  const lines = [];
+  const latexByLine = [];
+
+  for (const entry of rawLines) {
+    const line = normalizeLine(entry);
+
+    if (line) {
+      lines.push(line.text);
+      latexByLine.push(line.latex);
+    }
+  }
 
   return {
+    latexByLine,
     lines,
     pageMmd: typeof pageObject.pageMmd === "string" ? pageObject.pageMmd : "",
     pageNumber: normalizePageNumber(pageObject.pageIndex, fallbackPageIndex),
@@ -106,14 +114,24 @@ function normalizeStoredPage(value, fallbackPageIndex) {
 
 function normalizeLine(value) {
   if (typeof value === "string") {
-    return cleanText(value);
+    const text = cleanText(value);
+    return text ? { latex: undefined, text } : undefined;
   }
 
   if (!isRecord(value) || typeof value.text !== "string") {
     return undefined;
   }
 
-  return cleanText(value.text);
+  const text = cleanText(value.text);
+  if (!text) {
+    return undefined;
+  }
+
+  const latexRaw = cleanText(typeof value.latex === "string" ? value.latex : "");
+  return {
+    latex: latexRaw && latexRaw !== text ? latexRaw : undefined,
+    text,
+  };
 }
 
 function normalizePageNumber(value, fallbackPageIndex) {
@@ -135,18 +153,24 @@ function createBodyPages(pages) {
     }
 
     const referenceHeadingIndex = findReferencesHeadingIndex(page.lines);
-    const lines = referenceHeadingIndex >= 0
-      ? page.lines.slice(0, referenceHeadingIndex)
-      : page.lines;
+    const endIndex = referenceHeadingIndex >= 0 ? referenceHeadingIndex : page.lines.length;
+    const pageLatexByLine = Array.isArray(page.latexByLine) ? page.latexByLine : [];
 
     if (referenceHeadingIndex >= 0) {
       reachedReferences = true;
     }
 
     const bodyLines = [];
+    const bodyLatexLines = [];
     const sectionsByLine = [];
 
-    for (const line of lines) {
+    for (let index = 0; index < endIndex; index += 1) {
+      const line = page.lines[index];
+
+      if (line === undefined) {
+        continue;
+      }
+
       const sectionTitle = parseSectionHeading(line);
 
       if (sectionTitle) {
@@ -154,11 +178,13 @@ function createBodyPages(pages) {
       }
 
       bodyLines.push(line);
+      bodyLatexLines.push(pageLatexByLine[index]);
       sectionsByLine.push(currentSectionPath);
     }
 
     if (bodyLines.some((line) => line.trim())) {
       bodyPages.push({
+        latexByLine: bodyLatexLines,
         lines: bodyLines,
         pageMmd: page.pageMmd,
         pageNumber: page.pageNumber,

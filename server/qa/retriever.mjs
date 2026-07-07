@@ -2,7 +2,7 @@ import { embedTexts } from "../embedding/client.mjs";
 import { getEmbeddingRuntimeConfig } from "../embedding/config.mjs";
 import { SupabaseServiceError, requireSupabaseServiceClient } from "../supabase/service.mjs";
 import { getLatestQaIndexJob } from "../supabase/qa.mjs";
-import { QA_LONG_CONTEXT_MAX_CHARS, QA_RETRIEVER_VERSION } from "./config.mjs";
+import { QA_CHUNKER_VERSION, QA_LONG_CONTEXT_MAX_CHARS, QA_RETRIEVER_VERSION } from "./config.mjs";
 import { loadMathpixStructuredDocument } from "./documentParser.mjs";
 import {
   getRerankerRuntimeConfig,
@@ -107,6 +107,14 @@ async function requireUsableIndexJob({ userDocumentId, userId }) {
       job.status === "ready_degraded"
         ? "The QA index is incomplete (semantic search unavailable). Rebuild the index to enable semantic retrieval."
         : "The QA index is not ready yet.",
+    );
+  }
+
+  if (job.chunkerVersion && job.chunkerVersion !== QA_CHUNKER_VERSION) {
+    throw new SupabaseServiceError(
+      409,
+      "qa_index_outdated",
+      "The QA index was built with an older chunker and is missing LaTeX formula data. Rebuild the index to enable formula-aware answers.",
     );
   }
 

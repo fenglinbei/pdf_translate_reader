@@ -9,7 +9,7 @@ export const PROJECT_CONFIG = {
   },
   qa: {
     answerPromptVersion: "qa-answer-v1",
-    chunkerVersion: "qa-chunker-v1",
+    chunkerVersion: "qa-chunker-v2",
     indexStatusPollMs: 3000,
     referenceMatcherVersion: "reference-matcher-v1",
     retrieverVersion: "hybrid-retriever-v1",
