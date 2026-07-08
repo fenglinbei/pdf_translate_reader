@@ -1175,40 +1175,50 @@ export function PdfViewer({
 
     // Path 1 (preferred): use MathPix line regions to draw a highlight box per
     // source line. Regions are normalized to 0..1, so we scale them by the
-    // current rendered page dimensions. This bypasses text-layer matching
-    // entirely and is robust against MathPix/pdf.js text differences.
+    // .pdf-page container dimensions (which are based on pdfRenderScale, NOT
+    // displayScale — the overlay is positioned inside .pdf-page).
     if (request.lineRegions && request.lineRegions.length > 0) {
-      const pageDescriptor = pages[pageIndex];
-      const renderedWidth = pageDescriptor?.width
-        ? pageDescriptor.width * displayScale
+      // A chunk can span multiple pages. Pick the page with the most regions
+      // as the highlight target so the user sees the bulk of the evidence.
+      const pageNumber = pickDensestLineNumber(request.lineRegions) ?? pageIndex + 1;
+      const targetPageIndex = pageNumber - 1;
+      const pageDescriptor = pages[targetPageIndex];
+      // The overlay lives inside .pdf-page whose CSS size uses pdfRenderScale.
+      const overlayWidth = pageDescriptor?.width
+        ? pageDescriptor.width * pdfRenderScale
         : undefined;
-      const renderedHeight = pageLayout.heights[pageIndex];
+      const overlayHeight = pageDescriptor?.height
+        ? pageDescriptor.height * pdfRenderScale
+        : undefined;
 
-      if (renderedWidth && renderedHeight) {
-        const rects = request.lineRegions
-          .filter((entry) => entry.pageNumber === pageIndex + 1)
-          .map((entry) => ({
-            height: entry.region.height * renderedHeight,
-            left: entry.region.x * renderedWidth,
-            top: entry.region.y * renderedHeight,
-            width: entry.region.width * renderedWidth,
-          }));
+      if (overlayWidth && overlayHeight) {
+        const matching = request.lineRegions
+          .filter((entry) => entry.pageNumber === pageNumber);
+        const rects = matching.map((entry) => ({
+          height: entry.region.height * overlayHeight,
+          left: entry.region.x * overlayWidth,
+          top: entry.region.y * overlayHeight,
+          width: entry.region.width * overlayWidth,
+        }));
 
         if (rects.length > 0) {
-          const anchorTop = Math.min(...rects.map((rect) => rect.top));
+          // The scroll offset uses displayScale (actual viewport size) to match
+          // pageLayout.tops which is also displayScale-based.
+          const anchorTopDisplay = Math.min(...rects.map((rect) => rect.top))
+            * (displayScale / pdfRenderScale);
           const scrollElement = scrollRef.current;
-          const pageScrollTop = pageLayout.tops[pageIndex];
+          const pageScrollTop = pageLayout.tops[targetPageIndex];
 
           if (scrollElement && pageScrollTop !== undefined) {
             scrollElement.scrollTo({
               behavior: "smooth",
-              top: Math.max(0, pageScrollTop + anchorTop - scrollElement.clientHeight * 0.24),
+              top: Math.max(0, pageScrollTop + anchorTopDisplay - scrollElement.clientHeight * 0.24),
             });
           }
 
           setLocatedCitation({
             key: `citation-${request.requestId}`,
-            pageIndex,
+            pageIndex: targetPageIndex,
             rects,
           });
           window.clearTimeout(locatedCitationTimerRef.current);
@@ -1281,7 +1291,7 @@ export function PdfViewer({
     }, 2400);
 
     return true;
-  }, [displayScale, pageLayout, pages]);
+  }, [displayScale, pageLayout, pages, pdfRenderScale]);
 
   const handleTextIndexReady = useCallback((pageTextIndex: PageTextIndex) => {
     pageIndexesRef.current.set(pageTextIndex.pageIndex, pageTextIndex);
@@ -2243,6 +2253,28 @@ function getFitScale(pages: PageDescriptor[], availableWidth: number, maxRenderS
   const nextScale = availableWidth / widestPage;
 
   return Math.min(maxRenderScale, Math.max(MIN_RENDER_SCALE, nextScale));
+}
+
+// For a multi-page chunk, return the page number that holds the most line
+// regions so the highlight covers the bulk of the evidence text.
+function pickDensestLineNumber(lineRegions: MathpixLineRegionRef[]): number | undefined {
+  const counts = new Map<number, number>();
+
+  for (const entry of lineRegions) {
+    counts.set(entry.pageNumber, (counts.get(entry.pageNumber) ?? 0) + 1);
+  }
+
+  let bestPage: number | undefined;
+  let bestCount = 0;
+
+  for (const [pageNumber, count] of counts) {
+    if (count > bestCount) {
+      bestPage = pageNumber;
+      bestCount = count;
+    }
+  }
+
+  return bestPage;
 }
 
 function createPageLayout(

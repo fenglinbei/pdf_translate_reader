@@ -209,7 +209,10 @@ async function handleQaStream(request, response, user) {
       signal: abortController.signal,
     });
 
+    console.log("[qa-stream] questionType =", questionType.type, "| question:", String(requestBody.question ?? "").slice(0, 60));
+
     if (questionType.type === "global") {
+      console.log("[qa-stream] -> long context path");
       try {
         await handleLongContextAnswer({
           abortController,
@@ -502,11 +505,31 @@ async function handleQaStream(request, response, user) {
       answerText,
       evidence: retrieval.evidence,
     });
+
+    console.log("[qa-stream] evidence lineRegions check:", retrieval.evidence.map((e) => ({
+      evidenceId: e.evidenceId,
+      hasLineRegions: Boolean(e.lineRegions),
+      lineRegionsCount: e.lineRegions?.length ?? 0,
+      pageStart: e.pageStart,
+    })));
+    console.log("[qa-stream] citation lineRegions check:", verification.citations.map((c) => ({
+      evidenceId: c.evidenceId,
+      hasLineRegions: Boolean(c.lineRegions),
+      lineRegionsCount: c.lineRegions?.length ?? 0,
+      pageStart: c.pageStart,
+    })));
+
     const savedCitations = await insertQaCitations({
       citations: verification.citations,
       messageId: assistantMessage.id,
       userId: user.id,
     });
+
+    console.log("[qa-stream] retrievalSnapshot evidence lineRegions check:",
+      retrievalSnapshot.evidence.map((e) => ({
+        evidenceId: e.evidenceId,
+        hasLineRegions: Boolean(e.lineRegions),
+      })));
     await writeQaLogSilent({
       messageId: assistantMessage.id,
       model: requestBody.model,

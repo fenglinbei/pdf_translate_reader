@@ -15,12 +15,20 @@ export async function classifyQuestionType({ chatContext, model, question, signa
     const parsed = parseRouterJson(result.content);
     const normalized = normalizeRouterResult(parsed);
 
+    console.log("[query-router]", JSON.stringify({
+      question: String(question ?? "").slice(0, 80),
+      rawContent: String(result.content ?? "").slice(0, 200),
+      normalizedType: normalized?.type,
+      confidence: normalized?.confidence,
+    }));
+
     if (!normalized || !VALID_TYPES.has(normalized.type)) {
       return createFallbackResult("router returned an unsupported type");
     }
 
     return normalized;
   } catch (error) {
+    console.log("[query-router] error:", error instanceof Error ? error.message : error);
     return createFallbackResult(error instanceof Error ? error.message : "router call failed");
   }
 }
@@ -34,13 +42,13 @@ function buildRouterMessages({ chatContext, question }) {
       content: [
         "You are a question-type router for an academic-paper QA system.",
         "Classify the user's question into exactly one of these types:",
-        "- global: asks for a whole-paper summary, overview, core contribution, methodology outline, or argument walkthrough. Examples: 'summarize this paper', 'what is the main contribution', 'walk me through the method', '梳理一下论证链'.",
-        "- detail: asks about a specific part that needs locating evidence (a formula, an experiment's accuracy, a comparison between A and B, a figure, a page). Examples: 'what is the formula on page 3', 'accuracy of experiment 2', 'compare method A and B'.",
+        "- global: asks for a whole-paper summary, overview, core contribution, methodology outline, structure/logic walkthrough, or any synthesis that spans the entire paper. Examples: 'summarize this paper', 'what is the main contribution', 'walk me through the method', '梳理一下论证链', '讲讲这篇文章的行文逻辑', '这篇论文的核心思路是什么', '概括一下全文'.",
+        "- detail: asks about a specific part that needs locating evidence (a formula, an experiment's accuracy, a comparison between A and B, a figure, a page). Examples: 'what is the formula on page 3', 'accuracy of experiment 2', 'compare method A and B', '第3页的公式是什么'.",
         "- chitchat: greetings, thanks, or questions about the assistant's identity/capabilities. Examples: 'hi', 'thanks', 'what can you do'.",
         "- follow_up: depends on the previous turn's context (pronouns, 'the second point', 'explain that'). Examples: 'what does it refer to', 'expand on the second point'.",
         "Return only one JSON object. Do not wrap it in Markdown.",
         'Format: {"type":"global|detail|chitchat|follow_up","confidence":"high|medium|low","reason":"short rationale"}',
-        "When in doubt, prefer 'detail' (it is the safest default and can still be short-circuited by the agent).",
+        "Key heuristic: if the question asks about the paper's overall structure, logic, narrative flow, or asks to summarize/explain the whole paper, classify it as 'global'. Reserve 'detail' for questions targeting a specific fact, number, or local passage.",
       ].join("\n"),
     },
     {

@@ -301,7 +301,8 @@ export function PageOverlayLayer({
     pinnedTranslationCardsOnPage.length === 0 &&
     annotationPins.length === 0 &&
     markerTargets.length === 0 &&
-    !locatedPin
+    !locatedPin &&
+    !locatedCitation
   ) {
     return <div className="pdf-page-overlay" ref={overlayRef} />;
   }
