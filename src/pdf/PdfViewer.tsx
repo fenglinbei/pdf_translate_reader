@@ -241,6 +241,9 @@ export function PdfViewer({
   const [copiedSelection, setCopiedSelection] = useState<SentenceSelection>();
   const [confirmedMobileReaderMode, setConfirmedMobileReaderMode] = useState<"translate">();
   const [collapsedMobileSelectionKey, setCollapsedMobileSelectionKey] = useState<string>();
+  const [collapsedTranslationCardKeys, setCollapsedTranslationCardKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [activeMobilePinnedCardKey, setActiveMobilePinnedCardKey] = useState<string>();
   const [emphasizedPinnedCardKey, setEmphasizedPinnedCardKey] = useState<string>();
   const [isMobileViewport, setIsMobileViewport] = useState(false);
@@ -1377,6 +1380,15 @@ export function PdfViewer({
 
   const handleRevealPinnedTranslationCard = useCallback(
     (card: PinnedTranslationCard) => {
+      setCollapsedTranslationCardKeys((currentKeys) => {
+        if (!currentKeys.has(card.key)) {
+          return currentKeys;
+        }
+
+        const nextKeys = new Set(currentKeys);
+        nextKeys.delete(card.key);
+        return nextKeys;
+      });
       scrollToStoredSelection(card.selection);
       onActivateTranslationCard(card.selection);
       emphasizePinnedTranslationCard(card.key);
@@ -1427,6 +1439,26 @@ export function PdfViewer({
       setCollapsedMobileSelectionKey(undefined);
     }
   }, [isMobileViewport]);
+
+  useEffect(() => {
+    setCollapsedTranslationCardKeys(new Set());
+  }, [entry.fingerprint]);
+
+  useEffect(() => {
+    const availableCardKeys = new Set(pinnedTranslationCards.map((card) => card.key));
+
+    if (activeSelection) {
+      availableCardKeys.add(createSelectionTargetKey(activeSelection));
+    }
+
+    setCollapsedTranslationCardKeys((currentKeys) => {
+      const nextKeys = new Set(
+        Array.from(currentKeys).filter((key) => availableCardKeys.has(key)),
+      );
+
+      return nextKeys.size === currentKeys.size ? currentKeys : nextKeys;
+    });
+  }, [activeSelection, pinnedTranslationCards]);
 
   useEffect(() => {
     if (
@@ -1494,6 +1526,31 @@ export function PdfViewer({
   const handleOpenCollapsedMobileTranslationCard = useCallback(() => {
     setCollapsedMobileSelectionKey(undefined);
   }, []);
+
+  const handleTranslationCardCollapseChange = useCallback(
+    (selection: SentenceSelection, isCollapsed: boolean) => {
+      const targetKey = createSelectionTargetKey(selection);
+
+      setCollapsedTranslationCardKeys((currentKeys) => {
+        const alreadyCollapsed = currentKeys.has(targetKey);
+
+        if (alreadyCollapsed === isCollapsed) {
+          return currentKeys;
+        }
+
+        const nextKeys = new Set(currentKeys);
+
+        if (isCollapsed) {
+          nextKeys.add(targetKey);
+        } else {
+          nextKeys.delete(targetKey);
+        }
+
+        return nextKeys;
+      });
+    },
+    [],
+  );
 
   const handleCreateSelectAnnotation = useCallback(
     async (selection: SentenceSelection, annotation: PinAnnotationInput) => {
@@ -1640,6 +1697,7 @@ export function PdfViewer({
                     onCloseTranslationCard={onCloseTranslationCard}
                     activeMobilePinnedCardKey={activeMobilePinnedCardKey}
                     collapsedMobileSelectionKey={collapsedMobileSelectionKey}
+                    collapsedTranslationCardKeys={collapsedTranslationCardKeys}
                     emphasizedPinnedCardKey={emphasizedPinnedCardKey}
                     onClearSelection={handleClearSelection}
                     onClearQueuedSelections={handleClearCrossSelection}
@@ -1659,6 +1717,7 @@ export function PdfViewer({
                     onTextIndexClear={handleTextIndexClear}
                     onTextIndexReady={handleTextIndexReady}
                     onTranslationCardViewChange={onTranslationCardViewChange}
+                    onTranslationCardCollapseChange={handleTranslationCardCollapseChange}
                     pdfDocument={pdfDocument}
                     pinnedTranslationCards={pinnedTranslationCards}
                     isMobileViewport={isMobileViewport}
@@ -1776,6 +1835,7 @@ const PdfPageView = memo(function PdfPageView({
   canvasOutputScaleCap,
   descriptor,
   collapsedMobileSelectionKey,
+  collapsedTranslationCardKeys,
   draftSelection,
   emphasizedPinnedCardKey,
   locatedCitation,
@@ -1801,6 +1861,7 @@ const PdfPageView = memo(function PdfPageView({
   onTextIndexClear,
   onTextIndexReady,
   onTranslationCardViewChange,
+  onTranslationCardCollapseChange,
   pdfDocument,
   pinnedTranslationCards,
   paperContext,
@@ -1820,6 +1881,7 @@ const PdfPageView = memo(function PdfPageView({
   activeSelection?: SentenceSelection;
   canvasOutputScaleCap: number;
   collapsedMobileSelectionKey?: string;
+  collapsedTranslationCardKeys: ReadonlySet<string>;
   descriptor: PageDescriptor;
   draftSelection?: SentenceSelection;
   emphasizedPinnedCardKey?: string;
@@ -1859,6 +1921,10 @@ const PdfPageView = memo(function PdfPageView({
     selection: SentenceSelection,
     viewChange: TranslationCardViewChange,
     options?: TranslationCardViewChangeOptions,
+  ) => void;
+  onTranslationCardCollapseChange: (
+    selection: SentenceSelection,
+    isCollapsed: boolean,
   ) => void;
   pdfDocument: PdfDocumentProxy;
   pinnedTranslationCards: PinnedTranslationCard[];
@@ -2041,6 +2107,7 @@ const PdfPageView = memo(function PdfPageView({
             activeTranslationCardZIndex={activeTranslationCardZIndex}
             activeMobilePinnedCardKey={activeMobilePinnedCardKey}
             collapsedMobileSelectionKey={collapsedMobileSelectionKey}
+            collapsedTranslationCardKeys={collapsedTranslationCardKeys}
             emphasizedPinnedCardKey={emphasizedPinnedCardKey}
             isMobileViewport={isMobileViewport}
             locatedPinId={locatedPinId}
@@ -2062,6 +2129,7 @@ const PdfPageView = memo(function PdfPageView({
             onRevealPinnedTranslationCard={onRevealPinnedTranslationCard}
             onUndoQueuedSelection={onUndoQueuedSelection}
             onTranslationCardViewChange={onTranslationCardViewChange}
+            onTranslationCardCollapseChange={onTranslationCardCollapseChange}
             pageHeight={descriptor.height * renderScale}
             pageIndex={pageIndex}
             pageWidth={descriptor.width * renderScale}
@@ -2149,7 +2217,11 @@ function isSameSelectionTarget(
 }
 
 function createSelectionTargetKey(selection: SentenceSelection) {
-  return `${selection.pdfFingerprint}:${selection.pageIndex}:${selection.normalizedSentence}`;
+  return JSON.stringify({
+    normalizedSentence: selection.normalizedSentence,
+    pageIndex: selection.pageIndex,
+    pdfFingerprint: selection.pdfFingerprint,
+  });
 }
 
 function createCompositeCrossSelection(

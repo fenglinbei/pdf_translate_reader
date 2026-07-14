@@ -3289,6 +3289,83 @@ button {
   animation: translation-popover-reminder 1.45s ease-out;
 }
 
+.translation-popover-collapsed-bar {
+  display: none;
+}
+
+.translation-popover--collapsed {
+  grid-template-rows: auto;
+  width: min(300px, calc(100vw - 24px));
+  min-width: min(240px, calc(100vw - 24px));
+  max-width: min(320px, calc(100vw - 24px));
+  min-height: 0;
+  max-height: none;
+  gap: 0;
+  padding: 6px;
+}
+
+.translation-popover--collapsed > .translation-popover-resize-hook,
+.translation-popover--collapsed > .translation-popover-drag-handle,
+.translation-popover--collapsed > .translation-popover-toolbar,
+.translation-popover--collapsed > .translation-popover-content {
+  display: none;
+}
+
+.translation-popover--collapsed > .translation-popover-collapsed-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.translation-popover-collapsed-drag-area {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 2px 6px;
+  color: var(--text-muted);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.translation-popover-collapsed-drag-area:active {
+  cursor: grabbing;
+}
+
+.translation-popover-collapsed-copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.translation-popover-collapsed-label {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 760;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.translation-popover-collapsed-preview {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.translation-popover-collapsed-actions {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
 @keyframes translation-popover-reminder {
   0% {
     border-color: rgba(37, 99, 235, 0.78);

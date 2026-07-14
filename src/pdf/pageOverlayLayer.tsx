@@ -49,6 +49,7 @@ type PageOverlayLayerProps = {
   activeMobilePinnedCardKey?: string;
   activeTranslationCardZIndex: number;
   collapsedMobileSelectionKey?: string;
+  collapsedTranslationCardKeys: ReadonlySet<string>;
   copyNotice?: string;
   copySelection?: SentenceSelection;
   draftSelection?: SentenceSelection;
@@ -86,6 +87,10 @@ type PageOverlayLayerProps = {
     viewChange: TranslationCardViewChange,
     options?: TranslationCardViewChangeOptions,
   ) => void;
+  onTranslationCardCollapseChange: (
+    selection: SentenceSelection,
+    isCollapsed: boolean,
+  ) => void;
   pageHeight: number;
   pageIndex: number;
   pageWidth: number;
@@ -103,6 +108,7 @@ export function PageOverlayLayer({
   activeMobilePinnedCardKey,
   activeTranslationCardZIndex,
   collapsedMobileSelectionKey,
+  collapsedTranslationCardKeys,
   copyNotice,
   copySelection,
   draftSelection,
@@ -127,6 +133,7 @@ export function PageOverlayLayer({
   onConfirmQueuedSelections,
   onUndoQueuedSelection,
   onTranslationCardViewChange,
+  onTranslationCardCollapseChange,
   pageHeight,
   pageIndex,
   pageWidth,
@@ -569,6 +576,9 @@ export function PageOverlayLayer({
               annotationColor={selectionPin?.color}
               annotationNote={selectionPin?.note}
               isCardPinned={Boolean(activePinnedCard)}
+              isCollapsed={
+                !isMobileViewport && collapsedTranslationCardKeys.has(createPinTargetKey(selection))
+              }
               isEmphasized={Boolean(activePinnedCard && activePinnedCard.key === emphasizedPinnedCardKey)}
               isFavorited={selectionPinned}
               onActivate={() => onActivateTranslationCard(selection)}
@@ -594,7 +604,12 @@ export function PageOverlayLayer({
               onCollapse={
                 isMobileViewport
                   ? () => onCollapseMobileTranslationCard(selection, Boolean(activePinnedCard))
-                  : undefined
+                  : () => onTranslationCardCollapseChange(selection, true)
+              }
+              onExpand={
+                isMobileViewport
+                  ? undefined
+                  : () => onTranslationCardCollapseChange(selection, false)
               }
               onClose={() => onCloseTranslationCard(selection)}
               onFavorite={(payload, action) =>
@@ -692,6 +707,7 @@ export function PageOverlayLayer({
                     annotationNote={cardPin?.note}
                     autoTranslate={false}
                     isCardPinned={true}
+                    isCollapsed={!isMobileViewport && collapsedTranslationCardKeys.has(card.key)}
                     isEmphasized={card.key === emphasizedPinnedCardKey}
                     isFavorited={Boolean(cardPin)}
                     onActivate={() => onActivateTranslationCard(cardSelection)}
@@ -717,7 +733,12 @@ export function PageOverlayLayer({
                     onCollapse={
                       isMobileViewport
                         ? () => onCollapseMobileTranslationCard(cardSelection, true)
-                        : undefined
+                        : () => onTranslationCardCollapseChange(cardSelection, true)
+                    }
+                    onExpand={
+                      isMobileViewport
+                        ? undefined
+                        : () => onTranslationCardCollapseChange(cardSelection, false)
                     }
                     onClose={() => onCloseTranslationCard(cardSelection)}
                     onFavorite={(payload, action) =>

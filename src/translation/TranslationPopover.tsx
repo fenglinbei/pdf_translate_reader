@@ -1,4 +1,16 @@
-import { Bookmark, Check, ChevronDown, Pin, RefreshCw, StickyNote, X, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  Bookmark,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Languages,
+  Pin,
+  RefreshCw,
+  StickyNote,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 import type { CSSProperties, KeyboardEvent, MouseEvent, PointerEvent, TouchEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -55,6 +67,7 @@ type TranslationPopoverProps = {
   annotationNote?: string;
   autoTranslate?: boolean;
   isCardPinned?: boolean;
+  isCollapsed?: boolean;
   isEmphasized?: boolean;
   isFavorited?: boolean;
   onActivate?: () => void;
@@ -65,6 +78,7 @@ type TranslationPopoverProps = {
   onCardPin?: (view: FloatingTranslationCardView) => void;
   onClose: () => void;
   onCollapse?: () => void;
+  onExpand?: () => void;
   onFavorite?: (
     payload: TranslationPinPayload,
     action: TranslationFavoriteAction,
@@ -131,6 +145,7 @@ export function TranslationPopover({
   annotationNote,
   autoTranslate = true,
   isCardPinned = false,
+  isCollapsed = false,
   isEmphasized = false,
   isFavorited = false,
   onActivate,
@@ -138,6 +153,7 @@ export function TranslationPopover({
   onCardPin,
   onClose,
   onCollapse,
+  onExpand,
   onFavorite,
   onTranslationComplete,
   onViewChange,
@@ -259,6 +275,7 @@ export function TranslationPopover({
     status === "success" &&
     translation.trim().length > 0 &&
     annotationStatus !== "saving";
+  const collapsedPreview = translation.trim() || selection.targetSentence.trim();
 
   useEffect(() => {
     onFavoriteRef.current = onFavorite;
@@ -829,7 +846,7 @@ export function TranslationPopover({
   const popoverStyle = useMemo(
     () => ({
       ...(isMobileSheet ? undefined : style),
-      ...(popoverSize && !isMobileSheet
+      ...(popoverSize && !isMobileSheet && !isCollapsed
         ? {
             height: popoverSize.height,
             maxWidth: POPOVER_MAX_WIDTH,
@@ -845,13 +862,24 @@ export function TranslationPopover({
           ? { zIndex }
           : undefined),
     }),
-    [dragOffset.x, dragOffset.y, isMobileSheet, mobileSheetHeight, popoverSize, style, zIndex],
+    [
+      dragOffset.x,
+      dragOffset.y,
+      isCollapsed,
+      isMobileSheet,
+      mobileSheetHeight,
+      popoverSize,
+      style,
+      zIndex,
+    ],
   );
 
   const popover = (
     <div
       className={`translation-popover translation-popover--${placement} ${
         isMobileSheet ? "translation-popover--mobile-sheet" : ""
+      } ${
+        isCollapsed ? "translation-popover--collapsed" : ""
       } ${
         isEmphasized ? "translation-popover--emphasized" : ""
       }`}
@@ -865,6 +893,47 @@ export function TranslationPopover({
       onTouchEnd={stopEvent}
       style={popoverStyle}
     >
+      <div className="translation-popover-collapsed-bar">
+        <div
+          className="translation-popover-collapsed-drag-area"
+          onPointerCancel={handleDragEnd}
+          onPointerDown={handleDragStart}
+          onPointerMove={handleDragMove}
+          onPointerUp={handleDragEnd}
+          title={t("translation.dragToMove")}
+        >
+          <Languages aria-hidden="true" size={16} strokeWidth={2} />
+          <div className="translation-popover-collapsed-copy">
+            <span className="translation-popover-collapsed-label">{t("translation.title")}</span>
+            <span className="translation-popover-collapsed-preview" title={collapsedPreview}>
+              {collapsedPreview}
+            </span>
+          </div>
+        </div>
+        <div className="translation-popover-collapsed-actions">
+          {onExpand ? (
+            <button
+              aria-expanded="false"
+              aria-label={t("translation.expandCard")}
+              className="icon-button icon-button--small pinned-translation-card-action translation-popover-action"
+              onClick={onExpand}
+              title={t("translation.expand")}
+              type="button"
+            >
+              <ChevronDown aria-hidden="true" size={16} strokeWidth={2} />
+            </button>
+          ) : null}
+          <button
+            aria-label={t("common.close")}
+            className="icon-button icon-button--small pinned-translation-card-action translation-popover-action"
+            onClick={onClose}
+            title={t("common.close")}
+            type="button"
+          >
+            <X aria-hidden="true" size={16} strokeWidth={2} />
+          </button>
+        </div>
+      </div>
       {!isMobileSheet ? (
         <button
           aria-label={t("translation.resizeBox")}
@@ -969,15 +1038,20 @@ export function TranslationPopover({
           >
             <RefreshCw aria-hidden="true" size={16} strokeWidth={2} />
           </button>
-          {isMobileSheet && onCollapse ? (
+          {onCollapse ? (
             <button
+              aria-expanded="true"
               aria-label={t("translation.collapseCard")}
               className="icon-button icon-button--small pinned-translation-card-action translation-popover-action"
               onClick={onCollapse}
               title={t("translation.collapse")}
               type="button"
             >
-              <ChevronDown aria-hidden="true" size={16} strokeWidth={2} />
+              {isMobileSheet ? (
+                <ChevronDown aria-hidden="true" size={16} strokeWidth={2} />
+              ) : (
+                <ChevronUp aria-hidden="true" size={16} strokeWidth={2} />
+              )}
             </button>
           ) : null}
           <button
