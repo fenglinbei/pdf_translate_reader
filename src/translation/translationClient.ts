@@ -45,7 +45,8 @@ export async function streamTranslation(
       throw new Error("Translation stream is missing.");
     }
 
-    await readEventStream(response.body, handlers);
+    requestSignal.touch();
+    await readEventStream(response.body, handlers, requestSignal.touch);
   } catch (error) {
     if (requestSignal.timedOut()) {
       throw new TranslationTimeoutError();
@@ -68,12 +69,33 @@ function isNetworkFetchError(error: unknown) {
 function createTimeoutSignal(parentSignal?: AbortSignal) {
   const abortController = new AbortController();
   let timedOut = false;
-  const timeoutId = window.setTimeout(() => {
-    timedOut = true;
-    abortController.abort();
-  }, PROJECT_CONFIG.api.translationTimeoutMs);
+  let timeoutId: number | undefined;
+
+  function scheduleTimeout() {
+    if (abortController.signal.aborted) {
+      return;
+    }
+
+    if (timeoutId !== undefined) {
+      window.clearTimeout(timeoutId);
+    }
+
+    timeoutId = window.setTimeout(() => {
+      if (abortController.signal.aborted) {
+        return;
+      }
+
+      timedOut = true;
+      abortController.abort();
+    }, PROJECT_CONFIG.api.translationTimeoutMs);
+  }
 
   function handleParentAbort() {
+    if (timeoutId !== undefined) {
+      window.clearTimeout(timeoutId);
+      timeoutId = undefined;
+    }
+
     abortController.abort();
   }
 
@@ -81,27 +103,34 @@ function createTimeoutSignal(parentSignal?: AbortSignal) {
     abortController.abort();
   } else {
     parentSignal?.addEventListener("abort", handleParentAbort, { once: true });
+    scheduleTimeout();
   }
 
   return {
     dispose: () => {
-      window.clearTimeout(timeoutId);
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
       parentSignal?.removeEventListener("abort", handleParentAbort);
     },
     signal: abortController.signal,
     timedOut: () => timedOut,
+    touch: scheduleTimeout,
   };
 }
 
 async function readEventStream(
   stream: ReadableStream<Uint8Array>,
   handlers: TranslationStreamHandlers,
+  onActivity: () => void,
 ) {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let eventName = "message";
   let dataLines: string[] = [];
+  let finishReason: string | undefined;
+  let receivedDone = false;
 
   function dispatchEvent() {
     if (dataLines.length === 0) {
@@ -118,7 +147,14 @@ async function readEventStream(
     } else if (eventName === "meta") {
       handlers.onMeta?.(payload);
     } else if (eventName === "finish" && typeof payload.finishReason === "string") {
+      finishReason = payload.finishReason;
       handlers.onFinish?.(payload.finishReason);
+    } else if (eventName === "done") {
+      if (finishReason && finishReason !== "stop") {
+        throw new Error(`Translation stopped before completion (${finishReason}).`);
+      }
+
+      receivedDone = true;
     } else if (eventName === "error") {
       throw new Error(getStreamErrorMessage(payload));
     }
@@ -134,6 +170,7 @@ async function readEventStream(
       break;
     }
 
+    onActivity();
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split(/\r?\n/);
     buffer = lines.pop() ?? "";
@@ -149,6 +186,8 @@ async function readEventStream(
     }
   }
 
+  buffer += decoder.decode();
+
   if (buffer.trim()) {
     for (const line of buffer.split(/\r?\n/)) {
       if (line.startsWith("event:")) {
@@ -160,6 +199,10 @@ async function readEventStream(
   }
 
   dispatchEvent();
+
+  if (!receivedDone) {
+    throw new Error("Translation stream ended unexpectedly.");
+  }
 }
 
 function getStreamErrorMessage(payload: unknown) {
@@ -168,17 +211,11 @@ function getStreamErrorMessage(payload: unknown) {
   }
 
   const errorPayload = payload as { code?: unknown; message?: unknown };
+  const errorCode = typeof errorPayload.code === "string" ? errorPayload.code : undefined;
+  const providerMessage = getProviderErrorMessage(errorCode);
 
-  if (errorPayload.code === "deepseek_rate_limited") {
-    return "DeepSeek rate limit or quota was reached. Wait a moment, then try again.";
-  }
-
-  if (errorPayload.code === "deepseek_auth_error" || errorPayload.code === "deepseek_api_key_missing") {
-    return "DeepSeek API key is missing or invalid. Check the local API configuration.";
-  }
-
-  if (errorPayload.code === "deepseek_network_error") {
-    return "Network connection failed. Check the API proxy and internet connection.";
+  if (providerMessage) {
+    return providerMessage;
   }
 
   return typeof errorPayload.message === "string" ? errorPayload.message : "Translation failed.";
@@ -188,17 +225,10 @@ async function readErrorMessage(response: Response) {
   try {
     const payload = await response.json();
     const errorCode = typeof payload?.error?.code === "string" ? payload.error.code : undefined;
+    const providerMessage = getProviderErrorMessage(errorCode);
 
-    if (errorCode === "deepseek_rate_limited") {
-      return "DeepSeek rate limit or quota was reached. Wait a moment, then try again.";
-    }
-
-    if (errorCode === "deepseek_auth_error" || errorCode === "deepseek_api_key_missing") {
-      return "DeepSeek API key is missing or invalid. Check the local API configuration.";
-    }
-
-    if (errorCode === "deepseek_network_error") {
-      return "Network connection failed. Check the API proxy and internet connection.";
+    if (providerMessage) {
+      return providerMessage;
     }
 
     if (typeof payload?.error?.message === "string") {
@@ -209,4 +239,32 @@ async function readErrorMessage(response: Response) {
   }
 
   return response.statusText || `Request failed with status ${response.status}`;
+}
+
+function getProviderErrorMessage(errorCode?: string) {
+  if (!errorCode) {
+    return undefined;
+  }
+
+  const providerName = errorCode.startsWith("glm_")
+    ? "GLM"
+    : errorCode.startsWith("kimi_")
+      ? "Kimi"
+      : errorCode.startsWith("deepseek_")
+        ? "DeepSeek"
+        : "Translation provider";
+
+  if (errorCode.endsWith("_rate_limited")) {
+    return `${providerName} rate limit or quota was reached. Wait a moment, then try again.`;
+  }
+
+  if (errorCode.endsWith("_auth_error") || errorCode.endsWith("_api_key_missing")) {
+    return `${providerName} API key is missing or invalid. Check the local API configuration.`;
+  }
+
+  if (errorCode.endsWith("_network_error")) {
+    return "Network connection failed. Check the API proxy and internet connection.";
+  }
+
+  return undefined;
 }

@@ -11,6 +11,7 @@
     "deploy:linux:nginx": "bash scripts/deploy-linux-nginx.sh",
     "preview": "vite preview --host 0.0.0.0",
     "test:qa": "node --test tests/qa/*.test.mjs",
+    "test:translation": "node --test tests/translation/*.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

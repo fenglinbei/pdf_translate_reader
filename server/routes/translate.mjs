@@ -1,12 +1,12 @@
-import {
-  createDeepSeekChatStream,
-  DEFAULT_DEEPSEEK_MODEL,
-  DEEPSEEK_MODELS,
-  DeepSeekClientError,
-} from "../deepseek/client.mjs";
 import { normalizeTranslationLanguagePair } from "../deepseek/languages.mjs";
 import { buildTranslationMessages, TRANSLATION_PROMPT_VERSION } from "../deepseek/prompt.mjs";
 import { writeJson } from "../http/json.mjs";
+import {
+  createTranslationChatStream,
+  normalizeTranslationModel,
+  TRANSLATION_MODELS,
+  TranslationModelError,
+} from "../translationModels/client.mjs";
 
 const MAX_REQUEST_BYTES = 256 * 1024;
 
@@ -27,14 +27,22 @@ export async function handleTranslateStream(request, response) {
   }
 
   const abortController = new AbortController();
-  const model = normalizeModel(requestBody.model);
+  const model = normalizeTranslationModel(requestBody.model);
+  const handleResponseClose = () => {
+    if (!response.writableEnded) {
+      abortController.abort();
+    }
+  };
 
-  request.on("close", () => {
-    abortController.abort();
-  });
+  response.once("close", handleResponseClose);
+
+  if (response.destroyed || response.writableEnded) {
+    response.off("close", handleResponseClose);
+    return;
+  }
 
   try {
-    const upstreamStream = await createDeepSeekChatStream({
+    const upstreamStream = await createTranslationChatStream({
       messages: buildTranslationMessages(requestBody),
       model,
       signal: abortController.signal,
@@ -46,12 +54,14 @@ export async function handleTranslateStream(request, response) {
       promptVersion: TRANSLATION_PROMPT_VERSION,
     });
 
-    await pipeDeepSeekStream(upstreamStream, response);
+    await pipeOpenAiCompatibleStream(upstreamStream, response);
     writeSse(response, "done", {});
     response.end();
   } catch (error) {
     if (abortController.signal.aborted) {
-      response.end();
+      if (!response.writableEnded && !response.destroyed) {
+        response.end();
+      }
       return;
     }
 
@@ -65,12 +75,15 @@ export async function handleTranslateStream(request, response) {
     writeJson(response, getErrorStatusCode(error), {
       error: serializedError,
     });
+  } finally {
+    response.off("close", handleResponseClose);
   }
 }
 
-async function pipeDeepSeekStream(upstreamStream, response) {
+async function pipeOpenAiCompatibleStream(upstreamStream, response) {
   const reader = upstreamStream.getReader();
   const decoder = new TextDecoder();
+  const streamState = { lastHeartbeatAt: 0 };
   let buffer = "";
 
   while (true) {
@@ -85,41 +98,90 @@ async function pipeDeepSeekStream(upstreamStream, response) {
     buffer = lines.pop() ?? "";
 
     for (const line of lines) {
-      processDeepSeekSseLine(line, response);
+      if (processOpenAiCompatibleSseLine(line, response, streamState)) {
+        await reader.cancel().catch(() => undefined);
+        return;
+      }
     }
   }
 
+  buffer += decoder.decode();
+
   if (buffer.trim()) {
-    processDeepSeekSseLine(buffer, response);
+    if (processOpenAiCompatibleSseLine(buffer, response, streamState)) {
+      return;
+    }
   }
+
+  throw new TranslationModelError(
+    502,
+    "translation_stream_incomplete",
+    "Translation provider stream ended before its completion marker.",
+  );
 }
 
-function processDeepSeekSseLine(line, response) {
+function processOpenAiCompatibleSseLine(line, response, streamState) {
   if (!line.startsWith("data:")) {
-    return;
+    return false;
   }
 
   const data = line.slice("data:".length).trim();
 
-  if (!data || data === "[DONE]") {
-    return;
+  if (!data) {
+    return false;
+  }
+
+  if (data === "[DONE]") {
+    return true;
   }
 
   const chunk = JSON.parse(data);
+
+  if (chunk?.error) {
+    throw new TranslationModelError(
+      502,
+      "translation_upstream_stream_error",
+      typeof chunk.error.message === "string"
+        ? chunk.error.message
+        : "Translation provider returned a stream error.",
+    );
+  }
+
+  const reasoningContent = chunk.choices?.[0]?.delta?.reasoning_content;
   const content = chunk.choices?.[0]?.delta?.content;
   const finishReason = chunk.choices?.[0]?.finish_reason;
+  const usage = chunk.usage ?? chunk.choices?.[0]?.usage;
+
+  if (
+    typeof reasoningContent === "string" &&
+    reasoningContent.length > 0 &&
+    Date.now() - streamState.lastHeartbeatAt >= 5_000
+  ) {
+    writeSse(response, "heartbeat", {});
+    streamState.lastHeartbeatAt = Date.now();
+  }
 
   if (typeof content === "string" && content.length > 0) {
     writeSse(response, "delta", { text: content });
   }
 
-  if (chunk.usage) {
-    writeSse(response, "usage", normalizeUsage(chunk.usage));
+  if (usage) {
+    writeSse(response, "usage", normalizeUsage(usage));
   }
 
   if (finishReason) {
     writeSse(response, "finish", { finishReason });
+
+    if (finishReason !== "stop") {
+      throw new TranslationModelError(
+        502,
+        "translation_stream_truncated",
+        `Translation stopped before completion (${finishReason}).`,
+      );
+    }
   }
+
+  return false;
 }
 
 function normalizeTranslationRequest(body) {
@@ -136,7 +198,7 @@ function normalizeTranslationRequest(body) {
     body.targetLang,
   );
 
-  if (body.model && !DEEPSEEK_MODELS.has(body.model)) {
+  if (body.model && !TRANSLATION_MODELS.has(body.model)) {
     throw new Error(`Unsupported model: ${body.model}`);
   }
 
@@ -201,18 +263,38 @@ function cleanOptionalText(value, maxLength) {
   return text ? text.slice(0, maxLength).trim() : undefined;
 }
 
-function normalizeModel(model) {
-  return DEEPSEEK_MODELS.has(model) ? model : DEFAULT_DEEPSEEK_MODEL;
+function normalizeUsage(usage) {
+  const promptTokens = normalizeNumber(usage.prompt_tokens ?? usage.promptTokens);
+  const promptCacheHitTokens = normalizeNumber(
+    usage.prompt_cache_hit_tokens ??
+      usage.promptCacheHitTokens ??
+      usage.cached_tokens ??
+      usage.cachedTokens ??
+      usage.prompt_tokens_details?.cached_tokens ??
+      usage.promptTokensDetails?.cachedTokens,
+  ) ?? (promptTokens === undefined ? undefined : 0);
+  const explicitPromptCacheMissTokens = normalizeNumber(
+    usage.prompt_cache_miss_tokens ??
+      usage.promptCacheMissTokens ??
+      usage.prompt_tokens_details?.cache_miss_tokens ??
+      usage.promptTokensDetails?.cacheMissTokens,
+  );
+
+  return {
+    completionTokens: normalizeNumber(usage.completion_tokens ?? usage.completionTokens),
+    promptCacheHitTokens,
+    promptCacheMissTokens: explicitPromptCacheMissTokens ?? (
+      promptTokens === undefined || promptCacheHitTokens === undefined
+        ? undefined
+        : Math.max(0, promptTokens - promptCacheHitTokens)
+    ),
+    promptTokens,
+    totalTokens: normalizeNumber(usage.total_tokens ?? usage.totalTokens),
+  };
 }
 
-function normalizeUsage(usage) {
-  return {
-    completionTokens: usage.completion_tokens,
-    promptCacheHitTokens: usage.prompt_cache_hit_tokens,
-    promptCacheMissTokens: usage.prompt_cache_miss_tokens,
-    promptTokens: usage.prompt_tokens,
-    totalTokens: usage.total_tokens,
-  };
+function normalizeNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function writeSseHeaders(response) {
@@ -229,7 +311,7 @@ function writeSse(response, eventName, payload) {
 }
 
 function serializeError(error) {
-  if (error instanceof DeepSeekClientError) {
+  if (error instanceof TranslationModelError) {
     return {
       code: error.code,
       message: error.message,
@@ -243,7 +325,7 @@ function serializeError(error) {
 }
 
 function getErrorStatusCode(error) {
-  return error instanceof DeepSeekClientError ? error.statusCode : 500;
+  return error instanceof TranslationModelError ? error.statusCode : 500;
 }
 
 async function readJsonBody(request) {

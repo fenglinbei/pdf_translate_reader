@@ -14,6 +14,17 @@ export function handleHealth(response) {
     deepseek: {
       apiKeyConfigured: deepseek.apiKeyConfigured,
     },
+    translation: {
+      deepseek: {
+        apiKeyConfigured: deepseek.apiKeyConfigured,
+      },
+      glm: {
+        apiKeyConfigured: Boolean(process.env.GLM_API_KEY),
+      },
+      kimi: {
+        apiKeyConfigured: Boolean(process.env.KIMI_API_KEY),
+      },
+    },
     embedding: {
       configured: embedding.configured,
       dimensions: embedding.dimensions,

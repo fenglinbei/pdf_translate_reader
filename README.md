@@ -19,9 +19,10 @@ Required environment:
 - Node.js 18.20+; Node.js 20 or 22 LTS is recommended.
 - npm 10+.
 - A modern browser with PDF.js worker, IndexedDB, and streaming `fetch` support.
-- Network access from the API proxy to `https://api.deepseek.com`, unless
-  `DEEPSEEK_API_BASE_URL` points to another compatible endpoint.
-- `DEEPSEEK_API_KEY` configured in `.env.local` or the process environment.
+- Network access from the API proxy to the configured DeepSeek, GLM, or Kimi
+  endpoint for each translation model that users can select.
+- `DEEPSEEK_API_KEY`, `GLM_API_KEY`, and/or `KIMI_API_KEY` configured in
+  `.env.local` or the process environment for the translation models in use.
 - A Supabase project with Auth, Postgres, and Storage configured from
   `supabase/schema.sql`.
 - Linux one-command nginx deployment additionally requires nginx, systemd, and
@@ -52,7 +53,7 @@ Production deployment has two parts:
 
 1. Build and serve the static frontend from `dist/`.
 2. Run `server/index.mjs` as the API proxy so the browser never receives the
-   DeepSeek API key.
+   provider API keys.
 
 The frontend calls `/api/*`. In production, configure the static server or
 reverse proxy so `/api` is forwarded to the Node.js API proxy.
@@ -74,6 +75,8 @@ Edit `.env.local` and set:
 
 ```powershell
 DEEPSEEK_API_KEY=your_key_here
+GLM_API_KEY=your_glm_key_here
+KIMI_API_KEY=your_kimi_key_here
 PORT=8787
 VITE_API_BASE_URL=/api
 VITE_API_PROXY_TARGET=http://localhost:8787
@@ -120,6 +123,8 @@ Edit `.env.local`:
 
 ```bash
 DEEPSEEK_API_KEY=your_key_here
+GLM_API_KEY=your_glm_key_here
+KIMI_API_KEY=your_kimi_key_here
 PORT=8787
 VITE_API_BASE_URL=/api
 VITE_API_PROXY_TARGET=http://localhost:8787
@@ -127,6 +132,15 @@ VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 ```
+
+Selection translation and free translation support `deepseek-v4-flash`,
+`deepseek-v4-pro`, `glm-5.2`, and `kimi-k3`. GLM defaults to
+`https://open.bigmodel.cn/api/paas/v4`. Kimi defaults to the China-region
+`https://api.moonshot.cn/v1`; set `KIMI_API_BASE_URL=https://api.moonshot.ai/v1`
+when using an international-platform key because China and international keys
+are not interchangeable. Optional output limits are
+`GLM_TRANSLATION_MAX_TOKENS` and
+`KIMI_TRANSLATION_MAX_COMPLETION_TOKENS`, both defaulting to `16384`.
 
 ## Supabase setup
 
@@ -381,6 +395,8 @@ Edit `.env.local`:
 
 ```bash
 DEEPSEEK_API_KEY=your_key_here
+GLM_API_KEY=your_glm_key_here
+KIMI_API_KEY=your_kimi_key_here
 PORT=8787
 VITE_API_BASE_URL=/api
 VITE_API_PROXY_TARGET=http://localhost:8787

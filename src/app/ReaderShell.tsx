@@ -2534,7 +2534,6 @@ export function ReaderShell() {
 
       {isSettingsOpen ? (
         <SettingsPanel
-          apiKeyConfigured={health.status === "ok" ? health.data.deepseek.apiKeyConfigured : undefined}
           apiStatus={apiStatus}
           currentEntry={currentEntry}
           libraryEntries={libraryEntries}
@@ -2548,6 +2547,7 @@ export function ReaderShell() {
           paperContext={paperContext}
           settings={settings}
           supabaseConfigured={health.status === "ok" ? health.data.supabase.configured : undefined}
+          translationProviders={health.status === "ok" ? health.data.translation : undefined}
         />
       ) : null}
 

@@ -4,6 +4,17 @@ export type ApiHealth = {
   deepseek: {
     apiKeyConfigured: boolean;
   };
+  translation?: {
+    deepseek: {
+      apiKeyConfigured: boolean;
+    };
+    glm: {
+      apiKeyConfigured: boolean;
+    };
+    kimi: {
+      apiKeyConfigured: boolean;
+    };
+  };
   embedding?: {
     configured: boolean;
     dimensions: number;

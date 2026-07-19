@@ -28,6 +28,7 @@ import type {
 import { putApiCallLog } from "./apiLogRepository";
 import { TRANSLATION_PROMPT_VERSION } from "./defaults";
 import { getTranslationErrorMessage } from "./errors";
+import { TRANSLATION_MODEL_OPTIONS } from "./models";
 import { RichMathText } from "./RichMathText";
 import { streamTranslation } from "./translationClient";
 import {
@@ -368,8 +369,9 @@ export function FreeTranslationPanel({
                 value={model}
                 onChange={(event) => setModel(event.currentTarget.value as TranslationModel)}
               >
-                <option value="deepseek-v4-flash">DeepSeek V4 Flash</option>
-                <option value="deepseek-v4-pro">DeepSeek V4 Pro</option>
+                {TRANSLATION_MODEL_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
               </select>
             </label>
             <label className="settings-toggle">

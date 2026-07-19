@@ -38,6 +38,7 @@ import {
   type PinAnnotationInput,
 } from "./pinRepository";
 import { putApiCallLog } from "../translation/apiLogRepository";
+import { getTranslationModelShortLabel } from "../translation/models";
 import { getTranslationErrorMessage } from "../translation/errors";
 import { RichMathText } from "../translation/RichMathText";
 import { getEffectiveTranslationStyle } from "../translation/translationStyle";
@@ -838,7 +839,7 @@ export function PinnedTranslationsPanel({
 }
 
 function getModelLabel(model: TranslationPin["model"]) {
-  return model === "deepseek-v4-pro" ? "Pro" : "Flash";
+  return getTranslationModelShortLabel(model);
 }
 
 function getAnnotationDraft(pin: TranslationPin): AnnotationDraft {

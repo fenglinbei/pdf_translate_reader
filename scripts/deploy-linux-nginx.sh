@@ -140,18 +140,25 @@ cd "$APP_DIR"
 if [[ ! -f "$ENV_FILE" ]]; then
   if [[ -f ".env.local.example" ]]; then
     cp ".env.local.example" "$ENV_FILE"
-    die "Created ${ENV_FILE}. Edit it and set DEEPSEEK_API_KEY, then rerun this script."
+    die "Created ${ENV_FILE}. Edit it and set at least one translation provider API key, then rerun this script."
   fi
 
-  die "Missing ${ENV_FILE}. Create it and set DEEPSEEK_API_KEY."
+  die "Missing ${ENV_FILE}. Create it and set at least one translation provider API key."
 fi
 
-if ! grep -Eq '^DEEPSEEK_API_KEY=.+[^[:space:]]' "$ENV_FILE"; then
-  die "${ENV_FILE} must contain DEEPSEEK_API_KEY."
-fi
+has_configured_api_key() {
+  local key_name="$1"
+  local key_value
 
-if grep -Eq '^DEEPSEEK_API_KEY=replace_with_your_deepseek_api_key' "$ENV_FILE"; then
-  die "${ENV_FILE} still contains the placeholder DEEPSEEK_API_KEY."
+  key_value="$(sed -n "s/^${key_name}=//p" "$ENV_FILE" | tail -n 1)"
+
+  [[ -n "${key_value//[[:space:]]/}" && "$key_value" != replace_with_* ]]
+}
+
+if ! has_configured_api_key DEEPSEEK_API_KEY &&
+   ! has_configured_api_key GLM_API_KEY &&
+   ! has_configured_api_key KIMI_API_KEY; then
+  die "${ENV_FILE} must contain at least one configured DEEPSEEK_API_KEY, GLM_API_KEY, or KIMI_API_KEY."
 fi
 
 if [[ "$HTTPS_MODE" == "local" ]]; then

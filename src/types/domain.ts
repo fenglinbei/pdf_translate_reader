@@ -1,7 +1,11 @@
 import type { TranslationLanguage } from "../config/translationLanguages";
 import type { UiLocale } from "../i18n/uiLocales";
 
-export type TranslationModel = "deepseek-v4-flash" | "deepseek-v4-pro";
+export type TranslationModel =
+  | "deepseek-v4-flash"
+  | "deepseek-v4-pro"
+  | "glm-5.2"
+  | "kimi-k3";
 export type SelectionMode = "continuous" | "cross";
 export type MobileInteractionMode = "pan" | "segmented";
 export type SourceLanguage = TranslationLanguage;

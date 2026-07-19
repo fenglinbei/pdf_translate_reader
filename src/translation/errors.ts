@@ -64,7 +64,7 @@ function normalizeTranslationErrorMessage(message: string) {
     lowerMessage.includes(" 429") ||
     lowerMessage.includes("quota")
   ) {
-    return "DeepSeek rate limit or quota was reached. Wait a moment, then try again.";
+    return "Translation provider rate limit or quota was reached. Wait a moment, then try again.";
   }
 
   if (
@@ -78,7 +78,7 @@ function normalizeTranslationErrorMessage(message: string) {
   }
 
   if (lowerMessage.includes("api key") || lowerMessage.includes("unauthorized") || lowerMessage.includes(" 401")) {
-    return "DeepSeek API key is missing or invalid. Check the local API configuration.";
+    return "Translation provider API key is missing or invalid. Check the local API configuration.";
   }
 
   return normalizedMessage;

@@ -10,6 +10,7 @@ import {
   normalizeTranslationLanguagePair,
 } from "../config/translationLanguages";
 import { detectBrowserUiLocale, normalizeUiLocale } from "../i18n/uiLocales";
+import { isTranslationModel } from "../translation/models";
 import type {
   ApiCallLog,
   AppSettings,
@@ -127,10 +128,9 @@ export function normalizeAppSettings(input: unknown): AppSettings {
   const contextWindowN = [0, 1, 2, 3, 5].includes(Number(value.contextWindowN))
     ? (Number(value.contextWindowN) as AppSettings["contextWindowN"])
     : DEFAULT_APP_SETTINGS.contextWindowN;
-  const defaultModel =
-    value.defaultModel === "deepseek-v4-pro" || value.defaultModel === "deepseek-v4-flash"
-      ? value.defaultModel
-      : DEFAULT_APP_SETTINGS.defaultModel;
+  const defaultModel = isTranslationModel(value.defaultModel)
+    ? value.defaultModel
+    : DEFAULT_APP_SETTINGS.defaultModel;
   const maxDraggedWords = clamp(
     Number(value.maxDraggedWords) || DEFAULT_APP_SETTINGS.maxDraggedWords,
     MIN_DRAGGED_WORDS_LIMIT,
@@ -187,6 +187,7 @@ function summarizeApiLogs(logs: ApiUsageLog[]): ApiUsageSummary {
       "deepseek-v4-flash": logs.filter((log) => log.model === "deepseek-v4-flash").length,
       "deepseek-v4-pro": logs.filter((log) => log.model === "deepseek-v4-pro").length,
       "glm-5.2": logs.filter((log) => log.model === "glm-5.2").length,
+      "kimi-k3": logs.filter((log) => log.model === "kimi-k3").length,
     },
     promptTokens: sum(logs, "promptTokens"),
     recentLogs,

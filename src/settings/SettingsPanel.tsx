@@ -6,6 +6,7 @@ import {
 } from "../config/translationLanguages";
 import { useI18n } from "../i18n/I18nProvider";
 import { UI_LOCALES, type UiLocale } from "../i18n/uiLocales";
+import type { ApiHealth } from "../server/types";
 import type {
   AppSettings,
   CloudPdfLibraryEntry,
@@ -15,6 +16,10 @@ import type {
 import { PaperContextEditor } from "./PaperContextEditor";
 import { API_LOGS_UPDATED_EVENT } from "../translation/apiLogRepository";
 import {
+  getTranslationModelShortLabel,
+  TRANSLATION_MODEL_OPTIONS,
+} from "../translation/models";
+import {
   getApiUsageSummary,
   MAX_DRAGGED_WORDS_LIMIT,
   MIN_DRAGGED_WORDS_LIMIT,
@@ -23,7 +28,6 @@ import {
 import type { PaperContextDraft } from "../translation/paperContext";
 
 type SettingsPanelProps = {
-  apiKeyConfigured?: boolean;
   apiStatus: "checking" | "offline" | "online";
   currentEntry?: PdfLibraryEntry;
   libraryEntries: CloudPdfLibraryEntry[];
@@ -37,6 +41,7 @@ type SettingsPanelProps = {
   paperContext?: PaperContextRecord;
   settings: AppSettings;
   supabaseConfigured?: boolean;
+  translationProviders?: NonNullable<ApiHealth["translation"]>;
 };
 
 type PendingAction =
@@ -55,6 +60,7 @@ const EMPTY_USAGE_SUMMARY: ApiUsageSummary = {
     "deepseek-v4-flash": 0,
     "deepseek-v4-pro": 0,
     "glm-5.2": 0,
+    "kimi-k3": 0,
   },
   promptTokens: 0,
   recentLogs: [],
@@ -64,7 +70,6 @@ const EMPTY_USAGE_SUMMARY: ApiUsageSummary = {
 };
 
 export function SettingsPanel({
-  apiKeyConfigured,
   apiStatus,
   currentEntry,
   libraryEntries,
@@ -78,6 +83,7 @@ export function SettingsPanel({
   paperContext,
   settings,
   supabaseConfigured,
+  translationProviders,
 }: SettingsPanelProps) {
   const { formatNumber: formatLocalizedNumber, t } = useI18n();
   const [pendingAction, setPendingAction] = useState<PendingAction>();
@@ -248,8 +254,9 @@ export function SettingsPanel({
                 })
               }
             >
-              <option value="deepseek-v4-flash">DeepSeek V4 Flash</option>
-              <option value="deepseek-v4-pro">DeepSeek V4 Pro</option>
+              {TRANSLATION_MODEL_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>{option.label}</option>
+              ))}
             </select>
           </label>
           <label className="settings-field">
@@ -350,10 +357,9 @@ export function SettingsPanel({
           <div className="settings-section-heading">{t("settings.api")}</div>
           <div className="settings-readout-list">
             <Readout label={t("settings.status")} value={apiStatus} />
-            <Readout
-              label={t("settings.apiKey")}
-              value={apiKeyConfigured === undefined ? "-" : apiKeyConfigured ? t("common.configured") : t("common.missing")}
-            />
+            <Readout label="DeepSeek" value={formatConfiguredStatus(translationProviders?.deepseek.apiKeyConfigured, t)} />
+            <Readout label="GLM" value={formatConfiguredStatus(translationProviders?.glm.apiKeyConfigured, t)} />
+            <Readout label="Kimi" value={formatConfiguredStatus(translationProviders?.kimi.apiKeyConfigured, t)} />
             <Readout
               label={t("settings.supabase")}
               value={supabaseConfigured === undefined ? "-" : supabaseConfigured ? t("common.configured") : t("common.missing")}
@@ -363,7 +369,7 @@ export function SettingsPanel({
             <Readout label={t("settings.tokens")} value={formatLocalizedNumber(usageSummary.totalTokens)} />
             <Readout
               label={t("settings.models")}
-              value={`F ${usageSummary.modelCounts["deepseek-v4-flash"]} / P ${usageSummary.modelCounts["deepseek-v4-pro"]} / GLM ${usageSummary.modelCounts["glm-5.2"]}`}
+              value={`F ${usageSummary.modelCounts["deepseek-v4-flash"]} / P ${usageSummary.modelCounts["deepseek-v4-pro"]} / GLM ${usageSummary.modelCounts["glm-5.2"]} / K3 ${usageSummary.modelCounts["kimi-k3"]}`}
             />
             <Readout label={t("settings.dsCacheHit")} value={formatLocalizedNumber(usageSummary.cacheHitTokens)} />
             <Readout label={t("settings.dsCacheMiss")} value={formatLocalizedNumber(usageSummary.cacheMissTokens)} />
@@ -570,17 +576,16 @@ function formatDuration(log: { requestFinishedAt?: number; requestStartedAt: num
 }
 
 function formatModelShortLabel(model?: string) {
-  if (model === "deepseek-v4-pro") {
-    return "Pro";
-  }
+  return getTranslationModelShortLabel(model);
+}
 
-  if (model === "glm-5.2") {
-    return "GLM";
-  }
-
-  if (model === "deepseek-v4-flash") {
-    return "Flash";
-  }
-
-  return "-";
+function formatConfiguredStatus(
+  configured: boolean | undefined,
+  t: ReturnType<typeof useI18n>["t"],
+) {
+  return configured === undefined
+    ? "-"
+    : configured
+      ? t("common.configured")
+      : t("common.missing");
 }
