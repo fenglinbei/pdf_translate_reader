@@ -124,6 +124,8 @@ import { getStorageErrorMessage } from "../translation/errors";
 import { TRANSLATION_PROMPT_VERSION } from "../translation/defaults";
 import { getEffectiveTranslationStyle } from "../translation/translationStyle";
 import { runMathpixParsePipeline } from "../mathpix/mathpixPipeline";
+import { reconcileMathpixCache } from "../mathpix/mathpixCacheReconciliation";
+import { shouldAutoStartMathpix } from "../mathpix/mathpixAutoStart";
 import {
   syncCloudMathpixDocumentRecord,
   uploadCompletedCloudMathpixCache,
@@ -147,6 +149,10 @@ type PaneResizeState = {
   pane: "library" | "pins";
   startWidth: number;
   startX: number;
+};
+type MathpixPipelineTask = {
+  abortController: AbortController;
+  promise?: Promise<unknown>;
 };
 type RightPaneTab = "annotations" | "ask";
 type MobilePanel = "library" | "pins" | "ask" | null;
@@ -178,6 +184,7 @@ const PINS_PANE_MIN_WIDTH = 300;
 const PINS_PANE_FULLSCREEN_DEFAULT_WIDTH = 760;
 const PINS_PANE_FULLSCREEN_MAX_WIDTH = 1100;
 const PINS_PANE_FULLSCREEN_MIN_WIDTH = 480;
+const MATHPIX_CLOUD_SYNC_RETRY_MS = 15_000;
 const TRANSLATION_CARD_BASE_Z_INDEX = 20;
 
 function getHighestTranslationCardZIndex(
@@ -495,6 +502,7 @@ export function ReaderShell() {
     TRANSLATION_CARD_BASE_Z_INDEX,
   );
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
+  const [areSettingsHydrated, setAreSettingsHydrated] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string>();
   const [isExporting, setIsExporting] = useState(false);
   const [cloudSyncMessage, setCloudSyncMessage] = useState("");
@@ -516,7 +524,13 @@ export function ReaderShell() {
   const activeFingerprintRef = useRef<string>();
   const autoRestoreUserIdRef = useRef<string>();
   const locateRequestIdRef = useRef(0);
+  const deletingPdfFingerprintsRef = useRef(new Set<string>());
   const mathpixAbortControllerRef = useRef<AbortController>();
+  const mathpixAutoStartedFingerprintRef = useRef<string>();
+  const mathpixPipelineTasksByFingerprintRef = useRef(
+    new Map<string, Set<MathpixPipelineTask>>(),
+  );
+  const mathpixReconcileAbortControllerRef = useRef<AbortController>();
   const paneResizeStateRef = useRef<PaneResizeState>();
   const pinPanelFocusRequestIdRef = useRef(0);
   const pinsRef = useRef<TranslationPin[]>([]);
@@ -579,12 +593,16 @@ export function ReaderShell() {
 
   useEffect(() => {
     activeFingerprintRef.current = activeFingerprint;
+    mathpixAutoStartedFingerprintRef.current = undefined;
+    setMathpixPipelineState("idle");
   }, [activeFingerprint]);
 
   useEffect(() => {
     return () => {
       mathpixAbortControllerRef.current?.abort();
       mathpixAbortControllerRef.current = undefined;
+      mathpixReconcileAbortControllerRef.current?.abort();
+      mathpixReconcileAbortControllerRef.current = undefined;
     };
   }, [activeFingerprint]);
 
@@ -611,6 +629,44 @@ export function ReaderShell() {
     mathpixParsedPagesRef.current = nextPages;
     setMathpixParsedPages(nextPages);
   }, []);
+
+  const applyMathpixResultPages = useCallback((entry: PdfLibraryEntry, pages: MathpixParsedPage[]) => {
+    if (entry.fingerprint !== activeFingerprintRef.current) {
+      return;
+    }
+
+    applyMathpixParsedPages(pages);
+
+    const pageTexts = pages
+      .slice(0, PROJECT_CONFIG.paperContext.maxScanPages)
+      .map((page) => page.pageText)
+      .filter((text) => text.trim().length > 0);
+
+    if (pageTexts.length === 0) {
+      return;
+    }
+
+    void updatePaperContextFromPageTexts({
+      fileName: entry.fileName,
+      metadataTitle: entry.pdfMetadata?.title,
+      pageTexts,
+      cloudDocumentId: entry.cloudDocumentId,
+      pdfFingerprint: entry.fingerprint,
+    })
+      .then((record) => {
+        if (record.pdfFingerprint !== activeFingerprintRef.current) {
+          return;
+        }
+
+        setPaperContext((currentRecord) =>
+          currentRecord?.pdfFingerprint === record.pdfFingerprint &&
+          currentRecord.contextHash === record.contextHash
+            ? currentRecord
+            : record,
+        );
+      })
+      .catch(() => undefined);
+  }, [applyMathpixParsedPages]);
 
   const updatePinnedTranslationCards = useCallback(
     (updater: (currentCards: PinnedTranslationCard[]) => PinnedTranslationCard[]) => {
@@ -825,12 +881,32 @@ export function ReaderShell() {
   }, [mobilePanel]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    setAreSettingsHydrated(false);
+    setSettings(DEFAULT_APP_SETTINGS);
+
     void getAppSettings()
-      .then(setSettings)
+      .then((loadedSettings) => {
+        if (!cancelled) {
+          setSettings(loadedSettings);
+        }
+      })
       .catch(() => {
-        setStatusMessage("Could not read saved settings.");
+        if (!cancelled) {
+          setStatusMessage("Could not read saved settings.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setAreSettingsHydrated(true);
+        }
       });
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [readerSessionUserId]);
 
   useEffect(() => {
     pinsRef.current = pins;
@@ -953,48 +1029,37 @@ export function ReaderShell() {
   ]);
 
   const handleStartMathpixParse = useCallback(() => {
-    if (!currentEntry || mathpixPipelineState === "running") {
+    if (
+      !currentEntry ||
+      mathpixPipelineState === "running" ||
+      mathpixAbortControllerRef.current ||
+      deletingPdfFingerprintsRef.current.has(currentEntry.fingerprint)
+    ) {
       return;
     }
 
     const abortController = new AbortController();
-    mathpixAbortControllerRef.current?.abort();
+    const pipelineTask: MathpixPipelineTask = { abortController };
+    const fingerprint = currentEntry.fingerprint;
+    const fingerprintTasks =
+      mathpixPipelineTasksByFingerprintRef.current.get(fingerprint) ?? new Set();
+
+    fingerprintTasks.add(pipelineTask);
+    mathpixPipelineTasksByFingerprintRef.current.set(fingerprint, fingerprintTasks);
+    mathpixAutoStartedFingerprintRef.current = currentEntry.fingerprint;
     mathpixAbortControllerRef.current = abortController;
     setMathpixPipelineState("running");
     setMathpixRuntimeError(undefined);
 
-    void runMathpixParsePipeline({
+    const pipelinePromise = runMathpixParsePipeline({
       entry: currentEntry,
+      expectedUserId: readerSessionUserId,
       onPages: (pages) => {
         if (abortController.signal.aborted || currentEntry.fingerprint !== activeFingerprintRef.current) {
           return;
         }
 
-        applyMathpixParsedPages(pages);
-
-        const pageTexts = pages
-          .slice(0, PROJECT_CONFIG.paperContext.maxScanPages)
-          .map((page) => page.pageText)
-          .filter((text) => text.trim().length > 0);
-
-        if (pageTexts.length > 0) {
-          void updatePaperContextFromPageTexts({
-            fileName: currentEntry.fileName,
-            metadataTitle: currentEntry.pdfMetadata?.title,
-            pageTexts,
-            cloudDocumentId: currentEntry.cloudDocumentId,
-            pdfFingerprint: currentEntry.fingerprint,
-          })
-            .then((record) => {
-              setPaperContext((currentRecord) =>
-                currentRecord?.pdfFingerprint === record.pdfFingerprint &&
-                currentRecord.contextHash === record.contextHash
-                  ? currentRecord
-                  : record,
-              );
-            })
-            .catch(() => undefined);
-        }
+        applyMathpixResultPages(currentEntry, pages);
       },
       onRecord: (record) => {
         if (abortController.signal.aborted || record.pdfFingerprint !== activeFingerprintRef.current) {
@@ -1022,18 +1087,158 @@ export function ReaderShell() {
         }
       })
       .finally(() => {
-        if (mathpixAbortControllerRef.current === abortController) {
+        const isActivePipeline = mathpixAbortControllerRef.current === abortController;
+
+        if (isActivePipeline) {
           mathpixAbortControllerRef.current = undefined;
         }
 
-        if (currentEntry.fingerprint === activeFingerprintRef.current) {
+        if (isActivePipeline && currentEntry.fingerprint === activeFingerprintRef.current) {
           setMathpixPipelineState("idle");
         }
+
+        const pendingTasks = mathpixPipelineTasksByFingerprintRef.current.get(fingerprint);
+
+        pendingTasks?.delete(pipelineTask);
+
+        if (pendingTasks?.size === 0) {
+          mathpixPipelineTasksByFingerprintRef.current.delete(fingerprint);
+        }
       });
+
+    pipelineTask.promise = pipelinePromise;
   }, [
-    applyMathpixParsedPages,
+    applyMathpixResultPages,
     currentEntry,
     mathpixPipelineState,
+    readerSessionUserId,
+  ]);
+
+  useEffect(() => {
+    if (
+      !currentEntry?.cloudDocumentId ||
+      !currentEntry.contentSha256 ||
+      deletingPdfFingerprintsRef.current.has(currentEntry.fingerprint)
+    ) {
+      return undefined;
+    }
+
+    const entry = currentEntry;
+    const abortController = new AbortController();
+    let cancelled = false;
+    let retryTimer: number | undefined;
+    let running = false;
+
+    const runReconciliation = async () => {
+      if (cancelled || running) {
+        return;
+      }
+
+      running = true;
+
+      try {
+        const result = await reconcileMathpixCache(entry, {
+          expectedUserId: readerSessionUserId,
+          signal: abortController.signal,
+        });
+
+        if (
+          !result ||
+          cancelled ||
+          entry.fingerprint !== activeFingerprintRef.current
+        ) {
+          return;
+        }
+
+        setMathpixRecord(result.record);
+        applyMathpixResultPages(entry, result.pages);
+      } catch (error) {
+        if (
+          !cancelled &&
+          !abortController.signal.aborted &&
+          !isAbortError(error) &&
+          entry.fingerprint === activeFingerprintRef.current
+        ) {
+          setStatusMessage("MathPix cache cloud sync failed. Retrying in the background.");
+          retryTimer = window.setTimeout(() => {
+            retryTimer = undefined;
+            void runReconciliation();
+          }, MATHPIX_CLOUD_SYNC_RETRY_MS);
+        }
+      } finally {
+        running = false;
+      }
+    };
+
+    const handleOnline = () => {
+      if (retryTimer !== undefined) {
+        window.clearTimeout(retryTimer);
+        retryTimer = undefined;
+      }
+
+      void runReconciliation();
+    };
+
+    mathpixReconcileAbortControllerRef.current?.abort();
+    mathpixReconcileAbortControllerRef.current = abortController;
+    void runReconciliation();
+    window.addEventListener("online", handleOnline);
+
+    return () => {
+      cancelled = true;
+      abortController.abort();
+      window.removeEventListener("online", handleOnline);
+
+      if (mathpixReconcileAbortControllerRef.current === abortController) {
+        mathpixReconcileAbortControllerRef.current = undefined;
+      }
+
+      if (retryTimer !== undefined) {
+        window.clearTimeout(retryTimer);
+      }
+    };
+  }, [
+    applyMathpixResultPages,
+    currentEntry?.cloudDocumentId,
+    currentEntry?.contentSha256,
+    currentEntry?.fileName,
+    currentEntry?.fileSize,
+    currentEntry?.fingerprint,
+    currentEntry?.pdfMetadata?.title,
+    mathpixParsedPages.size,
+    mathpixRecord?.completedAt,
+    mathpixRecord?.mathpixPdfId,
+    mathpixRecord?.status === "completed",
+    readerSessionUserId,
+  ]);
+
+  useEffect(() => {
+    if (!shouldAutoStartMathpix({
+      enabled: settings.mathpixAutoStartEnabled,
+      fingerprint: currentEntry?.fingerprint,
+      isSettingsHydrated: areSettingsHydrated,
+      pipelineState: mathpixPipelineState,
+      startedFingerprint: mathpixAutoStartedFingerprintRef.current,
+    })) {
+      return;
+    }
+
+    if (!currentEntry) {
+      return;
+    }
+
+    if (deletingPdfFingerprintsRef.current.has(currentEntry.fingerprint)) {
+      return;
+    }
+
+    mathpixAutoStartedFingerprintRef.current = currentEntry.fingerprint;
+    handleStartMathpixParse();
+  }, [
+    areSettingsHydrated,
+    currentEntry,
+    handleStartMathpixParse,
+    mathpixPipelineState,
+    settings.mathpixAutoStartEnabled,
   ]);
 
   const refreshQaIndexJob = useCallback(
@@ -1119,6 +1324,7 @@ export function ReaderShell() {
         if (source === "mathpix-v3-pdf") {
           const syncedRecord = await ensureMathpixCloudCacheForQaIndex({
             entry: activeEntry,
+            expectedUserId: readerSessionUserId,
             record: mathpixRecord,
           });
 
@@ -1137,7 +1343,7 @@ export function ReaderShell() {
         setIsCreatingQaIndexJob(false);
       }
     },
-    [currentEntry, isCreatingQaIndexJob, mathpixRecord],
+    [currentEntry, isCreatingQaIndexJob, mathpixRecord, readerSessionUserId],
   );
 
   const handleImport = useCallback(
@@ -1796,37 +2002,85 @@ export function ReaderShell() {
         currentEntry,
         libraryEntries,
       );
+      const mathpixCacheIdentity = resolvePdfDeleteEntry(
+        target,
+        currentEntry,
+        libraryEntries,
+      );
 
-      if (cloudDocumentId) {
-        await deleteCloudPdfDocument(cloudDocumentId);
-      } else if (fingerprint) {
-        await deletePdfLocalData(fingerprint);
+      if (fingerprint) {
+        deletingPdfFingerprintsRef.current.add(fingerprint);
       }
 
-      if (readerSessionUserId) {
-        clearReaderSessionDocument(readerSessionUserId, {
-          cloudDocumentId,
-          fingerprint,
-        });
-      }
+      const isDeletingCurrentEntry = Boolean(
+        currentEntry &&
+        (currentEntry.fingerprint === fingerprint || currentEntry.cloudDocumentId === cloudDocumentId),
+      );
 
-      if (damagedLibraryFingerprint === fingerprint) {
-        setDamagedLibraryFingerprint(undefined);
-        setStatusMessage(undefined);
-      }
+      try {
+        if (fingerprint) {
+          const pendingMathpixTasks = Array.from(
+            mathpixPipelineTasksByFingerprintRef.current.get(fingerprint) ?? [],
+          );
 
-      if (activeFingerprint === fingerprint || currentEntry?.cloudDocumentId === cloudDocumentId) {
-        for (const card of pinnedTranslationCardsRef.current) {
-          clearPinnedTranslationCardSaveTimer(card.key);
+          for (const task of pendingMathpixTasks) {
+            task.abortController.abort();
+          }
+
+          await Promise.all(
+            pendingMathpixTasks.map((task) => task.promise?.catch(() => undefined)),
+          );
         }
-        setCurrentEntry(undefined);
-        setSentenceSelection(undefined);
-        replacePinnedTranslationCards([]);
-        setPins([]);
-        setIsConfirmingClearPins(false);
-      }
 
-      await refreshLibrary();
+        if (isDeletingCurrentEntry) {
+          mathpixAbortControllerRef.current?.abort();
+          mathpixAbortControllerRef.current = undefined;
+          mathpixReconcileAbortControllerRef.current?.abort();
+          mathpixReconcileAbortControllerRef.current = undefined;
+          setMathpixPipelineState("idle");
+        }
+
+        if (mathpixCacheIdentity) {
+          await reconcileMathpixCache.waitForIdle(mathpixCacheIdentity, {
+            expectedUserId: readerSessionUserId,
+          });
+        }
+
+        if (cloudDocumentId) {
+          await deleteCloudPdfDocument(cloudDocumentId);
+        } else if (fingerprint) {
+          await deletePdfLocalData(fingerprint);
+        }
+
+        if (readerSessionUserId) {
+          clearReaderSessionDocument(readerSessionUserId, {
+            cloudDocumentId,
+            fingerprint,
+          });
+        }
+
+        if (damagedLibraryFingerprint === fingerprint) {
+          setDamagedLibraryFingerprint(undefined);
+          setStatusMessage(undefined);
+        }
+
+        if (activeFingerprint === fingerprint || currentEntry?.cloudDocumentId === cloudDocumentId) {
+          for (const card of pinnedTranslationCardsRef.current) {
+            clearPinnedTranslationCardSaveTimer(card.key);
+          }
+          setCurrentEntry(undefined);
+          setSentenceSelection(undefined);
+          replacePinnedTranslationCards([]);
+          setPins([]);
+          setIsConfirmingClearPins(false);
+        }
+
+        await refreshLibrary();
+      } finally {
+        if (fingerprint) {
+          deletingPdfFingerprintsRef.current.delete(fingerprint);
+        }
+      }
     },
     [
       activeFingerprint,
@@ -2956,6 +3210,28 @@ function resolvePdfDeleteTarget(
   };
 }
 
+function resolvePdfDeleteEntry(
+  target: CloudPdfLibraryEntry | PdfLibraryEntry | string | undefined,
+  currentEntry: PdfLibraryEntry | undefined,
+  libraryEntries: CloudPdfLibraryEntry[],
+) {
+  if (!target) {
+    return undefined;
+  }
+
+  if (typeof target !== "string") {
+    return target;
+  }
+
+  return libraryEntries.find((entry) =>
+    entry.cloudDocumentId === target || entry.fingerprint === target
+  ) ?? (
+    currentEntry?.cloudDocumentId === target || currentEntry?.fingerprint === target
+      ? currentEntry
+      : undefined
+  );
+}
+
 async function applyArchiveReadingPosition(
   entry: PdfLibraryEntry,
   document: DocumentArchiveDocument,
@@ -3015,9 +3291,11 @@ function isAbortError(error: unknown) {
 
 async function ensureMathpixCloudCacheForQaIndex({
   entry,
+  expectedUserId,
   record,
 }: {
   entry: PdfLibraryEntry;
+  expectedUserId?: string;
   record?: MathpixDocumentRecord;
 }) {
   if (!entry.cloudDocumentId || !entry.contentSha256) {
@@ -3033,6 +3311,7 @@ async function ensureMathpixCloudCacheForQaIndex({
   if (pages.length > 0) {
     const syncedRecord = await uploadCompletedCloudMathpixCache({
       entry,
+      expectedUserId,
       fullMmd: record.fullMmd,
       pages,
       record,
@@ -3046,7 +3325,11 @@ async function ensureMathpixCloudCacheForQaIndex({
   }
 
   if (record.pagesStoragePath) {
-    const syncedRecord = await syncCloudMathpixDocumentRecord(entry, record);
+    const syncedRecord = await syncCloudMathpixDocumentRecord(
+      entry,
+      record,
+      expectedUserId,
+    );
 
     if (syncedRecord?.pagesStoragePath) {
       return putMathpixDocumentRecord(syncedRecord);

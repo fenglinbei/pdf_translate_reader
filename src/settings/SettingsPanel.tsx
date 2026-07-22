@@ -292,6 +292,19 @@ export function SettingsPanel({
 
         <section className="settings-section" aria-label={t("settings.selectionSettings")}>
           <div className="settings-section-heading">{t("settings.selection")}</div>
+          <label className="settings-toggle">
+            <input
+              checked={settings.mathpixAutoStartEnabled}
+              onChange={(event) =>
+                void updateSettings({
+                  mathpixAutoStartEnabled: event.currentTarget.checked,
+                })
+              }
+              type="checkbox"
+            />
+            <span>{t("settings.mathpixAutoStart")}</span>
+          </label>
+          <small className="settings-field-hint">{t("settings.mathpixAutoStartHint")}</small>
           <label className="settings-field">
             <span>{t("settings.textSelectionMode")}</span>
             <select

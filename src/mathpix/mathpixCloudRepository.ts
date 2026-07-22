@@ -88,12 +88,23 @@ export function isCloudMathpixRecordStale(record: MathpixDocumentRecord, now = D
   return now - record.updatedAt > CLOUD_MATHPIX_STALE_MS;
 }
 
-export async function getCloudMathpixDocumentRecord(entry: PdfLibraryEntry) {
+export async function getCloudMathpixDocumentRecord(
+  entry: PdfLibraryEntry,
+  expectedUserId?: string,
+) {
   if (!canUseCloudMathpixCache(entry)) {
     return undefined;
   }
 
   const userId = await requireCurrentUserId();
+  assertExpectedUserId(userId, expectedUserId);
+  return getCloudMathpixDocumentRecordForUser(entry, userId);
+}
+
+async function getCloudMathpixDocumentRecordForUser(
+  entry: PdfLibraryEntry & { cloudDocumentId: string; contentSha256: string },
+  userId: string,
+) {
   const { data, error } = await requireSupabaseClient()
     .from("user_mathpix_documents")
     .select(CLOUD_MATHPIX_COLUMNS)
@@ -110,12 +121,17 @@ export async function getCloudMathpixDocumentRecord(entry: PdfLibraryEntry) {
   return data ? rowToMathpixRecord(data as unknown as CloudMathpixDocumentRow, entry) : undefined;
 }
 
-export async function claimCloudMathpixSubmission(entry: PdfLibraryEntry): Promise<CloudMathpixClaim> {
+export async function claimCloudMathpixSubmission(
+  entry: PdfLibraryEntry,
+  expectedUserId?: string,
+): Promise<CloudMathpixClaim> {
   if (!canUseCloudMathpixCache(entry)) {
     return { claimed: false };
   }
 
-  const existingRecord = await getCloudMathpixDocumentRecord(entry);
+  const userId = await requireCurrentUserId();
+  assertExpectedUserId(userId, expectedUserId);
+  const existingRecord = await getCloudMathpixDocumentRecordForUser(entry, userId);
 
   if (existingRecord && !canReplaceCloudMathpixRecord(existingRecord)) {
     return { claimed: false, record: existingRecord };
@@ -123,13 +139,20 @@ export async function claimCloudMathpixSubmission(entry: PdfLibraryEntry): Promi
 
   if (existingRecord) {
     const record = createCloudPendingRecord(entry);
-    const updatedRecord = await updateCloudMathpixRecord(entry, record);
+    const updatedRecord = await replaceCloudMathpixRecordIfStillEligible(
+      entry,
+      record,
+      existingRecord,
+      userId,
+    );
 
-    return { claimed: Boolean(updatedRecord), record: updatedRecord ?? existingRecord };
+    return {
+      claimed: Boolean(updatedRecord),
+      record: updatedRecord ?? await getCloudMathpixDocumentRecordForUser(entry, userId),
+    };
   }
 
   const record = createCloudPendingRecord(entry);
-  const userId = await requireCurrentUserId();
   const { data, error } = await requireSupabaseClient()
     .from("user_mathpix_documents")
     .insert(toCloudRow(entry, record, userId))
@@ -140,7 +163,7 @@ export async function claimCloudMathpixSubmission(entry: PdfLibraryEntry): Promi
     if (getSupabaseErrorCode(error) === DUPLICATE_KEY_ERROR_CODE) {
       return {
         claimed: false,
-        record: await getCloudMathpixDocumentRecord(entry),
+        record: await getCloudMathpixDocumentRecordForUser(entry, userId),
       };
     }
 
@@ -156,12 +179,94 @@ export async function claimCloudMathpixSubmission(entry: PdfLibraryEntry): Promi
 export async function syncCloudMathpixDocumentRecord(
   entry: PdfLibraryEntry,
   record: MathpixDocumentRecord,
+  expectedUserId?: string,
 ) {
   if (!canUseCloudMathpixCache(entry)) {
     return undefined;
   }
 
   const userId = await requireCurrentUserId();
+  assertExpectedUserId(userId, expectedUserId);
+  return syncCloudMathpixDocumentRecordForUser(entry, record, userId);
+}
+
+export async function backfillCloudMathpixProcessingRecord(
+  entry: PdfLibraryEntry,
+  record: MathpixDocumentRecord,
+  expectedUserId?: string,
+) {
+  if (
+    !canUseCloudMathpixCache(entry) ||
+    !record.mathpixPdfId ||
+    (
+      record.status !== "submitted" &&
+      record.status !== "processing" &&
+      record.status !== "error"
+    )
+  ) {
+    return undefined;
+  }
+
+  const userId = await requireCurrentUserId();
+  assertExpectedUserId(userId, expectedUserId);
+  const client = requireSupabaseClient();
+  const row = toCloudRow(entry, record, userId);
+  const matchActiveRecord = () => client
+    .from("user_mathpix_documents")
+    .update(row)
+    .eq("user_id", userId)
+    .eq("content_sha256", entry.contentSha256)
+    .eq("mathpix_options_hash", MATHPIX_OPTIONS_HASH)
+    .in("status", ["submitted", "processing"]);
+  const { data: missingIdData, error: missingIdError } = await matchActiveRecord()
+    .is("mathpix_pdf_id", null)
+    .select(CLOUD_MATHPIX_COLUMNS)
+    .maybeSingle();
+
+  if (missingIdError) {
+    throw missingIdError;
+  }
+
+  if (missingIdData) {
+    return rowToMathpixRecord(missingIdData as unknown as CloudMathpixDocumentRow, entry);
+  }
+
+  const { data: sameIdData, error: sameIdError } = await matchActiveRecord()
+    .eq("mathpix_pdf_id", record.mathpixPdfId)
+    .lt("updated_at", new Date(record.updatedAt).toISOString())
+    .select(CLOUD_MATHPIX_COLUMNS)
+    .maybeSingle();
+
+  if (sameIdError) {
+    throw sameIdError;
+  }
+
+  if (sameIdData) {
+    return rowToMathpixRecord(sameIdData as unknown as CloudMathpixDocumentRow, entry);
+  }
+
+  const { data: insertedData, error: insertError } = await client
+    .from("user_mathpix_documents")
+    .insert(row)
+    .select(CLOUD_MATHPIX_COLUMNS)
+    .single();
+
+  if (insertError) {
+    if (getSupabaseErrorCode(insertError) === DUPLICATE_KEY_ERROR_CODE) {
+      return getCloudMathpixDocumentRecordForUser(entry, userId);
+    }
+
+    throw insertError;
+  }
+
+  return rowToMathpixRecord(insertedData as unknown as CloudMathpixDocumentRow, entry);
+}
+
+async function syncCloudMathpixDocumentRecordForUser(
+  entry: PdfLibraryEntry & { cloudDocumentId: string; contentSha256: string },
+  record: MathpixDocumentRecord,
+  userId: string,
+) {
   const { data, error } = await requireSupabaseClient()
     .from("user_mathpix_documents")
     .upsert(toCloudRow(entry, record, userId), {
@@ -188,10 +293,6 @@ export async function downloadCompletedCloudMathpixCache(
   const pagesPayload = await downloadStorageJson(record.pagesStoragePath);
   const pages = normalizeStoredPages(pagesPayload, entry);
 
-  if (pages.length === 0) {
-    throw new Error("Cloud MathPix cache did not contain any parsed pages.");
-  }
-
   const fullMmd = record.fullMmdStoragePath
     ? await downloadStorageText(record.fullMmdStoragePath).catch(() => record.fullMmd ?? "")
     : record.fullMmd;
@@ -212,11 +313,13 @@ export async function downloadCompletedCloudMathpixCache(
 
 export async function uploadCompletedCloudMathpixCache({
   entry,
+  expectedUserId,
   fullMmd,
   pages,
   record,
 }: {
   entry: PdfLibraryEntry;
+  expectedUserId?: string;
   fullMmd?: string;
   pages: MathpixParsedPage[];
   record: MathpixDocumentRecord;
@@ -226,6 +329,7 @@ export async function uploadCompletedCloudMathpixCache({
   }
 
   const userId = await requireCurrentUserId();
+  assertExpectedUserId(userId, expectedUserId);
   const paths = getCloudMathpixStoragePaths(userId, entry);
   const normalizedPages = normalizeStoredPages(pages, entry);
   const pagesBlob = new Blob([JSON.stringify(normalizedPages)], { type: "application/json" });
@@ -236,7 +340,7 @@ export async function uploadCompletedCloudMathpixCache({
 
   const now = Date.now();
 
-  const syncedRecord = await syncCloudMathpixDocumentRecord(entry, {
+  const syncedRecord = await syncCloudMathpixDocumentRecordForUser(entry, {
     ...record,
     cloudMathpixSyncedAt: now,
     fullMmd,
@@ -244,7 +348,7 @@ export async function uploadCompletedCloudMathpixCache({
     pagesStoragePath: paths.pagesStoragePath,
     status: "completed",
     updatedAt: now,
-  });
+  }, userId);
 
   return syncedRecord
     ? {
@@ -257,26 +361,10 @@ export async function uploadCompletedCloudMathpixCache({
     : undefined;
 }
 
-export async function markCloudMathpixDocumentError(
-  entry: PdfLibraryEntry,
-  errorMessage: string,
+export async function deleteCloudMathpixCacheByDocument(
+  cloudDocumentId: string | undefined,
+  contentSha256?: string,
 ) {
-  if (!canUseCloudMathpixCache(entry)) {
-    return;
-  }
-
-  const existingRecord = await getCloudMathpixDocumentRecord(entry);
-  const now = Date.now();
-
-  await syncCloudMathpixDocumentRecord(entry, {
-    ...(existingRecord ?? createCloudPendingRecord(entry)),
-    errorMessage,
-    status: "error",
-    updatedAt: now,
-  });
-}
-
-export async function deleteCloudMathpixCacheByDocument(cloudDocumentId: string | undefined) {
   if (!cloudDocumentId) {
     return;
   }
@@ -293,15 +381,44 @@ export async function deleteCloudMathpixCacheByDocument(cloudDocumentId: string 
     throw error;
   }
 
+  let hasAnotherActiveDocument = false;
+
+  if (contentSha256) {
+    const { data: activeDocument, error: activeDocumentError } = await client
+      .from("user_documents")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("content_sha256", contentSha256)
+      .neq("id", cloudDocumentId)
+      .is("deleted_at", null)
+      .maybeSingle();
+
+    if (activeDocumentError) {
+      throw activeDocumentError;
+    }
+
+    hasAnotherActiveDocument = Boolean(activeDocument);
+  }
+
+  if (hasAnotherActiveDocument) {
+    return;
+  }
+
   const rows = (data ?? []) as unknown as Array<{
     full_mmd_storage_path?: string | null;
     pages_storage_path?: string | null;
   }>;
+  const deterministicPaths = contentSha256
+    ? Object.values(getCloudMathpixStoragePaths(userId, { contentSha256 }))
+    : [];
   const storagePaths = Array.from(new Set(
-    rows.flatMap((row) => [
-      row.pages_storage_path,
-      row.full_mmd_storage_path,
-    ]).filter((path): path is string => Boolean(path)),
+    [
+      ...deterministicPaths,
+      ...rows.flatMap((row) => [
+        row.pages_storage_path,
+        row.full_mmd_storage_path,
+      ]),
+    ].filter((path): path is string => Boolean(path)),
   ));
 
   if (storagePaths.length > 0) {
@@ -325,17 +442,32 @@ export async function deleteCloudMathpixCacheByDocument(cloudDocumentId: string 
   }
 }
 
-async function updateCloudMathpixRecord(
+async function replaceCloudMathpixRecordIfStillEligible(
   entry: PdfLibraryEntry & { cloudDocumentId: string; contentSha256: string },
   record: MathpixDocumentRecord,
+  existingRecord: MathpixDocumentRecord,
+  userId: string,
 ) {
-  const userId = await requireCurrentUserId();
-  const { data, error } = await requireSupabaseClient()
+  let updateQuery = requireSupabaseClient()
     .from("user_mathpix_documents")
     .update(toCloudRow(entry, record, userId))
     .eq("user_id", userId)
     .eq("content_sha256", entry.contentSha256)
-    .eq("mathpix_options_hash", MATHPIX_OPTIONS_HASH)
+    .eq("mathpix_options_hash", MATHPIX_OPTIONS_HASH);
+
+  if (existingRecord.status === "error" || existingRecord.status === "deleted") {
+    updateQuery = updateQuery.in("status", ["error", "deleted"]);
+  } else if (existingRecord.status === "completed") {
+    updateQuery = updateQuery
+      .eq("status", "completed")
+      .is("pages_storage_path", null);
+  } else {
+    updateQuery = updateQuery
+      .in("status", ["submitted", "processing"])
+      .lt("updated_at", new Date(Date.now() - CLOUD_MATHPIX_STALE_MS).toISOString());
+  }
+
+  const { data, error } = await updateQuery
     .select(CLOUD_MATHPIX_COLUMNS)
     .maybeSingle();
 
@@ -368,13 +500,14 @@ function canReplaceCloudMathpixRecord(record: MathpixDocumentRecord) {
   return (
     record.status === "error" ||
     record.status === "deleted" ||
+    (record.status === "completed" && !record.pagesStoragePath) ||
     isCloudMathpixRecordStale(record)
   );
 }
 
 function getCloudMathpixStoragePaths(
   userId: string,
-  entry: PdfLibraryEntry & { contentSha256: string },
+  entry: { contentSha256: string },
 ) {
   const basePath = `${userId}/${entry.contentSha256}/${MATHPIX_OPTIONS_HASH}`;
 
@@ -382,6 +515,12 @@ function getCloudMathpixStoragePaths(
     fullMmdStoragePath: `${basePath}/full.mmd`,
     pagesStoragePath: `${basePath}/pages.json`,
   };
+}
+
+function assertExpectedUserId(userId: string, expectedUserId: string | undefined) {
+  if (expectedUserId && userId !== expectedUserId) {
+    throw new DOMException("The signed-in user changed during MathPix sync.", "AbortError");
+  }
 }
 
 function toCloudRow(

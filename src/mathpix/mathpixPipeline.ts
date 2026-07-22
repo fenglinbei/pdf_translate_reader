@@ -11,14 +11,17 @@ import {
   submitMathpixDocument,
 } from "./mathpixClient";
 import {
+  backfillCloudMathpixProcessingRecord,
   claimCloudMathpixSubmission,
   downloadCompletedCloudMathpixCache,
   getCloudMathpixDocumentRecord,
   isCloudMathpixRecordStale,
-  markCloudMathpixDocumentError,
   syncCloudMathpixDocumentRecord,
-  uploadCompletedCloudMathpixCache,
 } from "./mathpixCloudRepository";
+import {
+  isMathpixCloudCacheSyncedForEntry,
+  reconcileMathpixCache,
+} from "./mathpixCacheReconciliation";
 import { normalizeMathpixLinesJson } from "./mathpixNormalizer";
 import {
   createPendingMathpixDocumentRecord,
@@ -32,6 +35,7 @@ import { MATHPIX_OPTIONS_HASH } from "./options";
 
 type RunMathpixParsePipelineInput = {
   entry: PdfLibraryEntry;
+  expectedUserId?: string;
   onPages?: (pages: MathpixParsedPage[]) => void;
   onRecord?: (record: MathpixDocumentRecord) => void;
   signal?: AbortSignal;
@@ -51,8 +55,16 @@ type CloudMathpixPipelineStart =
 const POLL_INTERVAL_MS = 5000;
 const CLOUD_RECORD_POLL_INTERVAL_MS = 2000;
 
+class CloudMathpixCacheDownloadError extends Error {
+  constructor(error: unknown) {
+    super(getErrorMessage(error));
+    this.name = "CloudMathpixCacheDownloadError";
+  }
+}
+
 export async function runMathpixParsePipeline({
   entry,
+  expectedUserId,
   onPages,
   onRecord,
   signal,
@@ -62,15 +74,49 @@ export async function runMathpixParsePipeline({
   if (isCompletedCurrentMathpixRecord(record, entry)) {
     const pages = await listMathpixParsedPages(entry.fingerprint);
 
-    if (pages.length > 0) {
+    if (pages.length > 0 || record?.completedAt) {
       onRecord?.(record!);
       onPages?.(pages);
+
+      const reconciledCache = await reconcileMathpixCache(entry, {
+        expectedUserId,
+        signal,
+      }).catch(ignoreNonAbortError);
+
+      if (reconciledCache) {
+        onRecord?.(reconciledCache.record);
+        onPages?.(reconciledCache.pages);
+        return {
+          pages: reconciledCache.pages,
+          record: reconciledCache.record,
+        };
+      }
+
       return { pages, record: record! };
     }
   }
 
+  const reconciledCache = await reconcileMathpixCache(entry, {
+    expectedUserId,
+    signal,
+  }).catch(ignoreNonAbortError);
+
+  if (reconciledCache) {
+    onRecord?.(reconciledCache.record);
+    onPages?.(reconciledCache.pages);
+    return {
+      pages: reconciledCache.pages,
+      record: reconciledCache.record,
+    };
+  }
+
   const reusableLocalRecord = shouldReuseRecord(record, entry) ? record : undefined;
-  const cloudStart = await getCloudMathpixPipelineStart(entry, reusableLocalRecord, signal);
+  const cloudStart = await getCloudMathpixPipelineStart(
+    entry,
+    reusableLocalRecord,
+    signal,
+    expectedUserId,
+  );
 
   if (cloudStart?.kind === "cache") {
     await replaceMathpixParsedPages(entry.fingerprint, cloudStart.pages);
@@ -95,6 +141,19 @@ export async function runMathpixParsePipeline({
   onRecord?.(record);
 
   if (!record.mathpixPdfId) {
+    const latestCloudRecord = await getCloudMathpixDocumentRecord(entry, expectedUserId)
+      .catch(ignoreNonAbortError);
+
+    if (
+      latestCloudRecord?.mathpixPdfId &&
+      shouldReuseCloudProcessingRecord(latestCloudRecord)
+    ) {
+      record = await putMathpixDocumentRecord(latestCloudRecord);
+      onRecord?.(record);
+    }
+  }
+
+  if (!record.mathpixPdfId) {
     assertNotAborted(signal);
     const submitted = await submitMathpixDocument(entry, signal);
     const now = Date.now();
@@ -107,7 +166,8 @@ export async function runMathpixParsePipeline({
       submittedAt: record.submittedAt ?? now,
       updatedAt: now,
     });
-    await syncCloudMathpixDocumentRecord(entry, record).catch(() => undefined);
+    await backfillCloudMathpixProcessingRecord(entry, record, expectedUserId)
+      .catch(ignoreNonAbortError);
     onRecord?.(record);
   }
 
@@ -132,7 +192,10 @@ export async function runMathpixParsePipeline({
       status: nextStatus,
       updatedAt: now,
     });
-    await syncCloudMathpixDocumentRecord(entry, record).catch(() => undefined);
+    if (nextStatus !== "completed") {
+      await backfillCloudMathpixProcessingRecord(entry, record, expectedUserId)
+        .catch(ignoreNonAbortError);
+    }
     onRecord?.(record);
 
     if (nextStatus === "completed") {
@@ -153,23 +216,25 @@ export async function runMathpixParsePipeline({
       onRecord?.(record);
       onPages?.(pages);
 
-      const cloudCacheSynced = await syncCompletedMathpixCacheToCloud({
-        entry,
-        fullMmd,
-        pages,
-        record,
-      }).then((syncedRecord) => {
-        if (!syncedRecord) {
-          return false;
-        }
+      const reconciledCache = await reconcileMathpixCache(entry, {
+        expectedUserId,
+        signal,
+      }).catch(ignoreNonAbortError);
 
-        record = syncedRecord;
+      if (reconciledCache) {
+        record = reconciledCache.record;
         onRecord?.(record);
-        return true;
-      });
+      }
+
+      const cloudCacheSynced = isMathpixCloudCacheSyncedForEntry(record, entry);
 
       if (record.deleteRemoteAfterCache && (!requiresCloudCacheBeforeRemoteDelete(entry) || cloudCacheSynced)) {
-        record = await deleteRemoteAfterCache(entry, record, onRecord).catch(() => record);
+        record = await deleteRemoteAfterCache(
+          entry,
+          record,
+          onRecord,
+          expectedUserId,
+        ).catch(() => record);
       }
 
       return { pages, record };
@@ -187,12 +252,16 @@ async function getCloudMathpixPipelineStart(
   entry: PdfLibraryEntry,
   localRecord: MathpixDocumentRecord | undefined,
   signal: AbortSignal | undefined,
+  expectedUserId?: string,
 ): Promise<CloudMathpixPipelineStart | undefined> {
   try {
-    let cloudRecord = await getCloudMathpixDocumentRecord(entry);
+    let cloudRecord = await getCloudMathpixDocumentRecord(entry, expectedUserId);
 
     if (cloudRecord?.status === "completed") {
-      const cache = await tryDownloadCompletedCloudMathpixCache(entry, cloudRecord);
+      const cache = await tryDownloadCompletedCloudMathpixCache(
+        entry,
+        cloudRecord,
+      );
 
       if (cache) {
         return cache;
@@ -210,31 +279,39 @@ async function getCloudMathpixPipelineStart(
         return { kind: "record", record: cloudRecord };
       }
 
-      const waitedStart = await waitForCloudMathpixProcessingRecord(entry, signal);
+      const waitedStart = await waitForCloudMathpixProcessingRecord(
+        entry,
+        signal,
+        expectedUserId,
+      );
 
       if (waitedStart) {
         return waitedStart;
       }
 
-      cloudRecord = await getCloudMathpixDocumentRecord(entry);
+      cloudRecord = await getCloudMathpixDocumentRecord(entry, expectedUserId);
     }
 
     if (!cloudRecord && localRecord?.mathpixPdfId) {
       if (localRecord.status !== "completed") {
-        await syncCloudMathpixDocumentRecord(entry, localRecord).catch(() => undefined);
+        await backfillCloudMathpixProcessingRecord(entry, localRecord, expectedUserId)
+          .catch(ignoreNonAbortError);
       }
 
       return { kind: "record", record: localRecord };
     }
 
-    const claim = await claimCloudMathpixSubmission(entry);
+    const claim = await claimCloudMathpixSubmission(entry, expectedUserId);
 
     if (!claim.record) {
       return undefined;
     }
 
     if (claim.record.status === "completed") {
-      const cache = await tryDownloadCompletedCloudMathpixCache(entry, claim.record);
+      const cache = await tryDownloadCompletedCloudMathpixCache(
+        entry,
+        claim.record,
+      );
 
       if (cache) {
         return cache;
@@ -246,14 +323,18 @@ async function getCloudMathpixPipelineStart(
         return { kind: "record", record: claim.record };
       }
 
-      return waitForCloudMathpixProcessingRecord(entry, signal);
+      return waitForCloudMathpixProcessingRecord(entry, signal, expectedUserId);
     }
 
     return {
       kind: "record",
       record: claim.record,
     };
-  } catch {
+  } catch (error) {
+    if (isAbortError(error) || error instanceof CloudMathpixCacheDownloadError) {
+      throw error;
+    }
+
     return undefined;
   }
 }
@@ -267,18 +348,18 @@ async function tryDownloadCompletedCloudMathpixCache(
 
     return cache ? { kind: "cache", ...cache } : undefined;
   } catch (error) {
-    await markCloudMathpixDocumentError(entry, getErrorMessage(error)).catch(() => undefined);
-    return undefined;
+    throw new CloudMathpixCacheDownloadError(error);
   }
 }
 
 async function waitForCloudMathpixProcessingRecord(
   entry: PdfLibraryEntry,
   signal: AbortSignal | undefined,
+  expectedUserId?: string,
 ): Promise<CloudMathpixPipelineStart | undefined> {
   while (true) {
     assertNotAborted(signal);
-    const record = await getCloudMathpixDocumentRecord(entry);
+    const record = await getCloudMathpixDocumentRecord(entry, expectedUserId);
 
     if (!record || record.status === "error" || record.status === "deleted" || isCloudMathpixRecordStale(record)) {
       return undefined;
@@ -301,43 +382,6 @@ function shouldReuseCloudProcessingRecord(record: MathpixDocumentRecord) {
     (record.status === "submitted" || record.status === "processing") &&
     !isCloudMathpixRecordStale(record)
   );
-}
-
-async function syncCompletedMathpixCacheToCloud({
-  entry,
-  fullMmd,
-  pages,
-  record,
-}: {
-  entry: PdfLibraryEntry;
-  fullMmd?: string;
-  pages: MathpixParsedPage[];
-  record: MathpixDocumentRecord;
-}) {
-  try {
-    const syncedRecord = await uploadCompletedCloudMathpixCache({
-      entry,
-      fullMmd,
-      pages,
-      record,
-    });
-
-    if (!syncedRecord) {
-      return undefined;
-    }
-
-    return putMathpixDocumentRecord({
-      ...record,
-      cloudMathpixSyncedAt: syncedRecord.cloudMathpixSyncedAt ?? Date.now(),
-      fullMmd: record.fullMmd ?? syncedRecord.fullMmd,
-      fullMmdStoragePath: syncedRecord.fullMmdStoragePath,
-      pagesStoragePath: syncedRecord.pagesStoragePath,
-      updatedAt: Date.now(),
-    });
-  } catch (error) {
-    await markCloudMathpixDocumentError(entry, getErrorMessage(error)).catch(() => undefined);
-    return undefined;
-  }
 }
 
 function shouldReuseRecord(
@@ -369,6 +413,7 @@ async function deleteRemoteAfterCache(
   entry: PdfLibraryEntry,
   record: MathpixDocumentRecord,
   onRecord?: (record: MathpixDocumentRecord) => void,
+  expectedUserId?: string,
 ) {
   if (!record.mathpixPdfId) {
     return record;
@@ -380,7 +425,8 @@ async function deleteRemoteAfterCache(
     remoteDeletedAt: Date.now(),
     updatedAt: Date.now(),
   });
-  await syncCloudMathpixDocumentRecord(entry, updatedRecord).catch(() => undefined);
+  await syncCloudMathpixDocumentRecord(entry, updatedRecord, expectedUserId)
+    .catch(() => undefined);
 
   onRecord?.(updatedRecord);
 
@@ -443,4 +489,16 @@ function waitForCloudRecord(signal: AbortSignal | undefined) {
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "MathPix cloud cache sync failed.";
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+function ignoreNonAbortError(error: unknown): undefined {
+  if (isAbortError(error)) {
+    throw error;
+  }
+
+  return undefined;
 }

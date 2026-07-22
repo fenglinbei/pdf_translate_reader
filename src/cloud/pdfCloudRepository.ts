@@ -140,19 +140,22 @@ export async function openCloudPdfDocument(documentId: string): Promise<PdfLibra
 }
 
 export async function deleteCloudPdfDocument(documentId: string) {
-  const row = await getCloudDocumentRow(documentId);
+  const row = await getCloudDocumentRowForDeletion(documentId);
   const client = requireSupabaseClient();
 
-  await deleteCloudDocumentState(documentId);
+  if (!row.deleted_at) {
+    const { error: updateError } = await client
+      .from("user_documents")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", documentId)
+      .is("deleted_at", null);
 
-  const { error: updateError } = await client
-    .from("user_documents")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", documentId);
-
-  if (updateError) {
-    throw updateError;
+    if (updateError) {
+      throw updateError;
+    }
   }
+
+  await deleteCloudDocumentState(documentId, row.content_sha256);
 
   const { error: storageError } = await client.storage
     .from(PDF_BUCKET)
@@ -203,6 +206,21 @@ async function getCloudDocumentRow(documentId: string) {
     .select(getUserDocumentColumns())
     .eq("id", documentId)
     .is("deleted_at", null)
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data as unknown as UserDocumentRow;
+}
+
+async function getCloudDocumentRowForDeletion(documentId: string) {
+  const client = requireSupabaseClient();
+  const { data, error } = await client
+    .from("user_documents")
+    .select(getUserDocumentColumns())
+    .eq("id", documentId)
     .single();
 
   if (error) {

@@ -282,7 +282,10 @@ export async function deleteCloudPinnedTranslationCard(
   }
 }
 
-export async function deleteCloudDocumentState(cloudDocumentId: string | undefined) {
+export async function deleteCloudDocumentState(
+  cloudDocumentId: string | undefined,
+  contentSha256?: string,
+) {
   if (!cloudDocumentId) {
     return;
   }
@@ -292,7 +295,7 @@ export async function deleteCloudDocumentState(cloudDocumentId: string | undefin
     deleteCloudTranslationCacheByDocument(cloudDocumentId),
     deleteCloudPaperContext(cloudDocumentId),
     deleteAllCloudPinnedTranslationCardsByDocument(cloudDocumentId),
-    deleteCloudMathpixCacheByDocument(cloudDocumentId),
+    deleteCloudMathpixCacheByDocument(cloudDocumentId, contentSha256),
     deleteCloudQaStateByDocument(cloudDocumentId),
   ]);
 }

@@ -540,6 +540,7 @@ export type AppSettings = {
   contextWindowN: 0 | 1 | 2 | 3 | 5;
   defaultModel: TranslationModel;
   longContextEnabled: boolean;
+  mathpixAutoStartEnabled: boolean;
   maxDraggedWords: number;
   selectedTextOutputMode: "processed" | "native";
   sourceLang: SourceLanguage;

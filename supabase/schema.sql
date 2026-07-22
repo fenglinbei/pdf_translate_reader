@@ -543,6 +543,12 @@ create policy "Users can upload their Mathpix cache"
   with check (
     bucket_id = 'user-mathpix'
     and (storage.foldername(name))[1] = auth.uid()::text
+    and exists (
+      select 1 from public.user_documents documents
+      where documents.user_id = auth.uid()
+        and documents.content_sha256 = (storage.foldername(name))[2]
+        and documents.deleted_at is null
+    )
   );
 
 drop policy if exists "Users can update their Mathpix cache" on storage.objects;
@@ -552,10 +558,22 @@ create policy "Users can update their Mathpix cache"
   using (
     bucket_id = 'user-mathpix'
     and (storage.foldername(name))[1] = auth.uid()::text
+    and exists (
+      select 1 from public.user_documents documents
+      where documents.user_id = auth.uid()
+        and documents.content_sha256 = (storage.foldername(name))[2]
+        and documents.deleted_at is null
+    )
   )
   with check (
     bucket_id = 'user-mathpix'
     and (storage.foldername(name))[1] = auth.uid()::text
+    and exists (
+      select 1 from public.user_documents documents
+      where documents.user_id = auth.uid()
+        and documents.content_sha256 = (storage.foldername(name))[2]
+        and documents.deleted_at is null
+    )
   );
 
 drop policy if exists "Users can delete their Mathpix cache" on storage.objects;
@@ -730,6 +748,7 @@ create policy "Users can manage their Mathpix documents"
       where documents.id = user_document_id
         and documents.user_id = auth.uid()
         and documents.content_sha256 = user_mathpix_documents.content_sha256
+        and documents.deleted_at is null
     )
   );
 

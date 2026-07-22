@@ -10,6 +10,7 @@
     "build": "tsc --noEmit && vite build",
     "deploy:linux:nginx": "bash scripts/deploy-linux-nginx.sh",
     "preview": "vite preview --host 0.0.0.0",
+    "test:mathpix": "node --test tests/mathpix/*.test.mjs",
     "test:qa": "node --test tests/qa/*.test.mjs",
     "test:translation": "node --test tests/translation/*.test.mjs",
     "typecheck": "tsc --noEmit"
