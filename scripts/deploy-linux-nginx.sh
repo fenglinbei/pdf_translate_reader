@@ -140,25 +140,10 @@ cd "$APP_DIR"
 if [[ ! -f "$ENV_FILE" ]]; then
   if [[ -f ".env.local.example" ]]; then
     cp ".env.local.example" "$ENV_FILE"
-    die "Created ${ENV_FILE}. Edit it and set at least one translation provider API key, then rerun this script."
+    die "Created ${ENV_FILE}. Configure a translation provider plus the Supabase browser values, then rerun this script."
   fi
 
-  die "Missing ${ENV_FILE}. Create it and set at least one translation provider API key."
-fi
-
-has_configured_api_key() {
-  local key_name="$1"
-  local key_value
-
-  key_value="$(sed -n "s/^${key_name}=//p" "$ENV_FILE" | tail -n 1)"
-
-  [[ -n "${key_value//[[:space:]]/}" && "$key_value" != replace_with_* ]]
-}
-
-if ! has_configured_api_key DEEPSEEK_API_KEY &&
-   ! has_configured_api_key GLM_API_KEY &&
-   ! has_configured_api_key KIMI_API_KEY; then
-  die "${ENV_FILE} must contain at least one configured DEEPSEEK_API_KEY, GLM_API_KEY, or KIMI_API_KEY."
+  die "Missing ${ENV_FILE}. Create it with a translation provider plus the Supabase browser values."
 fi
 
 if [[ "$HTTPS_MODE" == "local" ]]; then
@@ -173,8 +158,8 @@ fi
 log "Installing npm dependencies"
 npm ci
 
-log "Building frontend"
-npm run build
+log "Building frontend with VITE_* values from ${ENV_FILE}"
+node "${APP_DIR}/scripts/build-frontend-with-env.mjs" "$ENV_FILE"
 
 log "Publishing frontend to ${WEB_ROOT}"
 "${SUDO[@]}" install -d -m 0755 "$WEB_ROOT"
