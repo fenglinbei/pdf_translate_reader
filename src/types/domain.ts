@@ -13,6 +13,7 @@ export type TargetLanguage = TranslationLanguage;
 export type AnnotationColor = "yellow" | "blue" | "green" | "red";
 export type TextExtractionSource = "pdfjs" | "mathpix-v3-pdf";
 export type TranslationRequestKind = "selection" | "free";
+export type FreeTranslationSourceLanguage = SourceLanguage | "auto";
 export type TranslationStylePresetId =
   | "academic-faithful"
   | "academic-fluent"
@@ -150,7 +151,7 @@ export type PaperContextRecord = PaperContext & {
 export type TranslationRequest = {
   cloudDocumentId?: string;
   pdfFingerprint: string;
-  requestKind: TranslationRequestKind;
+  requestKind: "selection";
   sourceLang: SourceLanguage;
   targetLang: TargetLanguage;
   textSource?: TextExtractionSource;
@@ -169,12 +170,69 @@ export type TranslationRequest = {
   translationStyleHash: string;
 };
 
+export type FreeTranslationRequest = Omit<
+  TranslationRequest,
+  "requestKind" | "sourceLang"
+> & {
+  requestKind: "free";
+  sourceLang: FreeTranslationSourceLanguage;
+};
+
+export type TranslationStreamRequest = TranslationRequest | FreeTranslationRequest;
+
 export type TokenUsage = {
   promptTokens?: number;
   completionTokens?: number;
   totalTokens?: number;
   promptCacheHitTokens?: number;
   promptCacheMissTokens?: number;
+};
+
+export type FreeTranslationTerminologyEntry = {
+  source: string;
+  target: string;
+};
+
+export type FreeTranslationDraft = {
+  schemaVersion: 1;
+  userId: string;
+  sourceText: string;
+  sourceLang: FreeTranslationSourceLanguage;
+  targetLang: TargetLanguage;
+  model: TranslationModel;
+  includePaperContext: boolean;
+  translationStyle: TranslationStyleSettings;
+  terminology: FreeTranslationTerminologyEntry[];
+  pdfFingerprint?: string;
+  pdfTitle?: string;
+  updatedAt: number;
+};
+
+export type FreeTranslationRequestSnapshot = {
+  sourceLang: FreeTranslationSourceLanguage;
+  targetLang: TargetLanguage;
+  model: TranslationModel;
+  includePaperContext: boolean;
+  paperContextHash?: string;
+  promptVersion: string;
+  translationStyle: TranslationStyleSettings;
+  translationStyleHash: string;
+  terminology: FreeTranslationTerminologyEntry[];
+};
+
+export type FreeTranslationRecord = {
+  schemaVersion: 1;
+  id: string;
+  userId: string;
+  sourceText: string;
+  translation: string;
+  request: FreeTranslationRequestSnapshot;
+  usage?: TokenUsage;
+  cloudDocumentId?: string;
+  pdfFingerprint?: string;
+  pdfTitle?: string;
+  createdAt: number;
+  updatedAt: number;
 };
 
 export type TranslationCacheEntry = {
@@ -240,7 +298,7 @@ export type ApiCallLog = {
   cloudDocumentId?: string;
   pdfFingerprint: string;
   model: TranslationModel;
-  sourceLang: SourceLanguage;
+  sourceLang: FreeTranslationSourceLanguage;
   targetLang: TargetLanguage;
   textSource?: TextExtractionSource;
   mathpixOptionsHash?: string;

@@ -1,13 +1,13 @@
 import { getAppDb } from "../cache";
 import { putCloudApiCallLog } from "../cloud/apiLogCloudRepository";
 import { runCloudSync } from "../cloud/syncStatus";
-import type { ApiCallLog, TokenUsage, TranslationRequest } from "../types/domain";
+import type { ApiCallLog, TokenUsage, TranslationStreamRequest } from "../types/domain";
 
 export const API_LOGS_UPDATED_EVENT = "pdf-translate-reader:api-logs-updated";
 
 export type ApiCallLogWriteInput = {
   errorMessage?: string;
-  request: TranslationRequest;
+  request: TranslationStreamRequest;
   requestFinishedAt?: number;
   requestStartedAt: number;
   status: ApiCallLog["status"];

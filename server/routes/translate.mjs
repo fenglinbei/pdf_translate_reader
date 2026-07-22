@@ -1,5 +1,9 @@
 import { normalizeTranslationLanguagePair } from "../deepseek/languages.mjs";
-import { buildTranslationMessages, TRANSLATION_PROMPT_VERSION } from "../deepseek/prompt.mjs";
+import {
+  assertFreeTranslationSourceWithinLimit,
+  buildTranslationMessages,
+  getTranslationPromptVersion,
+} from "../deepseek/prompt.mjs";
 import { writeJson } from "../http/json.mjs";
 import {
   createTranslationChatStream,
@@ -51,7 +55,7 @@ export async function handleTranslateStream(request, response) {
     writeSseHeaders(response);
     writeSse(response, "meta", {
       model,
-      promptVersion: TRANSLATION_PROMPT_VERSION,
+      promptVersion: getTranslationPromptVersion(requestBody.requestKind),
     });
 
     await pipeOpenAiCompatibleStream(upstreamStream, response);
@@ -193,10 +197,16 @@ function normalizeTranslationRequest(body) {
     throw new Error("targetSentence is required.");
   }
 
+  const requestKind = body.requestKind === "free" ? "free" : "selection";
   const { sourceLang, targetLang } = normalizeTranslationLanguagePair(
     body.sourceLang,
     body.targetLang,
+    { allowAutoSource: requestKind === "free" },
   );
+
+  if (requestKind === "free") {
+    assertFreeTranslationSourceWithinLimit(body.targetSentence);
+  }
 
   if (body.model && !TRANSLATION_MODELS.has(body.model)) {
     throw new Error(`Unsupported model: ${body.model}`);
@@ -204,7 +214,7 @@ function normalizeTranslationRequest(body) {
 
   return {
     ...body,
-    requestKind: body.requestKind === "free" ? "free" : "selection",
+    requestKind,
     sourceLang,
     targetLang,
     terminologyOverride: normalizeTerminologyOverride(body.terminologyOverride),

@@ -464,6 +464,7 @@ export function ReaderShell() {
   const [currentEntry, setCurrentEntry] = useState<PdfLibraryEntry>();
   const [isImporting, setIsImporting] = useState(false);
   const [isFreeTranslationOpen, setIsFreeTranslationOpen] = useState(false);
+  const [freeTranslationSeed, setFreeTranslationSeed] = useState<{ id: number; text: string }>();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLibraryPaneOpen, setIsLibraryPaneOpen] = useState(true);
   const [isPinsPaneOpen, setIsPinsPaneOpen] = useState(true);
@@ -523,6 +524,7 @@ export function ReaderShell() {
   const pinnedTranslationCardsRef = useRef<PinnedTranslationCard[]>([]);
   const mathpixParsedPagesRef = useRef(new Map<number, MathpixParsedPage>());
   const translationCardZIndexRef = useRef(TRANSLATION_CARD_BASE_Z_INDEX);
+  const freeTranslationSeedIdRef = useRef(0);
   const activeFingerprint = currentEntry?.fingerprint;
   const currentFileName = currentEntry?.fileName;
   const currentMetadataTitle = currentEntry?.pdfMetadata?.title;
@@ -551,6 +553,29 @@ export function ReaderShell() {
     runtimeError: mathpixRuntimeError,
     t,
   });
+
+  const openFreeTranslation = useCallback((text?: string) => {
+    if (text?.trim()) {
+      freeTranslationSeedIdRef.current += 1;
+      setFreeTranslationSeed({
+        id: freeTranslationSeedIdRef.current,
+        text,
+      });
+    } else {
+      setFreeTranslationSeed(undefined);
+    }
+
+    setIsFreeTranslationOpen(true);
+  }, []);
+
+  const handleOpenSelectionInFreeTranslation = useCallback((selection: SentenceSelection) => {
+    const sourceText = selection.nativeTargetSentence?.trim()
+      ? selection.nativeTargetSentence
+      : selection.targetSentence;
+
+    openFreeTranslation(sourceText);
+    setSentenceSelection(undefined);
+  }, [openFreeTranslation]);
 
   useEffect(() => {
     activeFingerprintRef.current = activeFingerprint;
@@ -824,8 +849,12 @@ export function ReaderShell() {
   }, []);
 
   useEffect(() => {
+    setIsFreeTranslationOpen(false);
+    setFreeTranslationSeed(undefined);
+  }, [activeFingerprint]);
+
+  useEffect(() => {
     if (!activeFingerprint) {
-      setIsFreeTranslationOpen(false);
       paperContextPageTextsRef.current = new Map();
       mathpixParsedPagesRef.current = new Map();
       setPaperContext(undefined);
@@ -839,7 +868,6 @@ export function ReaderShell() {
       return undefined;
     }
 
-    setIsFreeTranslationOpen(false);
     paperContextPageTextsRef.current = new Map();
     mathpixParsedPagesRef.current = new Map();
     setMathpixParsedPages(new Map());
@@ -2340,7 +2368,7 @@ export function ReaderShell() {
       <button
         aria-label={t("freeTranslation.open")}
         className="icon-button"
-        onClick={() => setIsFreeTranslationOpen(true)}
+        onClick={() => openFreeTranslation()}
         title={t("freeTranslation.open")}
         type="button"
       >
@@ -2461,6 +2489,17 @@ export function ReaderShell() {
         </div>
         <div className="topbar-actions">
           {currentEntry ? null : renderSidebarToggleButtons()}
+          {currentEntry ? null : (
+            <button
+              aria-label={t("freeTranslation.open")}
+              className="icon-button"
+              onClick={() => openFreeTranslation()}
+              title={t("freeTranslation.open")}
+              type="button"
+            >
+              <Languages aria-hidden="true" size={17} strokeWidth={2} />
+            </button>
+          )}
           {renderCompactMathpixStatus()}
           <span className={`api-health api-health--${apiStatus}`} title={t("reader.apiStatusTitle", { status: apiStatus })}>
             {t("reader.api")}
@@ -2551,12 +2590,15 @@ export function ReaderShell() {
         />
       ) : null}
 
-      {isFreeTranslationOpen && currentEntry ? (
+      {isFreeTranslationOpen && readerSessionUserId ? (
         <FreeTranslationPanel
           entry={currentEntry}
+          initialText={freeTranslationSeed?.text}
+          initialTextKey={freeTranslationSeed?.id}
           onClose={() => setIsFreeTranslationOpen(false)}
           paperContext={paperContext}
           settings={settings}
+          userId={readerSessionUserId}
         />
       ) : null}
 
@@ -2625,6 +2667,7 @@ export function ReaderShell() {
               onDocumentLoadError={handleDocumentLoadError}
               onRemoveLocalRecord={handleDeletePdfData}
               onPageTextReadyForPaperContext={handlePageTextReadyForPaperContext}
+              onOpenFreeTranslation={handleOpenSelectionInFreeTranslation}
               onReadingPositionChange={handleReadingPositionChange}
               onSentenceSelectionChange={handleSentenceSelectionChange}
               onTranslationCardViewChange={handleTranslationCardViewChange}

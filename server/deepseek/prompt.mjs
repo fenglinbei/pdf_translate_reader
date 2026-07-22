@@ -1,10 +1,13 @@
 import { getTranslationLanguagePromptLabel } from "./languages.mjs";
 
 export const TRANSLATION_PROMPT_VERSION = "translation-v3";
+export const FREE_TRANSLATION_PROMPT_VERSION = "free-translation-v1";
+export const FREE_TRANSLATION_MAX_SOURCE_CHARS = 20_000;
 
 const MAX_ABSTRACT_CHARS = 1800;
 const MAX_CONTEXT_SECTION_CHARS = 6000;
 const MAX_CONTEXT_SENTENCE_CHARS = 900;
+const MAX_FREE_USER_PROMPT_CHARS = 30_000;
 const MAX_STYLE_CHARS = 1000;
 const MAX_TARGET_SENTENCE_CHARS = 4000;
 const MAX_TERM_CHARS = 120;
@@ -15,6 +18,30 @@ const PROMPT_FIXED_OVERHEAD_CHARS = 1200;
 const STABLE_CONTEXT_MIN_BUDGET_CHARS = 2600;
 
 export function buildTranslationMessages(requestBody) {
+  if (requestBody.requestKind === "free") {
+    return buildFreeTranslationMessages(requestBody);
+  }
+
+  return buildSelectionTranslationMessages(requestBody);
+}
+
+export function getTranslationPromptVersion(requestKind) {
+  return requestKind === "free"
+    ? FREE_TRANSLATION_PROMPT_VERSION
+    : TRANSLATION_PROMPT_VERSION;
+}
+
+export function assertFreeTranslationSourceWithinLimit(sourceText) {
+  const characterCount = String(sourceText ?? "").length;
+
+  if (characterCount > FREE_TRANSLATION_MAX_SOURCE_CHARS) {
+    throw new Error(
+      `Free translation source text must be ${FREE_TRANSLATION_MAX_SOURCE_CHARS} characters or fewer (received ${characterCount}).`,
+    );
+  }
+}
+
+function buildSelectionTranslationMessages(requestBody) {
   const paperContext = requestBody.longContextEnabled ? requestBody.paperContext : undefined;
   const sourceLanguage = getTranslationLanguagePromptLabel(requestBody.sourceLang);
   const targetLanguage = getTranslationLanguagePromptLabel(requestBody.targetLang);
@@ -63,6 +90,89 @@ export function buildTranslationMessages(requestBody) {
       ].join("\n"),
     },
   ];
+}
+
+function buildFreeTranslationMessages(requestBody) {
+  assertFreeTranslationSourceWithinLimit(requestBody.targetSentence);
+  const paperContext = requestBody.longContextEnabled ? requestBody.paperContext : undefined;
+  const sourceLanguage = requestBody.sourceLang === "auto"
+    ? "auto-detect from the source document"
+    : getTranslationLanguagePromptLabel(requestBody.sourceLang);
+  const targetLanguage = getTranslationLanguagePromptLabel(requestBody.targetLang);
+  const promptContent = createBudgetedFreePromptContent(requestBody, paperContext);
+  const translationInstruction = requestBody.sourceLang === "auto"
+    ? `Auto-detect the source language, then translate the complete document into ${targetLanguage}.`
+    : `Translate the complete ${sourceLanguage} document into ${targetLanguage}.`;
+
+  return [
+    {
+      role: "system",
+      content: [
+        "You are a professional document translator.",
+        translationInstruction,
+        "Translate every part of the source document without summarizing, omitting, reordering, or adding content.",
+        "Preserve paragraph boundaries, blank lines, and line breaks that carry document structure.",
+        "Preserve Markdown and GitHub Flavored Markdown structure, including headings, emphasis, lists, task lists, blockquotes, links, images, tables, HTML tags, inline code, and fenced code blocks.",
+        "Translate natural-language prose inside Markdown elements, including headings, list items, blockquotes, table cells, and link labels, while preserving URLs and all structural delimiters.",
+        "Preserve code, identifiers, filenames, command lines, URLs, citations, variables, method names, dataset names, technical abbreviations, and established acronyms unless terminology explicitly maps them.",
+        "Preserve LaTeX delimiters, commands, environments, equation contents, labels, references, and equation tags exactly; do not rewrite formulas.",
+        "Use the requested target-language conventions consistently, including Simplified or Traditional Chinese script when applicable.",
+        "Follow this priority order: preserve document structure, code, formulas, citations, terminology, acronyms, and identifiers first; then apply custom style requirements; then apply preset style; then use general translation rules.",
+        "Return only the translated document. Do not add commentary or wrap the whole result in quotation marks or a new code fence.",
+      ].join("\n"),
+    },
+    {
+      role: "user",
+      content: [
+        "[Optional paper context]",
+        `Title: ${promptContent.title}`,
+        `Abstract: ${promptContent.abstract}`,
+        "Terminology:",
+        ...promptContent.terminology,
+        "",
+        "[Translation policy]",
+        `Source language: ${sourceLanguage}`,
+        `Target language: ${targetLanguage}`,
+        `Style: ${promptContent.translationStyle}`,
+        "Output only the translated document with its original Markdown/GFM, LaTeX, and line-break structure.",
+        "",
+        "--- BEGIN SOURCE DOCUMENT ---",
+        promptContent.sourceText,
+        "--- END SOURCE DOCUMENT ---",
+      ].join("\n"),
+    },
+  ];
+}
+
+function createBudgetedFreePromptContent(requestBody, paperContext) {
+  const sourceText = String(requestBody.targetSentence ?? "");
+  const translationStyle = truncateText(
+    getTranslationStyleInstruction(requestBody.translationStyle),
+    MAX_STYLE_CHARS,
+  );
+  let remainingBudget = Math.max(
+    0,
+    MAX_FREE_USER_PROMPT_CHARS - PROMPT_FIXED_OVERHEAD_CHARS - sourceText.length - translationStyle.length,
+  );
+  const title = truncateText(paperContext?.title ?? "", Math.min(MAX_TITLE_CHARS, remainingBudget));
+  remainingBudget = Math.max(0, remainingBudget - title.length);
+  const abstract = truncateText(
+    paperContext?.abstract ?? "",
+    Math.min(MAX_ABSTRACT_CHARS, remainingBudget),
+  );
+  remainingBudget = Math.max(0, remainingBudget - abstract.length);
+  const terminology = Array.isArray(requestBody.terminologyOverride)
+    ? requestBody.terminologyOverride
+    : paperContext?.terminology;
+  const terminologyResult = formatTerminology(terminology, remainingBudget);
+
+  return {
+    abstract,
+    sourceText,
+    terminology: terminologyResult.lines,
+    title,
+    translationStyle,
+  };
 }
 
 function createBudgetedPromptContent(requestBody, paperContext) {

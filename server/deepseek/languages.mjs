@@ -49,8 +49,10 @@ export function parseTranslationLanguage(value, fieldName) {
   );
 }
 
-export function normalizeTranslationLanguagePair(sourceInput, targetInput) {
-  const sourceLang = parseTranslationLanguage(sourceInput, "sourceLang");
+export function normalizeTranslationLanguagePair(sourceInput, targetInput, options = {}) {
+  const sourceLang = options.allowAutoSource && isAutoLanguage(sourceInput)
+    ? "auto"
+    : parseTranslationLanguage(sourceInput, "sourceLang");
   const targetLang = parseTranslationLanguage(targetInput, "targetLang");
 
   if (sourceLang === targetLang) {
@@ -85,4 +87,8 @@ function normalizeLanguageAlias(value) {
   }
 
   return normalized;
+}
+
+function isAutoLanguage(value) {
+  return typeof value === "string" && value.trim().toLowerCase() === "auto";
 }

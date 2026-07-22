@@ -1,6 +1,8 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type {
   ApiCallLog,
+  FreeTranslationDraft,
+  FreeTranslationRecord,
   MathpixDocumentRecord,
   MathpixParsedPage,
   PaperContextRecord,
@@ -11,7 +13,7 @@ import type {
 import type { StoredPinnedTranslationCard } from "../translation/floatingCardTypes";
 
 const DB_NAME = "pdf-translate-reader";
-const DB_VERSION = 7;
+const DB_VERSION = 8;
 
 export interface PdfTranslateReaderDatabase extends DBSchema {
   pdfLibrary: {
@@ -83,6 +85,21 @@ export interface PdfTranslateReaderDatabase extends DBSchema {
       "by-updated-at": number;
     };
   };
+  freeTranslationDrafts: {
+    key: string;
+    value: FreeTranslationDraft;
+    indexes: {
+      "by-updated-at": number;
+    };
+  };
+  freeTranslationHistory: {
+    key: string;
+    value: FreeTranslationRecord;
+    indexes: {
+      "by-user": string;
+      "by-updated-at": number;
+    };
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<PdfTranslateReaderDatabase>> | undefined;
@@ -142,6 +159,17 @@ export function getAppDb() {
         store.createIndex("by-pdf", "pdfFingerprint");
         store.createIndex("by-updated-at", "updatedAt");
       }
+
+      if (!db.objectStoreNames.contains("freeTranslationDrafts")) {
+        const store = db.createObjectStore("freeTranslationDrafts", { keyPath: "userId" });
+        store.createIndex("by-updated-at", "updatedAt");
+      }
+
+      if (!db.objectStoreNames.contains("freeTranslationHistory")) {
+        const store = db.createObjectStore("freeTranslationHistory", { keyPath: "id" });
+        store.createIndex("by-user", "userId");
+        store.createIndex("by-updated-at", "updatedAt");
+      }
     },
   });
 
@@ -160,6 +188,8 @@ export async function resetAppDb() {
     "settings",
     "mathpixDocuments",
     "mathpixParsedPages",
+    "freeTranslationDrafts",
+    "freeTranslationHistory",
   ] as const;
   const transaction = db.transaction(stores, "readwrite");
 

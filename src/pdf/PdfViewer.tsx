@@ -49,6 +49,7 @@ import {
   isCrossPageSelection,
 } from "../selection/edgeCases";
 import { normalizeSentence } from "../selection/sentenceBoundary";
+import { copyTextToClipboard } from "../utils/clipboard";
 import { PageOverlayLayer } from "./pageOverlayLayer";
 
 type PdfViewerProps = {
@@ -64,6 +65,7 @@ type PdfViewerProps = {
     annotation: PinAnnotationInput,
   ) => Promise<void>;
   onDocumentLoadError?: (fingerprint: string, message: string) => void;
+  onOpenFreeTranslation: (selection: SentenceSelection) => void;
   onPinTranslationCard: (input: TranslationCardPinInput) => void;
   onPinnedTranslationRefresh: (input: PinWriteInput) => void;
   onRemoveLocalRecord?: (fingerprint: string) => Promise<void> | void;
@@ -191,6 +193,7 @@ export function PdfViewer({
   onCloseTranslationCard,
   onCreateAnnotation,
   onDocumentLoadError,
+  onOpenFreeTranslation,
   onPageTextReadyForPaperContext,
   onPinTranslationCard,
   onPinnedTranslationRefresh,
@@ -1590,6 +1593,15 @@ export function PdfViewer({
     clearMobilePendingSelection();
   }, [clearMobilePendingSelection, copySelectedText, mobilePendingSelection]);
 
+  const handleMobilePendingFreeTranslation = useCallback(() => {
+    if (!mobilePendingSelection) {
+      return;
+    }
+
+    onOpenFreeTranslation(mobilePendingSelection);
+    clearMobilePendingSelection();
+  }, [clearMobilePendingSelection, mobilePendingSelection, onOpenFreeTranslation]);
+
   const handleMobilePendingAnnotate = useCallback(() => {
     if (!mobilePendingSelection) {
       return;
@@ -1706,6 +1718,7 @@ export function PdfViewer({
                     onCopySelection={handleCopySelection}
                     onCreateAnnotation={handleCreateSelectAnnotation}
                     onOpenCollapsedMobileTranslationCard={handleOpenCollapsedMobileTranslationCard}
+                    onOpenFreeTranslation={onOpenFreeTranslation}
                     onOpenMobilePinnedCard={handleOpenMobilePinnedCard}
                     onPinTranslationCard={onPinTranslationCard}
                     onPinnedTranslationRefresh={onPinnedTranslationRefresh}
@@ -1766,6 +1779,13 @@ export function PdfViewer({
                   type="button"
                 >
                   {t("pdf.translate")}
+                </button>
+                <button
+                  className="mobile-selection-confirm-button"
+                  onClick={handleMobilePendingFreeTranslation}
+                  type="button"
+                >
+                  {t("freeTranslation.open")}
                 </button>
                 <button
                   className="mobile-selection-confirm-button"
@@ -1850,6 +1870,7 @@ const PdfPageView = memo(function PdfPageView({
   onCopySelection,
   onCreateAnnotation,
   onOpenCollapsedMobileTranslationCard,
+  onOpenFreeTranslation,
   onOpenMobilePinnedCard,
   onPinTranslationCard,
   onPinnedTranslationRefresh,
@@ -1904,6 +1925,7 @@ const PdfPageView = memo(function PdfPageView({
     annotation: PinAnnotationInput,
   ) => Promise<void>;
   onOpenCollapsedMobileTranslationCard: () => void;
+  onOpenFreeTranslation: (selection: SentenceSelection) => void;
   onOpenMobilePinnedCard: (cardKey: string, selection: SentenceSelection) => void;
   onPinTranslationCard: (input: TranslationCardPinInput) => void;
   onPinnedTranslationRefresh: (input: PinWriteInput) => void;
@@ -2121,6 +2143,7 @@ const PdfPageView = memo(function PdfPageView({
             onCopySelection={onCopySelection}
             onCreateAnnotation={onCreateAnnotation}
             onOpenCollapsedMobileTranslationCard={onOpenCollapsedMobileTranslationCard}
+            onOpenFreeTranslation={onOpenFreeTranslation}
             onOpenMobilePinnedCard={onOpenMobilePinnedCard}
             onPinTranslationCard={onPinTranslationCard}
             onPinnedTranslationRefresh={onPinnedTranslationRefresh}
@@ -2526,29 +2549,4 @@ function areSetsEqual(left: Set<number>, right: Set<number>) {
   }
 
   return true;
-}
-
-async function copyTextToClipboard(text: string) {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-
-  const textarea = document.createElement("textarea");
-
-  textarea.value = text;
-  textarea.style.position = "fixed";
-  textarea.style.left = "-9999px";
-  textarea.style.top = "0";
-  textarea.setAttribute("readonly", "true");
-  document.body.append(textarea);
-  textarea.select();
-
-  try {
-    if (!document.execCommand("copy")) {
-      throw new Error("Copy failed.");
-    }
-  } finally {
-    textarea.remove();
-  }
 }

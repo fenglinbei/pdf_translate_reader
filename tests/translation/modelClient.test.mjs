@@ -5,6 +5,7 @@ import {
   normalizeTranslationModel,
   TranslationModelError,
 } from "../../server/translationModels/client.mjs";
+import { FREE_TRANSLATION_MAX_SOURCE_CHARS } from "../../server/deepseek/prompt.mjs";
 import { handleTranslateStream } from "../../server/routes/translate.mjs";
 
 const MANAGED_ENV_KEYS = [
@@ -159,12 +160,75 @@ describe("translation model client", () => {
     assert.match(response.output, /event: meta/);
     assert.match(response.output, /event: heartbeat/);
     assert.match(response.output, /"model":"kimi-k3"/);
+    assert.match(response.output, /"promptVersion":"translation-v3"/);
     assert.match(response.output, /event: delta\ndata: \{"text":"你好"\}/);
     assert.match(response.output, /"promptCacheHitTokens":3/);
     assert.match(response.output, /"promptCacheMissTokens":7/);
     assert.match(response.output, /event: finish/);
     assert.match(response.output, /event: done/);
     assert.doesNotMatch(response.output, /hidden reasoning/);
+  });
+
+  it("accepts auto source detection for free translation and returns its prompt version", async () => {
+    process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
+    const upstreamRequest = captureSuccessfulRequest();
+    const request = createTranslationRequest({
+      ...createRequestBody("deepseek-v4-flash"),
+      requestKind: "free",
+      sourceLang: "auto",
+      targetSentence: "# Hello\n\n- World",
+    });
+    const response = createTranslationResponse();
+
+    await handleTranslateStream(request, response);
+
+    assert.equal(response.statusCode, 200);
+    assert.match(response.output, /"promptVersion":"free-translation-v1"/);
+    assert.match(upstreamRequest.body.messages[0].content, /Auto-detect the source language/);
+    assert.match(
+      upstreamRequest.body.messages[1].content,
+      /Source language: auto-detect from the source document/,
+    );
+  });
+
+  it("continues to reject auto source detection for selection translation", async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls += 1;
+      return new Response("data: [DONE]\n\n", { status: 200 });
+    };
+    const request = createTranslationRequest({
+      ...createRequestBody("deepseek-v4-flash"),
+      sourceLang: "auto",
+    });
+    const response = createTranslationResponse();
+
+    await handleTranslateStream(request, response);
+
+    assert.equal(response.statusCode, 400);
+    assert.equal(fetchCalls, 0);
+    assert.match(response.output, /Unsupported sourceLang: auto/);
+  });
+
+  it("rejects oversized free translation before calling a provider", async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls += 1;
+      return new Response("data: [DONE]\n\n", { status: 200 });
+    };
+    const request = createTranslationRequest({
+      ...createRequestBody("deepseek-v4-flash"),
+      requestKind: "free",
+      targetSentence: "a".repeat(FREE_TRANSLATION_MAX_SOURCE_CHARS + 1),
+    });
+    const response = createTranslationResponse();
+
+    await handleTranslateStream(request, response);
+
+    assert.equal(response.statusCode, 400);
+    assert.equal(fetchCalls, 0);
+    assert.match(response.output, /must be 20000 characters or fewer/);
+    assert.match(response.output, /received 20001/);
   });
 
   it("normalizes GLM nested cache usage", async () => {
@@ -337,7 +401,10 @@ function createTranslationResponse() {
     output: "",
     statusCode: undefined,
     writableEnded: false,
-    end() {
+    end(chunk) {
+      if (chunk) {
+        this.output += chunk;
+      }
       this.ended = true;
       this.writableEnded = true;
     },

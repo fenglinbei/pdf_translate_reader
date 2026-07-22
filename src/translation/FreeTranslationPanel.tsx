@@ -1,128 +1,465 @@
 import {
+  ArrowLeftRight,
   Copy,
   Languages,
   LoaderCircle,
-  Plus,
-  RefreshCw,
+  Square,
   Trash2,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   TRANSLATION_LANGUAGES,
   type TranslationLanguage,
 } from "../config/translationLanguages";
 import { useI18n } from "../i18n/I18nProvider";
-import type { MessageKey } from "../i18n/messages";
 import type {
   AppSettings,
+  FreeTranslationDraft,
+  FreeTranslationRecord,
+  FreeTranslationRequest,
+  FreeTranslationRequestSnapshot,
+  FreeTranslationSourceLanguage,
+  FreeTranslationTerminologyEntry,
   PaperContext,
   PaperContextTerm,
   PdfLibraryEntry,
   TokenUsage,
   TranslationModel,
-  TranslationRequest,
-  TranslationStylePresetId,
   TranslationStyleSettings,
 } from "../types/domain";
+import { copyTextToClipboard } from "../utils/clipboard";
 import { putApiCallLog } from "./apiLogRepository";
-import { TRANSLATION_PROMPT_VERSION } from "./defaults";
+import {
+  FREE_TRANSLATION_MAX_SOURCE_CHARS,
+  FREE_TRANSLATION_PROMPT_VERSION,
+} from "./defaults";
 import { getTranslationErrorMessage } from "./errors";
-import { TRANSLATION_MODEL_OPTIONS } from "./models";
-import { RichMathText } from "./RichMathText";
+import { FreeTranslationHistory } from "./FreeTranslationHistory";
+import { FreeTranslationMarkdown } from "./FreeTranslationMarkdown";
+import {
+  FreeTranslationOptions,
+  type FreeTranslationTermDraft,
+} from "./FreeTranslationOptions";
+import {
+  clearFreeTranslationHistory,
+  deleteFreeTranslationRecord,
+  getFreeTranslationDraft,
+  listFreeTranslationHistory,
+  putFreeTranslationDraft,
+  putFreeTranslationRecord,
+  type FreeTranslationDraftWriteInput,
+} from "./freeTranslationRepository";
 import { streamTranslation } from "./translationClient";
 import {
   DEFAULT_TRANSLATION_STYLE,
-  TRANSLATION_STYLE_CUSTOM_MAX_LENGTH,
-  TRANSLATION_STYLE_PRESET_IDS,
   getEffectiveTranslationStyle,
   normalizeTranslationStyle,
 } from "./translationStyle";
 
 type FreeTranslationPanelProps = {
-  entry: PdfLibraryEntry;
+  entry?: PdfLibraryEntry;
+  initialText?: string;
+  initialTextKey?: number;
   onClose: () => void;
   paperContext?: PaperContext;
   settings: AppSettings;
+  userId: string;
 };
 
-type FreeTranslationStatus = "idle" | "loading" | "streaming" | "success" | "error";
+type FreeTranslationStatus =
+  | "idle"
+  | "loading"
+  | "streaming"
+  | "success"
+  | "stopped"
+  | "error";
 type CopyStatus = "idle" | "copied" | "error";
-type TermDraft = Pick<PaperContextTerm, "source" | "target"> & {
-  id: string;
-};
+type DraftStatus = "idle" | "saving" | "saved" | "error";
+
+const STANDALONE_PDF_FINGERPRINT = "standalone-free-translation";
+const DRAFT_SAVE_DELAY_MS = 450;
 
 export function FreeTranslationPanel({
   entry,
+  initialText,
+  initialTextKey,
   onClose,
   paperContext,
   settings,
+  userId,
 }: FreeTranslationPanelProps) {
   const { t } = useI18n();
   const abortControllerRef = useRef<AbortController>();
+  const activeRequestIdRef = useRef(0);
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const draftSaveTimerRef = useRef<number>();
+  const entryRef = useRef(entry);
+  const hasUserInteractionRef = useRef(false);
+  const initialTextRef = useRef(initialText);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const isPanelMountedRef = useRef(false);
+  const lastAppliedInitialTextKeyRef = useRef<number>();
+  const lastSavedDraftSignatureRef = useRef<string>();
+  const latestDraftRef = useRef<FreeTranslationDraftWriteInput>();
+  const latestDraftSignatureRef = useRef<string>();
+  const onCloseRef = useRef(onClose);
+  const panelRef = useRef<HTMLElement>(null);
+  const paperContextRef = useRef(paperContext);
+  const [completedSignature, setCompletedSignature] = useState<string>();
   const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
+  const [draftStatus, setDraftStatus] = useState<DraftStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string>();
-  const [includePaperContext, setIncludePaperContext] = useState(true);
+  const [historyError, setHistoryError] = useState<string>();
+  const [historyRecords, setHistoryRecords] = useState<FreeTranslationRecord[]>([]);
+  const [includePaperContext, setIncludePaperContext] = useState(Boolean(paperContext));
   const [inputText, setInputText] = useState("");
+  const [isDraftHydrated, setIsDraftHydrated] = useState(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [model, setModel] = useState<TranslationModel>(settings.defaultModel);
-  const [sourceLang, setSourceLang] = useState(settings.sourceLang);
+  const [sourceLang, setSourceLang] = useState<FreeTranslationSourceLanguage>("auto");
   const [status, setStatus] = useState<FreeTranslationStatus>("idle");
   const [targetLang, setTargetLang] = useState(settings.targetLang);
-  const [terms, setTerms] = useState<TermDraft[]>(() => createTermDrafts(paperContext?.terminology));
+  const [terms, setTerms] = useState<FreeTranslationTermDraft[]>(() =>
+    createTermDrafts(paperContext?.terminology)
+  );
   const [translation, setTranslation] = useState("");
-  const [translationStyle, setTranslationStyle] = useState<TranslationStyleSettings>(
-    () => normalizeTranslationStyle(paperContext?.translationStyle ?? DEFAULT_TRANSLATION_STYLE),
+  const [translationStyle, setTranslationStyle] = useState<TranslationStyleSettings>(() =>
+    normalizeTranslationStyle(paperContext?.translationStyle ?? DEFAULT_TRANSLATION_STYLE)
   );
   const [usage, setUsage] = useState<TokenUsage>();
-  const canTranslate = inputText.trim().length > 0 &&
-    status !== "loading" &&
-    status !== "streaming";
+  const isBusy = status === "loading" || status === "streaming";
+  const paperTitle = entry?.pdfMetadata?.title || entry?.fileName;
+  const effectiveIncludePaperContext = includePaperContext && Boolean(paperContext);
+  const requestSnapshot = useMemo<FreeTranslationRequestSnapshot>(() => {
+    const effectiveStyle = getEffectiveTranslationStyle(translationStyle);
+
+    return {
+      includePaperContext: effectiveIncludePaperContext,
+      model,
+      paperContextHash: effectiveIncludePaperContext ? paperContext?.contextHash : undefined,
+      promptVersion: FREE_TRANSLATION_PROMPT_VERSION,
+      sourceLang,
+      targetLang,
+      terminology: termsToEntries(terms),
+      translationStyle: effectiveStyle.translationStyle,
+      translationStyleHash: effectiveStyle.translationStyleHash,
+    };
+  }, [
+    effectiveIncludePaperContext,
+    model,
+    paperContext?.contextHash,
+    sourceLang,
+    targetLang,
+    terms,
+    translationStyle,
+  ]);
+  const draftInput = useMemo<FreeTranslationDraftWriteInput>(() => ({
+    includePaperContext: effectiveIncludePaperContext,
+    model,
+    pdfFingerprint: entry?.fingerprint,
+    pdfTitle: paperTitle,
+    sourceLang,
+    sourceText: inputText,
+    targetLang,
+    terminology: termsToEntries(terms),
+    translationStyle,
+    userId,
+  }), [
+    effectiveIncludePaperContext,
+    entry?.fingerprint,
+    inputText,
+    model,
+    paperTitle,
+    sourceLang,
+    targetLang,
+    terms,
+    translationStyle,
+    userId,
+  ]);
+  const draftSignature = useMemo(() => JSON.stringify(draftInput), [draftInput]);
+  const currentSignature = useMemo(
+    () => createResultSignature(inputText, requestSnapshot),
+    [inputText, requestSnapshot],
+  );
+  const isResultStale = Boolean(
+    translation && completedSignature && completedSignature !== currentSignature,
+  );
+  const canTranslate = Boolean(inputText.trim()) &&
+    inputText.length <= FREE_TRANSLATION_MAX_SOURCE_CHARS &&
+    !isBusy;
+  const canCopy = Boolean(translation.trim()) && status === "success" && !isResultStale;
+
+  entryRef.current = entry;
+  paperContextRef.current = paperContext;
 
   useEffect(() => {
-    setModel(settings.defaultModel);
-    setSourceLang(settings.sourceLang);
-    setTargetLang(settings.targetLang);
-  }, [settings.defaultModel, settings.sourceLang, settings.targetLang]);
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
-    setTerms(createTermDrafts(paperContext?.terminology));
-    setTranslationStyle(normalizeTranslationStyle(paperContext?.translationStyle));
-  }, [entry.fingerprint, paperContext?.contextHash, paperContext?.translationStyleHash]);
+    initialTextRef.current = initialText;
+  }, [initialText]);
 
-  useEffect(() => () => {
-    abortControllerRef.current?.abort();
+  useEffect(() => {
+    isPanelMountedRef.current = true;
+    const previouslyFocused = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+
+      if (event.key !== "Tab" || !panelRef.current) {
+        return;
+      }
+
+      const focusableElements = getFocusableElements(panelRef.current);
+
+      if (focusableElements.length === 0) {
+        event.preventDefault();
+        panelRef.current.focus({ preventScroll: true });
+        return;
+      }
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements.at(-1)!;
+      const activeElement = document.activeElement;
+
+      if (event.shiftKey && (activeElement === firstElement || !panelRef.current.contains(activeElement))) {
+        event.preventDefault();
+        lastElement.focus({ preventScroll: true });
+      } else if (!event.shiftKey && (activeElement === lastElement || !panelRef.current.contains(activeElement))) {
+        event.preventDefault();
+        firstElement.focus({ preventScroll: true });
+      }
+    };
+
+    const backdrop = backdropRef.current;
+    const backgroundElements = backdrop?.parentElement
+      ? Array.from(backdrop.parentElement.children)
+        .filter((element): element is HTMLElement => element instanceof HTMLElement && element !== backdrop)
+        .map((element) => ({
+          ariaHidden: element.getAttribute("aria-hidden"),
+          element,
+          inert: element.inert,
+        }))
+      : [];
+    const previousBodyOverflow = document.body.style.overflow;
+
+    backgroundElements.forEach(({ element }) => {
+      element.inert = true;
+      element.setAttribute("aria-hidden", "true");
+    });
+    document.body.style.overflow = "hidden";
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 0);
+
+    return () => {
+      isPanelMountedRef.current = false;
+      window.removeEventListener("keydown", handleKeyDown);
+      abortControllerRef.current?.abort();
+      window.clearTimeout(draftSaveTimerRef.current);
+      const latestDraft = latestDraftRef.current;
+      const latestDraftSignature = latestDraftSignatureRef.current;
+
+      if (
+        latestDraft &&
+        latestDraftSignature &&
+        latestDraftSignature !== lastSavedDraftSignatureRef.current
+      ) {
+        void putFreeTranslationDraft(latestDraft).catch(() => undefined);
+      }
+      backgroundElements.forEach(({ ariaHidden, element, inert }) => {
+        element.inert = inert;
+        if (ariaHidden === null) {
+          element.removeAttribute("aria-hidden");
+        } else {
+          element.setAttribute("aria-hidden", ariaHidden);
+        }
+      });
+      document.body.style.overflow = previousBodyOverflow;
+      previouslyFocused?.focus({ preventScroll: true });
+    };
   }, []);
 
+  const resetResult = useCallback(() => {
+    activeRequestIdRef.current += 1;
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = undefined;
+    setCompletedSignature(undefined);
+    setCopyStatus("idle");
+    setErrorMessage(undefined);
+    setStatus("idle");
+    setTranslation("");
+    setUsage(undefined);
+  }, []);
+
+  const refreshHistory = useCallback(async () => {
+    setIsHistoryLoading(true);
+    setHistoryError(undefined);
+
+    try {
+      setHistoryRecords(await listFreeTranslationHistory(userId));
+    } catch {
+      setHistoryError(t("freeTranslation.historyError"));
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  }, [t, userId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void getFreeTranslationDraft(userId)
+      .then((draft) => {
+        if (
+          !cancelled &&
+          draft &&
+          !hasUserInteractionRef.current &&
+          !initialTextRef.current?.trim()
+        ) {
+          applyDraft(draft, {
+            entry: entryRef.current,
+            paperContext: paperContextRef.current,
+            setIncludePaperContext,
+            setInputText,
+            setModel,
+            setSourceLang,
+            setTargetLang,
+            setTerms,
+            setTranslationStyle,
+          });
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) {
+          setIsDraftHydrated(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  useEffect(() => {
+    void refreshHistory();
+  }, [refreshHistory]);
+
+  useEffect(() => {
+    const nextInitialText = initialTextRef.current;
+
+    if (
+      initialTextKey === undefined ||
+      lastAppliedInitialTextKeyRef.current === initialTextKey ||
+      !nextInitialText?.trim()
+    ) {
+      return;
+    }
+
+    const activePaperContext = paperContextRef.current;
+
+    lastAppliedInitialTextKeyRef.current = initialTextKey;
+    hasUserInteractionRef.current = true;
+    resetResult();
+    setInputText(nextInitialText.slice(0, FREE_TRANSLATION_MAX_SOURCE_CHARS));
+    setIncludePaperContext(Boolean(activePaperContext));
+    setTerms(createTermDrafts(activePaperContext?.terminology));
+    setTranslationStyle(normalizeTranslationStyle(
+      activePaperContext?.translationStyle ?? DEFAULT_TRANSLATION_STYLE,
+    ));
+  }, [initialTextKey, resetResult]);
+
+  useEffect(() => {
+    if (!isDraftHydrated && !hasUserInteractionRef.current) {
+      return;
+    }
+
+    latestDraftRef.current = draftInput;
+    latestDraftSignatureRef.current = draftSignature;
+  }, [draftInput, draftSignature, isDraftHydrated]);
+
+  useEffect(() => {
+    if (!isDraftHydrated) {
+      return undefined;
+    }
+
+    window.clearTimeout(draftSaveTimerRef.current);
+    if (lastSavedDraftSignatureRef.current === draftSignature) {
+      setDraftStatus("saved");
+      return undefined;
+    }
+
+    setDraftStatus("saving");
+    draftSaveTimerRef.current = window.setTimeout(() => {
+      draftSaveTimerRef.current = undefined;
+      void putFreeTranslationDraft(draftInput)
+        .then(() => {
+          lastSavedDraftSignatureRef.current = draftSignature;
+          if (
+            isPanelMountedRef.current &&
+            latestDraftSignatureRef.current === draftSignature
+          ) {
+            setDraftStatus("saved");
+          }
+        })
+        .catch(() => {
+          if (
+            isPanelMountedRef.current &&
+            latestDraftSignatureRef.current === draftSignature
+          ) {
+            setDraftStatus("error");
+          }
+        });
+    }, DRAFT_SAVE_DELAY_MS);
+
+    return () => window.clearTimeout(draftSaveTimerRef.current);
+  }, [
+    draftInput,
+    draftSignature,
+    isDraftHydrated,
+  ]);
+
   const startTranslation = useCallback(() => {
-    if (!inputText.trim()) {
+    if (!canTranslate) {
       return;
     }
 
     abortControllerRef.current?.abort();
     const abortController = new AbortController();
-    abortControllerRef.current = abortController;
-    const style = getEffectiveTranslationStyle(translationStyle);
+    const requestId = activeRequestIdRef.current + 1;
     const now = Date.now();
-    const request: TranslationRequest = {
-      cloudDocumentId: entry.cloudDocumentId,
+    let activeSnapshot = requestSnapshot;
+    const request: FreeTranslationRequest = {
+      cloudDocumentId: entry?.cloudDocumentId,
       contextWindowN: 0,
       localContextAfter: [],
       localContextBefore: [],
-      longContextEnabled: includePaperContext,
+      longContextEnabled: effectiveIncludePaperContext,
       model,
-      paperContext: includePaperContext ? paperContext : undefined,
-      pdfFingerprint: entry.fingerprint,
-      promptVersion: TRANSLATION_PROMPT_VERSION,
+      paperContext: effectiveIncludePaperContext ? paperContext : undefined,
+      pdfFingerprint: entry?.fingerprint ?? STANDALONE_PDF_FINGERPRINT,
+      promptVersion: FREE_TRANSLATION_PROMPT_VERSION,
       requestKind: "free",
       sourceLang,
       stream: true,
       targetLang,
-      targetSentence: inputText.trim(),
-      terminologyOverride: termsToTerminology(terms),
-      translationStyle: style.translationStyle,
-      translationStyleHash: style.translationStyleHash,
+      targetSentence: inputText,
+      terminologyOverride: entriesToPaperContextTerms(requestSnapshot.terminology),
+      translationStyle: requestSnapshot.translationStyle,
+      translationStyleHash: requestSnapshot.translationStyleHash,
     };
 
+    abortControllerRef.current = abortController;
+    activeRequestIdRef.current = requestId;
+    setCompletedSignature(undefined);
     setCopyStatus("idle");
     setErrorMessage(undefined);
     setStatus("loading");
@@ -133,98 +470,234 @@ export function FreeTranslationPanel({
     let streamedUsage: TokenUsage | undefined;
 
     void (async () => {
-      await streamTranslation(
-        request,
-        {
-          onDelta: (text) => {
-            streamedTranslation += text;
-            setStatus("streaming");
-            setTranslation((current) => current + text);
-          },
-          onUsage: (nextUsage) => {
-            streamedUsage = nextUsage;
-            setUsage(nextUsage);
-          },
-        },
-        abortController.signal,
-      );
+      try {
+        await streamTranslation(
+          request,
+          {
+            onDelta: (text) => {
+              if (activeRequestIdRef.current !== requestId) {
+                return;
+              }
 
-      if (abortController.signal.aborted) {
-        await putApiCallLog({
+              streamedTranslation += text;
+              setStatus("streaming");
+              setTranslation((current) => current + text);
+            },
+            onMeta: (metadata) => {
+              if (metadata.promptVersion) {
+                request.promptVersion = metadata.promptVersion;
+                activeSnapshot = {
+                  ...activeSnapshot,
+                  promptVersion: metadata.promptVersion,
+                };
+              }
+            },
+            onUsage: (nextUsage) => {
+              streamedUsage = nextUsage;
+              setUsage(nextUsage);
+            },
+          },
+          abortController.signal,
+        );
+
+        if (abortController.signal.aborted || activeRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        if (!streamedTranslation.trim()) {
+          throw new Error("Translation returned no text.");
+        }
+
+        if (activeRequestIdRef.current === requestId) {
+          setCompletedSignature(createResultSignature(inputText, activeSnapshot));
+          setStatus("success");
+        }
+
+        void putApiCallLog({
           request,
           requestFinishedAt: Date.now(),
           requestStartedAt: now,
-          status: "aborted",
+          status: "success",
           usage: streamedUsage,
         }).catch(() => undefined);
-        return;
-      }
 
-      if (!streamedTranslation.trim()) {
-        throw new Error("Translation returned no text.");
-      }
+        try {
+          const record = await putFreeTranslationRecord({
+            cloudDocumentId: entry?.cloudDocumentId,
+            pdfFingerprint: entry?.fingerprint,
+            pdfTitle: paperTitle,
+            request: activeSnapshot,
+            sourceText: inputText,
+            translation: streamedTranslation,
+            usage: streamedUsage,
+            userId,
+          });
 
-      await putApiCallLog({
-        request,
-        requestFinishedAt: Date.now(),
-        requestStartedAt: now,
-        status: "success",
-        usage: streamedUsage,
-      }).catch(() => undefined);
-      setStatus("success");
-    })().catch((error) => {
-      const nextErrorMessage = getTranslationErrorMessage(error);
+          if (activeRequestIdRef.current === requestId) {
+            setHistoryRecords((current) => [
+              record,
+              ...current.filter((item) => item.id !== record.id),
+            ].slice(0, 20));
+          }
+        } catch {
+          if (activeRequestIdRef.current === requestId) {
+            setHistoryError(t("freeTranslation.historyError"));
+          }
+        }
+      } catch (error) {
+        const nextErrorMessage = getTranslationErrorMessage(error);
 
-      if (abortController.signal.aborted) {
-        void putApiCallLog({
+        if (abortController.signal.aborted) {
+          await putApiCallLog({
+            errorMessage: nextErrorMessage,
+            request,
+            requestFinishedAt: Date.now(),
+            requestStartedAt: now,
+            status: "aborted",
+            usage: streamedUsage,
+          }).catch(() => undefined);
+          return;
+        }
+
+        if (activeRequestIdRef.current === requestId) {
+          setErrorMessage(nextErrorMessage);
+          setStatus("error");
+        }
+        await putApiCallLog({
           errorMessage: nextErrorMessage,
           request,
           requestFinishedAt: Date.now(),
           requestStartedAt: now,
-          status: "aborted",
+          status: "error",
           usage: streamedUsage,
         }).catch(() => undefined);
-        return;
       }
-
-      setErrorMessage(nextErrorMessage);
-      setStatus("error");
-      void putApiCallLog({
-        errorMessage: nextErrorMessage,
-        request,
-        requestFinishedAt: Date.now(),
-        requestStartedAt: now,
-        status: "error",
-        usage: streamedUsage,
-      }).catch(() => undefined);
-    });
+    })();
   }, [
-    entry.cloudDocumentId,
-    entry.fingerprint,
-    includePaperContext,
+    canTranslate,
+    effectiveIncludePaperContext,
+    entry?.cloudDocumentId,
+    entry?.fingerprint,
     inputText,
     model,
     paperContext,
+    paperTitle,
+    requestSnapshot,
     sourceLang,
     targetLang,
-    terms,
-    translationStyle,
+    t,
+    userId,
   ]);
 
-  const handleCopy = useCallback(() => {
-    if (!translation.trim()) {
+  const handleStop = useCallback(() => {
+    if (!isBusy) {
       return;
     }
 
-    void navigator.clipboard.writeText(translation)
-      .then(() => setCopyStatus("copied"))
-      .catch(() => setCopyStatus("error"));
-  }, [translation]);
+    activeRequestIdRef.current += 1;
+    abortControllerRef.current?.abort();
+    setCompletedSignature(undefined);
+    setErrorMessage(t("freeTranslation.stopped"));
+    setStatus("stopped");
+  }, [isBusy, t]);
 
-  function updateTerm(termId: string, patch: Partial<TermDraft>) {
-    setTerms((currentTerms) =>
-      currentTerms.map((term) => term.id === termId ? { ...term, ...patch } : term),
+  const handleCopy = useCallback(async () => {
+    if (!canCopy) {
+      return;
+    }
+
+    try {
+      await copyTextToClipboard(translation);
+      setCopyStatus("copied");
+    } catch {
+      setCopyStatus("error");
+    }
+  }, [canCopy, translation]);
+
+  const handleSourceKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      startTranslation();
+    }
+  }, [startTranslation]);
+
+  const handleSwapLanguages = useCallback(() => {
+    if (sourceLang === "auto" || isBusy) {
+      return;
+    }
+
+    hasUserInteractionRef.current = true;
+    setSourceLang(targetLang);
+    setTargetLang(sourceLang);
+    setCopyStatus("idle");
+  }, [isBusy, sourceLang, targetLang]);
+
+  const handleRestoreHistory = useCallback((record: FreeTranslationRecord) => {
+    hasUserInteractionRef.current = true;
+    abortControllerRef.current?.abort();
+    activeRequestIdRef.current += 1;
+    const canRestorePaperContext = Boolean(
+      record.request.includePaperContext &&
+      paperContext &&
+      (!record.pdfFingerprint || record.pdfFingerprint === entry?.fingerprint),
     );
+    const restoredSnapshot: FreeTranslationRequestSnapshot = {
+      ...record.request,
+      includePaperContext: canRestorePaperContext,
+      paperContextHash: canRestorePaperContext ? paperContext?.contextHash : undefined,
+    };
+
+    setSourceLang(record.request.sourceLang);
+    setTargetLang(record.request.targetLang);
+    setModel(record.request.model);
+    setIncludePaperContext(canRestorePaperContext);
+    setInputText(record.sourceText);
+    setTerms(createTermDrafts(record.request.terminology));
+    setTranslationStyle(normalizeTranslationStyle(record.request.translationStyle));
+    setTranslation(record.translation);
+    setUsage(record.usage);
+    setCopyStatus("idle");
+    setErrorMessage(undefined);
+    setCompletedSignature(createResultSignature(record.sourceText, restoredSnapshot));
+    setStatus("success");
+  }, [entry?.fingerprint, paperContext]);
+
+  const handleDeleteHistory = useCallback((record: FreeTranslationRecord) => {
+    void deleteFreeTranslationRecord(userId, record.id)
+      .then(() => {
+        setHistoryRecords((current) => current.filter((item) => item.id !== record.id));
+      })
+      .catch(() => setHistoryError(t("freeTranslation.historyError")));
+  }, [t, userId]);
+
+  const handleClearHistory = useCallback(() => {
+    if (!window.confirm(t("freeTranslation.clearHistoryConfirm"))) {
+      return;
+    }
+
+    void clearFreeTranslationHistory(userId)
+      .then(() => setHistoryRecords([]))
+      .catch(() => setHistoryError(t("freeTranslation.historyError")));
+  }, [t, userId]);
+
+  function handleSourceLanguageChange(nextSourceLang: FreeTranslationSourceLanguage) {
+    hasUserInteractionRef.current = true;
+    setSourceLang(nextSourceLang);
+    setCopyStatus("idle");
+
+    if (nextSourceLang !== "auto" && nextSourceLang === targetLang) {
+      setTargetLang(findAlternativeLanguage(nextSourceLang));
+    }
+  }
+
+  function handleTargetLanguageChange(nextTargetLang: TranslationLanguage) {
+    hasUserInteractionRef.current = true;
+    setTargetLang(nextTargetLang);
+    setCopyStatus("idle");
+
+    if (sourceLang === nextTargetLang) {
+      setSourceLang("auto");
+    }
   }
 
   return (
@@ -235,280 +708,339 @@ export function FreeTranslationPanel({
           onClose();
         }
       }}
+      ref={backdropRef}
       role="presentation"
     >
-      <section className="free-translation-panel" aria-label={t("freeTranslation.title")}>
+      <section
+        aria-label={t("freeTranslation.title")}
+        aria-modal="true"
+        className="free-translation-panel"
+        ref={panelRef}
+        role="dialog"
+        tabIndex={-1}
+      >
         <header className="free-translation-header">
           <div className="free-translation-heading">
-            <Languages aria-hidden="true" size={18} strokeWidth={2} />
+            <Languages aria-hidden="true" size={19} strokeWidth={2} />
             <div>
               <div className="free-translation-title">{t("freeTranslation.title")}</div>
-              <div className="free-translation-subtitle">{entry.pdfMetadata?.title || entry.fileName}</div>
+              <div className="free-translation-subtitle">
+                {paperTitle || t("freeTranslation.standalone")}
+              </div>
             </div>
           </div>
-          <button className="icon-button" onClick={onClose} title={t("common.close")} type="button">
-            <X aria-hidden="true" size={18} strokeWidth={2} />
-          </button>
+          <div className="free-translation-header-actions">
+            {paperContext && paperTitle ? (
+              <span className="free-translation-context-chip">
+                {t("freeTranslation.contextActive", { title: paperTitle })}
+              </span>
+            ) : null}
+            <button
+              aria-label={t("common.close")}
+              className="icon-button"
+              onClick={onClose}
+              title={t("common.close")}
+              type="button"
+            >
+              <X aria-hidden="true" size={18} strokeWidth={2} />
+            </button>
+          </div>
         </header>
 
         <div className="free-translation-body">
-          <div className="free-translation-main">
-            <label className="settings-field">
-              <span>{t("freeTranslation.sourceText")}</span>
+          <div className="free-translation-workbench">
+            <section className="free-translation-pane free-translation-pane--source">
+              <header className="free-translation-pane-header">
+                <label className="free-translation-language-select">
+                  <span className="sr-only">{t("settings.source")}</span>
+                  <select
+                    aria-label={t("settings.source")}
+                    disabled={isBusy}
+                    onChange={(event) => handleSourceLanguageChange(
+                      event.currentTarget.value as FreeTranslationSourceLanguage,
+                    )}
+                    value={sourceLang}
+                  >
+                    <option value="auto">{t("freeTranslation.autoDetect")}</option>
+                    {TRANSLATION_LANGUAGES.map((language) => (
+                      <option key={language.code} value={language.code}>{language.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  aria-label={t("freeTranslation.clearSource")}
+                  className="icon-button icon-button--small"
+                  disabled={!inputText || isBusy}
+                  onClick={() => {
+                    hasUserInteractionRef.current = true;
+                    setInputText("");
+                    resetResult();
+                  }}
+                  title={t("freeTranslation.clearSource")}
+                  type="button"
+                >
+                  <Trash2 aria-hidden="true" size={16} strokeWidth={2} />
+                </button>
+              </header>
               <textarea
-                autoFocus
+                aria-label={t("freeTranslation.sourceText")}
+                className="free-translation-source-input"
+                maxLength={FREE_TRANSLATION_MAX_SOURCE_CHARS}
                 onChange={(event) => {
+                  hasUserInteractionRef.current = true;
                   setInputText(event.currentTarget.value);
                   setCopyStatus("idle");
                 }}
-                rows={8}
+                onKeyDown={handleSourceKeyDown}
+                placeholder={t("freeTranslation.sourcePlaceholder")}
+                ref={inputRef}
                 value={inputText}
               />
-            </label>
-            <div className="free-translation-actions">
-              <button
-                className="primary-action-button"
-                disabled={!canTranslate}
-                onClick={startTranslation}
-                type="button"
-              >
-                {status === "loading" || status === "streaming" ? (
-                  <LoaderCircle aria-hidden="true" size={16} strokeWidth={2} />
-                ) : (
-                  <Languages aria-hidden="true" size={16} strokeWidth={2} />
-                )}
-                <span>{translation ? t("translation.retranslate") : t("pdf.translate")}</span>
-              </button>
-              <button
-                className="icon-button"
-                disabled={!canTranslate}
-                onClick={startTranslation}
-                title={t("translation.retranslate")}
-                type="button"
-              >
-                <RefreshCw aria-hidden="true" size={16} strokeWidth={2} />
-              </button>
-              <button
-                className="icon-button"
-                disabled={!translation.trim()}
-                onClick={handleCopy}
-                title={t("common.copy")}
-                type="button"
-              >
-                <Copy aria-hidden="true" size={16} strokeWidth={2} />
-              </button>
-              {copyStatus !== "idle" ? (
-                <span className={`free-translation-inline-status free-translation-inline-status--${copyStatus}`}>
-                  {copyStatus === "copied" ? t("pdf.copied") : t("pdf.copyFailed")}
-                </span>
-              ) : null}
-            </div>
-            <div className={`free-translation-output free-translation-output--${status}`}>
-              {errorMessage ? (
-                errorMessage
-              ) : translation ? (
-                <RichMathText text={translation} />
-              ) : status === "loading" || status === "streaming" ? (
-                t("translation.translating")
-              ) : (
-                t("freeTranslation.emptyOutput")
-              )}
-            </div>
-            {usage ? (
-              <div className="translation-popover-meta">
-                {t("translation.tokens")} {usage.totalTokens ?? "-"} · {t("translation.cacheHit")}{" "}
-                {usage.promptCacheHitTokens ?? 0}
-              </div>
-            ) : null}
-          </div>
-
-          <aside className="free-translation-controls">
-            <div className="settings-field-grid">
-              <label className="settings-field">
-                <span>{t("settings.source")}</span>
-                <select
-                  value={sourceLang}
-                  onChange={(event) => {
-                    const nextSourceLang = event.currentTarget.value as TranslationLanguage;
-                    setSourceLang(nextSourceLang);
-                    if (nextSourceLang === targetLang) {
-                      setTargetLang(sourceLang);
-                    }
-                  }}
-                >
-                  {TRANSLATION_LANGUAGES.map((language) => (
-                    <option key={language.code} value={language.code}>
-                      {language.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="settings-field">
-                <span>{t("settings.target")}</span>
-                <select
-                  value={targetLang}
-                  onChange={(event) => {
-                    const nextTargetLang = event.currentTarget.value as TranslationLanguage;
-                    setTargetLang(nextTargetLang);
-                    if (nextTargetLang === sourceLang) {
-                      setSourceLang(targetLang);
-                    }
-                  }}
-                >
-                  {TRANSLATION_LANGUAGES.map((language) => (
-                    <option key={language.code} value={language.code}>
-                      {language.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <label className="settings-field">
-              <span>{t("settings.defaultModel")}</span>
-              <select
-                value={model}
-                onChange={(event) => setModel(event.currentTarget.value as TranslationModel)}
-              >
-                {TRANSLATION_MODEL_OPTIONS.map((option) => (
-                  <option key={option.id} value={option.id}>{option.label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="settings-toggle">
-              <input
-                checked={includePaperContext}
-                onChange={(event) => setIncludePaperContext(event.currentTarget.checked)}
-                type="checkbox"
-              />
-              <span>{t("freeTranslation.includePaperContext")}</span>
-            </label>
-            <label className="settings-field">
-              <span>{t("paperContext.translationStyle")}</span>
-              <select
-                value={translationStyle.presetId}
-                onChange={(event) => {
-                  const presetId = event.currentTarget.value as TranslationStylePresetId;
-                  setTranslationStyle(presetId === "custom" ? { customInstruction: "", presetId } : { presetId });
-                }}
-              >
-                {TRANSLATION_STYLE_PRESET_IDS.map((presetId) => (
-                  <option key={presetId} value={presetId}>
-                    {t(getTranslationStylePresetLabelKey(presetId))}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {translationStyle.presetId === "custom" ? (
-              <label className="settings-field">
-                <span>{t("paperContext.customTranslationStyle")}</span>
-                <textarea
-                  maxLength={TRANSLATION_STYLE_CUSTOM_MAX_LENGTH}
-                  onChange={(event) => setTranslationStyle({
-                    customInstruction: event.currentTarget.value,
-                    presetId: "custom",
-                  })}
-                  rows={4}
-                  value={translationStyle.customInstruction ?? ""}
-                />
-                <small className="settings-field-hint">
-                  {t("paperContext.customTranslationStyleHint", {
-                    count: TRANSLATION_STYLE_CUSTOM_MAX_LENGTH,
-                  })}
-                </small>
-              </label>
-            ) : null}
-            <div className="paper-context-terms">
-              <div className="paper-context-terms-header">
-                <span>{t("paperContext.terminology")}</span>
+              <footer className="free-translation-pane-footer">
+                <div className="free-translation-source-meta">
+                  <span>{t("freeTranslation.characterCount", {
+                    count: inputText.length,
+                    limit: FREE_TRANSLATION_MAX_SOURCE_CHARS,
+                  })}</span>
+                  <span>{t("freeTranslation.inputHint")}</span>
+                </div>
                 <button
-                  className="icon-button icon-button--small"
-                  onClick={() => {
-                    setTerms((currentTerms) => [
-                      ...currentTerms,
-                      {
-                        id: `free-term-${Date.now()}-${currentTerms.length}`,
-                        source: "",
-                        target: "",
-                      },
-                    ]);
-                  }}
-                  title={t("paperContext.addTerm")}
+                  className="primary-action-button"
+                  disabled={!canTranslate}
+                  onClick={startTranslation}
                   type="button"
                 >
-                  <Plus aria-hidden="true" size={16} strokeWidth={2} />
+                  <Languages aria-hidden="true" size={16} strokeWidth={2} />
+                  <span>{translation ? t("translation.retranslate") : t("pdf.translate")}</span>
                 </button>
-              </div>
-              {terms.length > 0 ? (
-                <div className="paper-context-term-list">
-                  {terms.map((term) => (
-                    <div className="paper-context-term-row" key={term.id}>
-                      <input
-                        onChange={(event) => updateTerm(term.id, { source: event.currentTarget.value })}
-                        placeholder={t("paperContext.source")}
-                        value={term.source}
-                      />
-                      <input
-                        onChange={(event) => updateTerm(term.id, { target: event.currentTarget.value })}
-                        placeholder={t("paperContext.target")}
-                        value={term.target}
-                      />
-                      <button
-                        className="icon-button icon-button--small"
-                        onClick={() => setTerms((currentTerms) => currentTerms.filter((item) => item.id !== term.id))}
-                        title={t("paperContext.removeTerm")}
-                        type="button"
-                      >
-                        <Trash2 aria-hidden="true" size={16} strokeWidth={2} />
-                      </button>
-                    </div>
-                  ))}
+              </footer>
+            </section>
+
+            <button
+              aria-label={t("freeTranslation.swapLanguages")}
+              className="free-translation-swap-button"
+              disabled={sourceLang === "auto" || isBusy}
+              onClick={handleSwapLanguages}
+              title={t("freeTranslation.swapLanguages")}
+              type="button"
+            >
+              <ArrowLeftRight aria-hidden="true" size={17} strokeWidth={2} />
+            </button>
+
+            <section className="free-translation-pane free-translation-pane--result">
+              <header className="free-translation-pane-header">
+                <label className="free-translation-language-select">
+                  <span className="sr-only">{t("settings.target")}</span>
+                  <select
+                    aria-label={t("settings.target")}
+                    disabled={isBusy}
+                    onChange={(event) => handleTargetLanguageChange(
+                      event.currentTarget.value as TranslationLanguage,
+                    )}
+                    value={targetLang}
+                  >
+                    {TRANSLATION_LANGUAGES.map((language) => (
+                      <option key={language.code} value={language.code}>{language.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <div className="free-translation-result-actions">
+                  {isBusy ? (
+                    <button
+                      aria-label={t("freeTranslation.stop")}
+                      className="icon-button icon-button--small"
+                      onClick={handleStop}
+                      title={t("freeTranslation.stop")}
+                      type="button"
+                    >
+                      <Square aria-hidden="true" size={14} strokeWidth={2.2} />
+                    </button>
+                  ) : null}
+                  <button
+                    aria-label={t("common.copy")}
+                    className="icon-button icon-button--small"
+                    disabled={!canCopy}
+                    onClick={() => void handleCopy()}
+                    title={t("common.copy")}
+                    type="button"
+                  >
+                    <Copy aria-hidden="true" size={16} strokeWidth={2} />
+                  </button>
                 </div>
-              ) : (
-                <div className="settings-empty-row">{t("paperContext.noTerms")}</div>
-              )}
-            </div>
-          </aside>
+              </header>
+              <div
+                aria-busy={isBusy}
+                aria-live={isBusy ? "off" : "polite"}
+                className={`free-translation-output free-translation-output--${status}`}
+              >
+                {translation ? (
+                  <FreeTranslationMarkdown text={translation} />
+                ) : status === "loading" || status === "streaming" ? (
+                  <div className="free-translation-loading">
+                    <LoaderCircle aria-hidden="true" size={17} strokeWidth={2} />
+                    <span>{t("translation.translating")}</span>
+                  </div>
+                ) : (
+                  t("freeTranslation.emptyOutput")
+                )}
+              </div>
+              <footer className="free-translation-pane-footer free-translation-result-footer">
+                <div className="free-translation-result-status" role="status">
+                  {isResultStale ? (
+                    <span className="free-translation-stale-notice">
+                      {t("freeTranslation.staleResult")}
+                    </span>
+                  ) : errorMessage ? (
+                    <span className={status === "error" ? "free-translation-error-notice" : ""}>
+                      {errorMessage}
+                    </span>
+                  ) : copyStatus !== "idle" ? (
+                    <span className={`free-translation-inline-status free-translation-inline-status--${copyStatus}`}>
+                      {copyStatus === "copied" ? t("pdf.copied") : t("pdf.copyFailed")}
+                    </span>
+                  ) : usage ? (
+                    <span>
+                      {t("translation.tokens")} {usage.totalTokens ?? "-"} ·{" "}
+                      {t("translation.cacheHit")} {usage.promptCacheHitTokens ?? 0}
+                    </span>
+                  ) : null}
+                </div>
+                <span className="free-translation-draft-status">
+                  {draftStatus === "saving"
+                    ? t("freeTranslation.draftSaving")
+                    : draftStatus === "saved"
+                      ? t("freeTranslation.draftSaved")
+                      : draftStatus === "error"
+                        ? t("freeTranslation.draftError")
+                        : t("freeTranslation.localDraft")}
+                </span>
+              </footer>
+            </section>
+          </div>
+
+          <div className="free-translation-lower-panels">
+            <FreeTranslationOptions
+              disabled={isBusy}
+              hasPaperContext={Boolean(paperContext)}
+              includePaperContext={includePaperContext}
+              model={model}
+              onIncludePaperContextChange={(enabled) => {
+                hasUserInteractionRef.current = true;
+                setIncludePaperContext(enabled);
+              }}
+              onModelChange={(nextModel) => {
+                hasUserInteractionRef.current = true;
+                setModel(nextModel);
+              }}
+              onTranslationStyleChange={(nextStyle) => {
+                hasUserInteractionRef.current = true;
+                setTranslationStyle(nextStyle);
+              }}
+              setTerms={(action) => {
+                hasUserInteractionRef.current = true;
+                setTerms(action);
+              }}
+              terms={terms}
+              translationStyle={translationStyle}
+            />
+            <FreeTranslationHistory
+              error={historyError}
+              isLoading={isHistoryLoading}
+              onClear={handleClearHistory}
+              onDelete={handleDeleteHistory}
+              onRestore={handleRestoreHistory}
+              records={historyRecords}
+            />
+          </div>
         </div>
       </section>
     </div>
   );
 }
 
-function createTermDrafts(terminology: PaperContextTerm[] | undefined): TermDraft[] {
+function applyDraft(
+  draft: FreeTranslationDraft,
+  setters: {
+    entry?: PdfLibraryEntry;
+    paperContext?: PaperContext;
+    setIncludePaperContext: (value: boolean) => void;
+    setInputText: (value: string) => void;
+    setModel: (value: TranslationModel) => void;
+    setSourceLang: (value: FreeTranslationSourceLanguage) => void;
+    setTargetLang: (value: TranslationLanguage) => void;
+    setTerms: (value: FreeTranslationTermDraft[]) => void;
+    setTranslationStyle: (value: TranslationStyleSettings) => void;
+  },
+) {
+  const contextMatches = Boolean(
+    setters.paperContext &&
+    (!draft.pdfFingerprint || draft.pdfFingerprint === setters.entry?.fingerprint),
+  );
+
+  setters.setInputText(draft.sourceText.slice(0, FREE_TRANSLATION_MAX_SOURCE_CHARS));
+  setters.setSourceLang(draft.sourceLang);
+  setters.setTargetLang(draft.targetLang);
+  setters.setModel(draft.model);
+  setters.setIncludePaperContext(draft.includePaperContext && contextMatches);
+  setters.setTranslationStyle(normalizeTranslationStyle(draft.translationStyle));
+  setters.setTerms(createTermDrafts(draft.terminology));
+}
+
+function createTermDrafts(
+  terminology: Array<Pick<PaperContextTerm, "source" | "target">> | undefined,
+): FreeTranslationTermDraft[] {
   return (terminology ?? []).map((term, index) => ({
-    id: `${term.source}-${term.updatedAt}-${index}`,
+    id: `free-term-${index}-${term.source}-${term.target}`,
     source: term.source,
     target: term.target,
   }));
 }
 
-function termsToTerminology(terms: TermDraft[]): PaperContextTerm[] {
-  const now = Date.now();
-
+function termsToEntries(terms: FreeTranslationTermDraft[]): FreeTranslationTerminologyEntry[] {
   return terms
-    .map((term, index) => ({
-      confidence: "user" as const,
+    .map((term) => ({
       source: term.source.trim(),
       target: term.target.trim(),
-      updatedAt: now + index,
     }))
-    .filter((term) => term.source && term.target);
+    .filter((term) => term.source || term.target);
 }
 
-function getTranslationStylePresetLabelKey(presetId: TranslationStylePresetId): MessageKey {
-  switch (presetId) {
-    case "academic-fluent":
-      return "translationStyle.academicFluent";
-    case "concise-literal":
-      return "translationStyle.conciseLiteral";
-    case "publication-polished":
-      return "translationStyle.publicationPolished";
-    case "reader-friendly":
-      return "translationStyle.readerFriendly";
-    case "custom":
-      return "translationStyle.custom";
-    case "academic-faithful":
-    default:
-      return "translationStyle.academicFaithful";
-  }
+function entriesToPaperContextTerms(entries: FreeTranslationTerminologyEntry[]): PaperContextTerm[] {
+  const now = Date.now();
+
+  return entries
+    .filter((term) => term.source && term.target)
+    .map((term, index) => ({
+      confidence: "user" as const,
+      source: term.source,
+      target: term.target,
+      updatedAt: now + index,
+    }));
+}
+
+function createResultSignature(
+  sourceText: string,
+  request: FreeTranslationRequestSnapshot,
+) {
+  return JSON.stringify({ request, sourceText });
+}
+
+function getFocusableElements(container: HTMLElement) {
+  return Array.from(container.querySelectorAll<HTMLElement>([
+    "a[href]",
+    "button:not([disabled])",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "summary",
+    "textarea:not([disabled])",
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(","))).filter((element) =>
+    !element.matches(":disabled") &&
+    element.getAttribute("aria-hidden") !== "true" &&
+    element.getClientRects().length > 0
+  );
+}
+
+function findAlternativeLanguage(language: TranslationLanguage) {
+  return TRANSLATION_LANGUAGES.find((item) => item.code !== language)?.code ?? "zh";
 }

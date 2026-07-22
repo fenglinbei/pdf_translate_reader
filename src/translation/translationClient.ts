@@ -1,4 +1,4 @@
-import type { TokenUsage, TranslationRequest } from "../types/domain";
+import type { TokenUsage, TranslationStreamRequest } from "../types/domain";
 import { PROJECT_CONFIG } from "../config/projectConfig";
 import { getSupabaseAccessToken } from "../auth/supabaseClient";
 import { TranslationNetworkError, TranslationTimeoutError } from "./errors";
@@ -13,7 +13,7 @@ export type TranslationStreamHandlers = {
 };
 
 export async function streamTranslation(
-  request: TranslationRequest,
+  request: TranslationStreamRequest,
   handlers: TranslationStreamHandlers,
   signal?: AbortSignal,
 ) {

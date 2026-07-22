@@ -1,4 +1,4 @@
-import { Bookmark, Check, Copy, Languages, Pin, RotateCcw, StickyNote, X } from "lucide-react";
+import { Bookmark, Check, Copy, ExternalLink, Languages, Pin, RotateCcw, StickyNote, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type {
   CSSProperties,
@@ -78,6 +78,7 @@ type PageOverlayLayerProps = {
   onRevealPinCard: (pin: TranslationPin) => void;
   onRevealPinnedTranslationCard: (card: PinnedTranslationCard) => void;
   onOpenCollapsedMobileTranslationCard: () => void;
+  onOpenFreeTranslation: (selection: SentenceSelection) => void;
   onOpenMobilePinnedCard: (cardKey: string, selection: SentenceSelection) => void;
   onClearQueuedSelections: () => void;
   onConfirmQueuedSelections: () => void;
@@ -128,6 +129,7 @@ export function PageOverlayLayer({
   onRevealPinCard,
   onRevealPinnedTranslationCard,
   onOpenCollapsedMobileTranslationCard,
+  onOpenFreeTranslation,
   onOpenMobilePinnedCard,
   onClearQueuedSelections,
   onConfirmQueuedSelections,
@@ -563,6 +565,7 @@ export function PageOverlayLayer({
               onCreateAnnotation={(annotation) =>
                 onCreateAnnotation(activePopoverSelection, annotation)
               }
+              onOpenFreeTranslation={() => onOpenFreeTranslation(activePopoverSelection)}
               onTranslate={() => setIsTranslationTriggered(true)}
               placement={activeSelectionActionPlacement.placement}
               selection={activePopoverSelection}
@@ -791,6 +794,7 @@ function SelectActionPopover({
   onClose,
   onCopy,
   onCreateAnnotation,
+  onOpenFreeTranslation,
   onTranslate,
   placement,
   selection,
@@ -799,6 +803,7 @@ function SelectActionPopover({
   onClose: () => void;
   onCopy: () => void;
   onCreateAnnotation: (annotation: PinAnnotationInput) => Promise<void>;
+  onOpenFreeTranslation: () => void;
   onTranslate: () => void;
   placement: string;
   selection: SentenceSelection;
@@ -856,6 +861,14 @@ function SelectActionPopover({
           >
             <Languages aria-hidden="true" size={15} strokeWidth={2} />
             <span>{t("pdf.translate")}</span>
+          </button>
+          <button
+            className="select-action-command-button"
+            onClick={onOpenFreeTranslation}
+            type="button"
+          >
+            <ExternalLink aria-hidden="true" size={15} strokeWidth={2} />
+            <span>{t("freeTranslation.openSelection")}</span>
           </button>
           <button
             className="select-action-command-button"
