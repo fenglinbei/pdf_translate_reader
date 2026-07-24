@@ -9,7 +9,7 @@ import {
   X,
 } from "lucide-react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   TRANSLATION_LANGUAGES,
   type TranslationLanguage,
@@ -53,7 +53,10 @@ import {
   putFreeTranslationRecord,
   type FreeTranslationDraftWriteInput,
 } from "./freeTranslationRepository";
-import { streamTranslation } from "./translationClient";
+import {
+  streamTranslation,
+  type TranslationProgressPhase,
+} from "./translationClient";
 import { getTranslationReasoningCapability } from "./models";
 import {
   DEFAULT_TRANSLATION_STYLE,
@@ -128,8 +131,13 @@ export function FreeTranslationPanel({
     () => getTranslationReasoningCapability(settings.defaultModel).defaultEnabled,
   );
   const [reasoningExpanded, setReasoningExpanded] = useState(false);
+  const [reasoningSummaryPhase, setReasoningSummaryPhase] =
+    useState<TranslationProgressPhase>("complete");
+  const [reasoningSummaryDegraded, setReasoningSummaryDegraded] = useState(false);
   const [reasoningSummaryPending, setReasoningSummaryPending] = useState(false);
+  const [reasoningSummaryPreview, setReasoningSummaryPreview] = useState("");
   const [reasoningSummary, setReasoningSummary] = useState("");
+  const [reasoningSummaryNotice, setReasoningSummaryNotice] = useState<string>();
   const [sourceLang, setSourceLang] = useState<FreeTranslationSourceLanguage>("auto");
   const [status, setStatus] = useState<FreeTranslationStatus>("idle");
   const [targetLang, setTargetLang] = useState(settings.targetLang);
@@ -323,8 +331,12 @@ export function FreeTranslationPanel({
     setCopyStatus("idle");
     setErrorMessage(undefined);
     setReasoningExpanded(false);
+    setReasoningSummaryDegraded(false);
+    setReasoningSummaryPhase("complete");
     setReasoningSummaryPending(false);
+    setReasoningSummaryPreview("");
     setReasoningSummary("");
+    setReasoningSummaryNotice(undefined);
     setStatus("idle");
     setTranslation("");
     setUsage(undefined);
@@ -498,15 +510,83 @@ export function FreeTranslationPanel({
     setCopyStatus("idle");
     setErrorMessage(undefined);
     setReasoningExpanded(false);
-    setReasoningSummaryPending(false);
+    setReasoningSummaryDegraded(false);
+    setReasoningSummaryPhase(effectiveReasoningEnabled ? "accepted" : "complete");
+    setReasoningSummaryPending(effectiveReasoningEnabled);
+    setReasoningSummaryPreview("");
     setReasoningSummary("");
+    setReasoningSummaryNotice(undefined);
     setStatus("loading");
     setTranslation("");
     setUsage(undefined);
 
     let streamedTranslation = "";
+    let streamedReasoningSummaryPreview = "";
     let streamedReasoningSummary = "";
     let streamedUsage: TokenUsage | undefined;
+    let latestReasoningSummaryRevision = 0;
+    let latestReasoningSummarySeq = 0;
+    let translationCompleted = false;
+    let successfulResultPersisted = false;
+
+    function markTranslationComplete() {
+      if (!streamedTranslation.trim()) {
+        return false;
+      }
+
+      translationCompleted = true;
+
+      if (activeRequestIdRef.current === requestId) {
+        setCompletedSignature(createResultSignature(inputText, activeSnapshot));
+        setStatus("success");
+      }
+
+      return true;
+    }
+
+    async function persistSuccessfulResult(historyRequestId = requestId) {
+      if (
+        successfulResultPersisted ||
+        !translationCompleted ||
+        !streamedTranslation.trim()
+      ) {
+        return;
+      }
+
+      successfulResultPersisted = true;
+      await putApiCallLog({
+        request,
+        requestFinishedAt: Date.now(),
+        requestStartedAt: now,
+        status: "success",
+        usage: streamedUsage,
+      }).catch(() => undefined);
+
+      try {
+        const record = await putFreeTranslationRecord({
+          cloudDocumentId: entry?.cloudDocumentId,
+          pdfFingerprint: entry?.fingerprint,
+          pdfTitle: paperTitle,
+          request: activeSnapshot,
+          reasoningSummary: streamedReasoningSummary,
+          sourceText: inputText,
+          translation: streamedTranslation,
+          usage: streamedUsage,
+          userId,
+        });
+
+        if (activeRequestIdRef.current === historyRequestId) {
+          setHistoryRecords((current) => [
+            record,
+            ...current.filter((item) => item.id !== record.id),
+          ].slice(0, 20));
+        }
+      } catch {
+        if (activeRequestIdRef.current === historyRequestId) {
+          setHistoryError(t("freeTranslation.historyError"));
+        }
+      }
+    }
 
     void (async () => {
       try {
@@ -514,7 +594,10 @@ export function FreeTranslationPanel({
           request,
           {
             onDelta: (text) => {
-              if (activeRequestIdRef.current !== requestId) {
+              if (
+                activeRequestIdRef.current !== requestId ||
+                translationCompleted
+              ) {
                 return;
               }
 
@@ -523,6 +606,10 @@ export function FreeTranslationPanel({
               setTranslation((current) => current + text);
             },
             onMeta: (metadata) => {
+              if (activeRequestIdRef.current !== requestId) {
+                return;
+              }
+
               if (metadata.promptVersion) {
                 request.promptVersion = metadata.promptVersion;
                 activeSnapshot = {
@@ -539,23 +626,100 @@ export function FreeTranslationPanel({
                   reasoningEnabled: metadata.reasoning.enabled,
                   reasoningEffort: metadata.reasoning.effort,
                 };
+
+                if (
+                  metadata.reasoning.enabled &&
+                  latestReasoningSummaryRevision < 2
+                ) {
+                  setReasoningSummaryPending(true);
+                } else if (
+                  !metadata.reasoning.enabled &&
+                  !streamedReasoningSummaryPreview &&
+                  !streamedReasoningSummary
+                ) {
+                  setReasoningSummaryPhase("complete");
+                  setReasoningSummaryPending(false);
+                }
               }
             },
-            onReasoningSummary: (text) => {
+            onProgress: (phase) => {
               if (activeRequestIdRef.current !== requestId) {
                 return;
               }
 
+              setReasoningSummaryPhase(phase);
+              if (phase === "complete") {
+                setReasoningSummaryPending(false);
+              }
+            },
+            onReasoningSummary: (text, snapshot) => {
+              if (
+                activeRequestIdRef.current !== requestId ||
+                !snapshot.final ||
+                snapshot.revision < latestReasoningSummaryRevision ||
+                (
+                  snapshot.revision === latestReasoningSummaryRevision &&
+                  Boolean(streamedReasoningSummary)
+                )
+              ) {
+                return;
+              }
+
+              latestReasoningSummaryRevision = snapshot.revision;
+              latestReasoningSummarySeq = Number.MAX_SAFE_INTEGER;
               streamedReasoningSummary = text;
+              streamedReasoningSummaryPreview = "";
+              setReasoningSummaryDegraded(false);
+              setReasoningSummaryNotice(undefined);
               setReasoningSummaryPending(false);
+              setReasoningSummaryPreview("");
               setReasoningSummary(text);
             },
-            onReasoningSummaryStatus: () => {
-              if (activeRequestIdRef.current !== requestId) {
+            onReasoningSummaryDelta: (delta) => {
+              if (
+                activeRequestIdRef.current !== requestId ||
+                delta.revision < latestReasoningSummaryRevision ||
+                (
+                  delta.revision === latestReasoningSummaryRevision &&
+                  delta.seq <= latestReasoningSummarySeq
+                )
+              ) {
                 return;
               }
 
+              if (delta.revision > latestReasoningSummaryRevision) {
+                streamedReasoningSummaryPreview = "";
+                latestReasoningSummarySeq = 0;
+              }
+
+              latestReasoningSummaryRevision = delta.revision;
+              latestReasoningSummarySeq = delta.seq;
+              streamedReasoningSummaryPreview += delta.text;
+              setReasoningSummaryDegraded(false);
+              setReasoningSummary("");
               setReasoningSummaryPending(true);
+              setReasoningSummaryPreview(streamedReasoningSummaryPreview);
+            },
+            onReasoningSummaryStatus: () => {
+              if (
+                activeRequestIdRef.current !== requestId ||
+                latestReasoningSummaryRevision >= 2
+              ) {
+                return;
+              }
+
+              setReasoningSummaryPhase("finalizing_summary");
+              setReasoningSummaryPending(true);
+            },
+            onTranslationComplete: (finishReason) => {
+              if (
+                activeRequestIdRef.current !== requestId ||
+                finishReason !== "stop"
+              ) {
+                return;
+              }
+
+              markTranslationComplete();
             },
             onUsage: (nextUsage) => {
               if (activeRequestIdRef.current !== requestId) {
@@ -570,6 +734,9 @@ export function FreeTranslationPanel({
         );
 
         if (abortController.signal.aborted || activeRequestIdRef.current !== requestId) {
+          if (translationCompleted) {
+            await persistSuccessfulResult();
+          }
           return;
         }
 
@@ -577,46 +744,46 @@ export function FreeTranslationPanel({
           throw new Error("Translation returned no text.");
         }
 
-        if (activeRequestIdRef.current === requestId) {
-          setReasoningSummaryPending(false);
-          setCompletedSignature(createResultSignature(inputText, activeSnapshot));
-          setStatus("success");
+        if (!translationCompleted) {
+          markTranslationComplete();
         }
 
-        void putApiCallLog({
-          request,
-          requestFinishedAt: Date.now(),
-          requestStartedAt: now,
-          status: "success",
-          usage: streamedUsage,
-        }).catch(() => undefined);
-
-        try {
-          const record = await putFreeTranslationRecord({
-            cloudDocumentId: entry?.cloudDocumentId,
-            pdfFingerprint: entry?.fingerprint,
-            pdfTitle: paperTitle,
-            request: activeSnapshot,
-            reasoningSummary: streamedReasoningSummary,
-            sourceText: inputText,
-            translation: streamedTranslation,
-            usage: streamedUsage,
-            userId,
-          });
-
-          if (activeRequestIdRef.current === requestId) {
-            setHistoryRecords((current) => [
-              record,
-              ...current.filter((item) => item.id !== record.id),
-            ].slice(0, 20));
-          }
-        } catch {
-          if (activeRequestIdRef.current === requestId) {
-            setHistoryError(t("freeTranslation.historyError"));
-          }
+        setReasoningSummaryPhase("complete");
+        setReasoningSummaryPending(false);
+        if (
+          activeSnapshot.reasoningEnabled &&
+          !streamedReasoningSummary.trim() &&
+          activeRequestIdRef.current === requestId
+        ) {
+          setReasoningSummaryDegraded(Boolean(streamedReasoningSummaryPreview));
+          setReasoningSummaryNotice(t("freeTranslation.reasoningSummaryUnavailable"));
+        }
+        await persistSuccessfulResult();
+        if (activeRequestIdRef.current === requestId) {
+          abortControllerRef.current = undefined;
         }
       } catch (error) {
         const nextErrorMessage = getTranslationErrorMessage(error);
+
+        if (translationCompleted && streamedTranslation.trim()) {
+          let historyRequestId = requestId;
+
+          if (activeRequestIdRef.current === requestId) {
+            historyRequestId = requestId + 1;
+            activeRequestIdRef.current = historyRequestId;
+            abortController.abort();
+            abortControllerRef.current = undefined;
+            setReasoningSummaryPhase("complete");
+            setReasoningSummaryPending(false);
+            setStatus("success");
+            if (!streamedReasoningSummary.trim()) {
+              setReasoningSummaryDegraded(Boolean(streamedReasoningSummaryPreview));
+              setReasoningSummaryNotice(t("freeTranslation.reasoningSummaryUnavailable"));
+            }
+          }
+          await persistSuccessfulResult(historyRequestId);
+          return;
+        }
 
         if (abortController.signal.aborted) {
           await putApiCallLog({
@@ -631,7 +798,15 @@ export function FreeTranslationPanel({
         }
 
         if (activeRequestIdRef.current === requestId) {
+          activeRequestIdRef.current = requestId + 1;
+          abortController.abort();
+          abortControllerRef.current = undefined;
+          setReasoningSummaryDegraded(false);
+          setReasoningSummaryPhase("complete");
           setReasoningSummaryPending(false);
+          setReasoningSummaryPreview("");
+          setReasoningSummary("");
+          setReasoningSummaryNotice(undefined);
           setErrorMessage(nextErrorMessage);
           setStatus("error");
         }
@@ -673,7 +848,11 @@ export function FreeTranslationPanel({
     abortControllerRef.current?.abort();
     setCompletedSignature(undefined);
     setErrorMessage(t("freeTranslation.stopped"));
+    setReasoningSummaryDegraded(false);
+    setReasoningSummaryPhase("complete");
     setReasoningSummaryPending(false);
+    setReasoningSummaryPreview("");
+    setReasoningSummaryNotice(undefined);
     setStatus("stopped");
   }, [isBusy, t]);
 
@@ -732,8 +911,12 @@ export function FreeTranslationPanel({
     setReasoningEnabled(record.request.reasoningEnabled);
     setReasoningEffort(record.request.reasoningEffort);
     setReasoningExpanded(false);
+    setReasoningSummaryDegraded(false);
+    setReasoningSummaryPhase("complete");
     setReasoningSummaryPending(false);
+    setReasoningSummaryPreview("");
     setReasoningSummary(record.reasoningSummary ?? "");
+    setReasoningSummaryNotice(undefined);
     setTranslationStyle(normalizeTranslationStyle(record.request.translationStyle));
     setTranslation(record.translation);
     setUsage(record.usage);
@@ -954,12 +1137,14 @@ export function FreeTranslationPanel({
                 aria-live={isBusy ? "off" : "polite"}
                 className={`free-translation-output free-translation-output--${status}`}
               >
-                {reasoningSummaryPending || reasoningSummary ? (
+                {reasoningSummaryPending || reasoningSummaryPreview || reasoningSummary ? (
                   <FreeTranslationReasoningPanel
+                    degraded={reasoningSummaryDegraded}
                     expanded={reasoningExpanded}
                     isGenerating={reasoningSummaryPending}
                     onExpandedChange={setReasoningExpanded}
-                    text={reasoningSummary}
+                    phase={reasoningSummaryPhase}
+                    text={reasoningSummary || reasoningSummaryPreview}
                   />
                 ) : null}
                 {translation ? (
@@ -991,6 +1176,11 @@ export function FreeTranslationPanel({
                     <span>
                       {t("translation.tokens")} {usage.totalTokens ?? "-"} ·{" "}
                       {t("translation.cacheHit")} {usage.promptCacheHitTokens ?? 0}
+                    </span>
+                  ) : null}
+                  {reasoningSummaryNotice ? (
+                    <span className="free-translation-summary-notice">
+                      {reasoningSummaryNotice}
                     </span>
                   ) : null}
                 </div>
@@ -1075,25 +1265,38 @@ export function FreeTranslationPanel({
 }
 
 function FreeTranslationReasoningPanel({
+  degraded,
   expanded,
   isGenerating,
   onExpandedChange,
+  phase,
   text,
 }: {
+  degraded: boolean;
   expanded: boolean;
   isGenerating: boolean;
   onExpandedChange: (expanded: boolean) => void;
+  phase: TranslationProgressPhase;
   text: string;
 }) {
   const { t } = useI18n();
+  const phaseStatusId = useId();
+  const summaryId = useId();
+  const phaseLabel = degraded
+    ? t("freeTranslation.reasoningPhasePartial")
+    : getReasoningPhaseLabel(phase, t);
 
   return (
-    <div className="free-translation-reasoning-panel">
+    <div
+      className="free-translation-reasoning-panel"
+      data-generating={isGenerating ? "true" : "false"}
+    >
       <button
-        aria-controls="free-translation-reasoning-summary"
+        aria-controls={summaryId}
+        aria-describedby={phaseStatusId}
         aria-expanded={expanded}
         className="free-translation-reasoning-toggle"
-        disabled={!text}
+        disabled={!text && !isGenerating}
         onClick={() => onExpandedChange(!expanded)}
         type="button"
       >
@@ -1104,17 +1307,56 @@ function FreeTranslationReasoningPanel({
           strokeWidth={2.2}
         />
         <span>{t("freeTranslation.reasoningPanel")}</span>
-        {isGenerating ? <small>{t("freeTranslation.reasoningThinking")}</small> : null}
+        <small
+          aria-atomic="true"
+          aria-live="polite"
+          id={phaseStatusId}
+          role="status"
+        >
+          {phaseLabel}
+        </small>
       </button>
       <div
+        aria-busy={isGenerating}
+        aria-live="off"
         className="free-translation-reasoning-text"
         hidden={!expanded}
-        id="free-translation-reasoning-summary"
+        id={summaryId}
       >
-        {text}
+        {text || (
+          <span className="free-translation-reasoning-placeholder">
+            {t("freeTranslation.reasoningWaiting")}
+          </span>
+        )}
+        {isGenerating && text ? (
+          <span
+            aria-hidden="true"
+            className="free-translation-reasoning-cursor"
+          />
+        ) : null}
       </div>
     </div>
   );
+}
+
+function getReasoningPhaseLabel(
+  phase: TranslationProgressPhase,
+  t: ReturnType<typeof useI18n>["t"],
+) {
+  switch (phase) {
+    case "accepted":
+      return t("freeTranslation.reasoningPhaseAccepted");
+    case "connecting":
+      return t("freeTranslation.reasoningPhaseConnecting");
+    case "analyzing":
+      return t("freeTranslation.reasoningPhaseAnalyzing");
+    case "translating":
+      return t("freeTranslation.reasoningPhaseTranslating");
+    case "finalizing_summary":
+      return t("freeTranslation.reasoningPhaseFinalizing");
+    case "complete":
+      return t("freeTranslation.reasoningPhaseComplete");
+  }
 }
 
 function applyDraft(

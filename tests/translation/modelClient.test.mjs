@@ -358,199 +358,348 @@ describe("translation model client", () => {
     );
   });
 
-  it("replaces raw Kimi thinking with a DeepSeek translation-decision summary", async () => {
+  it("opens SSE immediately and aborts concurrent translation and preview requests on close", async () => {
+    process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
+    process.env.KIMI_API_KEY = "test-kimi-key";
+    const calls = [];
+    const bothRequestsStarted = createDeferred();
+    globalThis.fetch = async (url, init) => {
+      const call = captureFetchCall(url, init);
+      calls.push(call);
+
+      if (calls.length === 2) {
+        bothRequestsStarted.resolve();
+      }
+
+      return new Promise((_resolve, reject) => {
+        init.signal.addEventListener("abort", () => {
+          reject(new DOMException("Aborted", "AbortError"));
+        }, { once: true });
+      });
+    };
+    const request = createReasoningFreeTranslationRequest("kimi-k3");
+    const response = createTranslationResponse();
+    const routePromise = handleTranslateStream(request, response);
+
+    await bothRequestsStarted.promise;
+
+    const eventsBeforeProvidersResolve = parseSseEvents(response.output);
+    const progressPhases = eventsBeforeProvidersResolve
+      .filter((event) => event.eventName === "progress")
+      .map((event) => event.payload.phase);
+    const translationCall = findTranslationCall(calls);
+    const previewCall = findSummaryPreviewCall(calls);
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.headersSent, true);
+    assert.equal(
+      eventsBeforeProvidersResolve.some((event) => event.eventName === "meta"),
+      true,
+    );
+    assert.deepEqual(progressPhases.slice(0, 2), ["accepted", "connecting"]);
+    assert.ok(translationCall);
+    assert.ok(previewCall);
+    assert.equal(translationCall.signal.aborted, false);
+    assert.equal(previewCall.signal.aborted, false);
+
+    response.emitClose();
+    await routePromise;
+
+    assert.equal(translationCall.signal.aborted, true);
+    assert.equal(previewCall.signal.aborted, true);
+    assert.doesNotMatch(response.output, /event: done/);
+  });
+
+  it("streams a safe preview beside translation, then publishes the final revision", async () => {
     process.env.DEEPSEEK_API_BASE_URL = "https://deepseek-summary.example/v1";
     process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
     process.env.KIMI_API_KEY = "test-kimi-key";
     const upstreamReasoning = "RAW_PRIVATE_REASONING_SENTINEL";
     const requests = [];
+    const mainStream = createControlledSseResponse();
+    const previewStream = createControlledSseResponse();
+    const concurrentRequestsStarted = createDeferred();
     globalThis.fetch = async (url, init) => {
-      requests.push({
-        body: JSON.parse(init.body),
-        headers: init.headers,
-        url,
-      });
+      const call = captureFetchCall(url, init);
+      requests.push(call);
 
-      if (requests.length === 1) {
-        return new Response([
-          `data: {"choices":[{"delta":{"reasoning_content":"${upstreamReasoning}"}}]}`,
-          "",
-          'data: {"choices":[{"delta":{"content":"你好"},"finish_reason":null}]}',
-          "",
-          'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"completion_tokens_details":{"reasoning_tokens":4},"total_tokens":15,"cached_tokens":3}}',
-          "",
-          "data: [DONE]",
-          "",
-        ].join("\n"), {
-          headers: { "Content-Type": "text/event-stream" },
-          status: 200,
+      if (isTranslationCall(call)) {
+        maybeResolveConcurrentRequests();
+        return mainStream.response;
+      }
+
+      if (isSummaryPreviewCall(call)) {
+        maybeResolveConcurrentRequests();
+        return previewStream.response;
+      }
+
+      if (isSummaryFinalCall(call)) {
+        return Response.json({
+          choices: [{
+            finish_reason: "stop",
+            message: {
+              content: "- 最终核对了语义、术语和结构。",
+            },
+          }],
+          usage: {
+            completion_tokens: 3,
+            prompt_tokens: 6,
+            total_tokens: 9,
+          },
         });
       }
 
-      return Response.json({
-        choices: [{
-          finish_reason: "stop",
-          message: {
-            content: "- 核对了语义与术语。\n- 保留了原文结构。",
-          },
-        }],
-        usage: {
-          completion_tokens: 8,
-          prompt_tokens: 20,
-          total_tokens: 28,
-        },
-      });
+      throw new Error(`Unexpected translation test request: ${JSON.stringify(call.body)}`);
+
+      function maybeResolveConcurrentRequests() {
+        if (
+          findTranslationCall(requests) &&
+          findSummaryPreviewCall(requests)
+        ) {
+          concurrentRequestsStarted.resolve();
+        }
+      }
     };
-    const request = createTranslationRequest({
-      contextWindowN: 0,
-      localContextAfter: [],
-      localContextBefore: [],
-      longContextEnabled: false,
-      model: "kimi-k3",
-      reasoningEffort: "low",
-      reasoningEnabled: false,
-      requestKind: "free",
-      sourceLang: "auto",
-      stream: true,
-      summaryLocale: "zh-CN",
-      targetLang: "zh",
-      targetSentence: "Hello",
-      translationStyle: { presetId: "academic-faithful" },
-    });
+    const request = createReasoningFreeTranslationRequest("kimi-k3");
     const response = createTranslationResponse();
+    const routePromise = handleTranslateStream(request, response);
 
-    await handleTranslateStream(request, response);
+    await concurrentRequestsStarted.promise;
 
-    assert.equal(response.statusCode, 200);
-    assert.equal(response.ended, true);
-    const events = parseSseEvents(response.output);
-    const meta = events.find((event) => event.eventName === "meta");
-    const finish = events.find((event) => event.eventName === "finish");
-
-    assert.equal(meta?.payload.model, "kimi-k3");
-    assert.equal(meta?.payload.promptVersion, "free-translation-v1");
-    assert.deepEqual(meta?.payload.reasoning, {
-      requestedEnabled: false,
-      enabled: true,
-      effort: "low",
-      forced: true,
+    previewStream.writeOpenAiChunk({
+      choices: [{ delta: { content: "- 正在核对" }, finish_reason: null }],
     });
-    assert.deepEqual(events.filter((event) => event.eventName === "thinking"), []);
-    assert.deepEqual(
-      events
-        .filter((event) => event.eventName === "reasoning_summary_status")
-        .map((event) => event.payload),
-      [{ status: "generating" }],
+    await waitForSseEvent(response, "reasoning_summary_delta", 1);
+    mainStream.writeOpenAiChunk({
+      choices: [{ delta: { reasoning_content: upstreamReasoning }, finish_reason: null }],
+    });
+    mainStream.writeOpenAiChunk({
+      choices: [{ delta: { content: "你好" }, finish_reason: null }],
+    });
+    await waitForSseEvent(response, "delta", 1);
+    previewStream.writeOpenAiChunk({
+      choices: [{ delta: { content: "术语与格式。" }, finish_reason: null }],
+    });
+    previewStream.writeOpenAiChunk({
+      choices: [{ delta: {}, finish_reason: "stop" }],
+      usage: {
+        completion_tokens: 2,
+        prompt_tokens: 4,
+        total_tokens: 6,
+      },
+    });
+    previewStream.writeDone();
+    previewStream.close();
+    await new Promise((resolve) => setImmediate(resolve));
+    mainStream.writeOpenAiChunk({
+      choices: [{ delta: {}, finish_reason: "stop" }],
+      usage: {
+        cached_tokens: 3,
+        completion_tokens: 5,
+        completion_tokens_details: { reasoning_tokens: 4 },
+        prompt_tokens: 10,
+        total_tokens: 15,
+      },
+    });
+    await waitForSseEvent(response, "finish", 1);
+    assert.equal(
+      parseSseEvents(response.output)
+        .some((event) => event.eventName === "translation_complete"),
+      false,
     );
-    assert.deepEqual(
-      events
-        .filter((event) => event.eventName === "reasoning_summary")
-        .map((event) => event.payload),
-      [{
-        source: "deepseek-v4-flash",
-        text: "- 核对了语义与术语。\n- 保留了原文结构。",
-      }],
-    );
+    mainStream.writeDone();
+    mainStream.close();
+
+    await routePromise;
+
+    const events = parseSseEvents(response.output);
+    const eventNames = events.map((event) => event.eventName);
+    const progressPhases = events
+      .filter((event) => event.eventName === "progress")
+      .map((event) => event.payload.phase);
+    const previewDeltas = events
+      .filter((event) => event.eventName === "reasoning_summary_delta")
+      .map((event) => event.payload);
+    const finalSummary = events
+      .find((event) => event.eventName === "reasoning_summary");
+    const translationCall = findTranslationCall(requests);
+    const previewCall = findSummaryPreviewCall(requests);
+    const finalCall = findSummaryFinalCall(requests);
+    const previewRequestText = JSON.stringify(previewCall.body);
+
+    assert.equal(response.ended, true);
+    assert.equal(requests.length, 3);
+    assert.equal(translationCall.body.model, "kimi-k3");
+    assert.equal(previewCall.url, "https://deepseek-summary.example/v1/chat/completions");
+    assert.equal(previewCall.body.model, "deepseek-v4-flash");
+    assert.equal(previewCall.body.stream, true);
+    assert.ok(previewCall.body.max_tokens <= 120);
+    assert.deepEqual(previewCall.body.thinking, { type: "disabled" });
+    assert.match(previewCall.body.messages[0].content, /live preview/i);
+    assert.equal(previewCall.headers.Authorization, "Bearer test-deepseek-key");
+    assert.equal(previewCall.headers["Content-Type"], "application/json");
+    assert.match(previewRequestText, /Hello/);
+    assert.doesNotMatch(previewRequestText, /你好/);
+    assert.doesNotMatch(previewRequestText, new RegExp(upstreamReasoning));
+    assert.equal(finalCall.body.stream, false);
+    assert.equal(finalCall.body.max_tokens, 220);
+    assert.match(JSON.stringify(finalCall.body), /你好/);
+    assert.doesNotMatch(JSON.stringify(finalCall.body), new RegExp(upstreamReasoning));
+    assert.deepEqual(previewDeltas, [
+      { revision: 1, seq: 1, text: "- 正在核对" },
+      { revision: 1, seq: 2, text: "术语与格式。" },
+    ]);
     assert.deepEqual(
       events.filter((event) => event.eventName === "delta").map((event) => event.payload),
       [{ text: "你好" }],
     );
-    assert.equal(requests.length, 2);
-    assert.equal(
-      requests[1].url,
-      "https://deepseek-summary.example/v1/chat/completions",
+    assert.deepEqual(
+      events.find((event) => event.eventName === "translation_complete")?.payload,
+      { finishReason: "stop" },
     );
-    assert.equal(requests[1].body.model, "deepseek-v4-flash");
-    assert.equal(requests[1].body.stream, false);
-    assert.equal(requests[1].body.max_tokens, 220);
-    assert.deepEqual(requests[1].body.thinking, { type: "disabled" });
-    assert.equal(requests[1].headers.Authorization, "Bearer test-deepseek-key");
-    assert.equal(requests[1].headers["Content-Type"], "application/json");
-    assert.match(requests[1].body.messages[1].content, /Hello/);
-    assert.match(requests[1].body.messages[1].content, /你好/);
-    assert.doesNotMatch(JSON.stringify(requests[1].body), new RegExp(upstreamReasoning));
-    assert.doesNotMatch(response.output, new RegExp(upstreamReasoning));
+    assert.deepEqual(finalSummary?.payload, {
+      final: true,
+      revision: 2,
+      source: "deepseek-v4-flash",
+      text: "- 最终核对了语义、术语和结构。",
+    });
+    assert.deepEqual(progressPhases, [
+      "accepted",
+      "connecting",
+      "analyzing",
+      "translating",
+      "finalizing_summary",
+      "complete",
+    ]);
+    assert.ok(eventNames.indexOf("reasoning_summary_delta") < eventNames.indexOf("delta"));
+    assert.ok(
+      eventNames.lastIndexOf("reasoning_summary_delta") > eventNames.indexOf("delta"),
+    );
+    assert.ok(eventNames.indexOf("finish") < eventNames.indexOf("translation_complete"));
+    assert.ok(
+      eventNames.indexOf("translation_complete") < eventNames.indexOf("reasoning_summary"),
+    );
+    assert.equal(eventNames.at(-1), "done");
+    assert.equal(
+      events.filter((event) => event.eventName === "usage").at(-1)?.payload.totalTokens,
+      30,
+    );
     assert.match(response.output, /"promptCacheHitTokens":3/);
     assert.match(response.output, /"promptCacheMissTokens":7/);
     assert.match(response.output, /"reasoningTokens":4/);
-    assert.equal(
-      events.filter((event) => event.eventName === "usage").at(-1)?.payload.totalTokens,
-      43,
-    );
-    assert.deepEqual(finish?.payload, { finishReason: "stop" });
-    assert.ok(response.output.indexOf("event: finish") <
-      response.output.indexOf("event: reasoning_summary"));
-    assert.ok(response.output.indexOf("event: reasoning_summary") <
-      response.output.indexOf("event: done"));
+    assert.doesNotMatch(response.output, new RegExp(upstreamReasoning));
+    assert.doesNotMatch(response.output, /event: thinking/);
+    assert.doesNotMatch(response.output, /event: error/);
   });
 
-  it("falls back to a local summary when the DeepSeek summary request fails", async () => {
+  it("degrades a 429 preview and timed-out final summary without delaying completion", async () => {
     process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
     process.env.KIMI_API_KEY = "test-kimi-key";
-    let fetchCalls = 0;
-    globalThis.fetch = async () => {
-      fetchCalls += 1;
+    const requests = [];
+    globalThis.fetch = async (url, init) => {
+      const call = captureFetchCall(url, init);
+      requests.push(call);
 
-      if (fetchCalls === 1) {
+      if (isTranslationCall(call)) {
+        return createSuccessfulTranslationResponse({
+          content: "你好",
+          reasoningContent: "RAW_FALLBACK_SECRET",
+        });
+      }
+
+      if (isSummaryPreviewCall(call)) {
+        return Response.json(
+          { error: { message: "preview quota exhausted" } },
+          { status: 429 },
+        );
+      }
+
+      if (isSummaryFinalCall(call)) {
+        throw new DOMException("The operation timed out", "TimeoutError");
+      }
+
+      throw new Error(`Unexpected translation test request: ${JSON.stringify(call.body)}`);
+    };
+    const request = createReasoningFreeTranslationRequest("kimi-k3");
+    const response = createTranslationResponse();
+
+    await handleTranslateStream(request, response);
+
+    const events = parseSseEvents(response.output);
+    const eventNames = events.map((event) => event.eventName);
+    const summary = events.find((event) => event.eventName === "reasoning_summary");
+
+    assert.equal(requests.length, 3);
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.ended, true);
+    assert.deepEqual(
+      events.find((event) => event.eventName === "translation_complete")?.payload,
+      { finishReason: "stop" },
+    );
+    assert.equal(summary?.payload.source, "local");
+    assert.equal(summary?.payload.revision, 2);
+    assert.equal(summary?.payload.final, true);
+    assert.match(summary?.payload.text, /核心语义|翻译风格/);
+    assert.ok(eventNames.indexOf("translation_complete") < eventNames.indexOf("done"));
+    assert.equal(eventNames.at(-1), "done");
+    assert.doesNotMatch(response.output, /RAW_FALLBACK_SECRET/);
+    assert.doesNotMatch(response.output, /preview quota exhausted/);
+    assert.doesNotMatch(response.output, /event: error/);
+  });
+
+  it("requires both stop and DONE before marking a reasoning translation complete", async () => {
+    process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
+    process.env.KIMI_API_KEY = "test-kimi-key";
+    const requests = [];
+    globalThis.fetch = async (url, init) => {
+      const call = captureFetchCall(url, init);
+      requests.push(call);
+
+      if (isTranslationCall(call)) {
         return new Response([
-          'data: {"choices":[{"delta":{"reasoning_content":"RAW_FALLBACK_SECRET"}}]}',
-          "",
-          'data: {"choices":[{"delta":{"content":"你好"},"finish_reason":null}]}',
-          "",
-          'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+          'data: {"choices":[{"delta":{"content":"partial"},"finish_reason":null}]}',
           "",
           "data: [DONE]",
           "",
         ].join("\n"), { status: 200 });
       }
 
-      return Response.json(
-        { error: { message: "summary unavailable" } },
-        { status: 503 },
-      );
+      if (isSummaryPreviewCall(call)) {
+        return Response.json(
+          { error: { message: "preview unavailable" } },
+          { status: 429 },
+        );
+      }
+
+      throw new Error(`Unexpected translation test request: ${JSON.stringify(call.body)}`);
     };
-    const request = createTranslationRequest({
-      ...createRequestBody("kimi-k3"),
-      reasoningEnabled: true,
-      requestKind: "free",
-      sourceLang: "auto",
-      summaryLocale: "zh-CN",
-    });
+    const request = createReasoningFreeTranslationRequest("kimi-k3");
     const response = createTranslationResponse();
 
     await handleTranslateStream(request, response);
 
-    const events = parseSseEvents(response.output);
-    const summary = events.find((event) => event.eventName === "reasoning_summary");
-    const finish = events.find((event) => event.eventName === "finish");
-
-    assert.equal(fetchCalls, 2);
-    assert.equal(response.statusCode, 200);
-    assert.equal(response.ended, true);
-    assert.equal(summary?.payload.source, "local");
-    assert.match(summary?.payload.text, /核心语义|翻译风格/);
-    assert.deepEqual(
-      events.filter((event) => event.eventName === "delta").map((event) => event.payload),
-      [{ text: "你好" }],
-    );
-    assert.deepEqual(finish?.payload, { finishReason: "stop" });
-    assert.doesNotMatch(response.output, /RAW_FALLBACK_SECRET/);
-    assert.doesNotMatch(response.output, /event: error/);
-    assert.ok(response.output.indexOf("event: finish") <
-      response.output.indexOf("event: reasoning_summary"));
-    assert.ok(response.output.indexOf("event: reasoning_summary") <
-      response.output.indexOf("event: done"));
-    assert.match(response.output, /event: done/);
+    assert.equal(requests.length, 2);
+    assert.match(response.output, /event: delta/);
+    assert.match(response.output, /event: error/);
+    assert.match(response.output, /"code":"translation_stream_incomplete"/);
+    assert.doesNotMatch(response.output, /event: translation_complete/);
+    assert.doesNotMatch(response.output, /event: reasoning_summary\n/);
+    assert.doesNotMatch(response.output, /event: done/);
   });
 
-  it("keeps billed summary usage when an empty DeepSeek summary falls back locally", async () => {
+  it("retains preview and empty-final billing when the final text falls back locally", async () => {
     process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
     process.env.KIMI_API_KEY = "test-kimi-key";
-    let fetchCalls = 0;
-    globalThis.fetch = async () => {
-      fetchCalls += 1;
+    const requests = [];
+    globalThis.fetch = async (url, init) => {
+      const call = captureFetchCall(url, init);
+      requests.push(call);
 
-      if (fetchCalls === 1) {
+      if (isTranslationCall(call)) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 10);
+        });
+
         return new Response([
           'data: {"choices":[{"delta":{"content":"你好"},"finish_reason":null}]}',
           "",
@@ -561,44 +710,103 @@ describe("translation model client", () => {
         ].join("\n"), { status: 200 });
       }
 
-      return Response.json({
-        choices: [{
-          finish_reason: "stop",
-          message: {
-            content: "",
+      if (isSummaryPreviewCall(call)) {
+        return new Response([
+          'data: {"choices":[{"delta":{"content":"- 预览摘要"},"finish_reason":null}]}',
+          "",
+          'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}',
+          "",
+          "data: [DONE]",
+          "",
+        ].join("\n"), { status: 200 });
+      }
+
+      if (isSummaryFinalCall(call)) {
+        return Response.json({
+          choices: [{
+            finish_reason: "stop",
+            message: { content: "" },
+          }],
+          usage: {
+            completion_tokens: 1,
+            prompt_tokens: 4,
+            total_tokens: 5,
           },
-        }],
-        usage: {
-          completion_tokens: 1,
-          prompt_tokens: 4,
-          total_tokens: 5,
-        },
-      });
+        });
+      }
+
+      throw new Error(`Unexpected translation test request: ${JSON.stringify(call.body)}`);
     };
-    const request = createTranslationRequest({
-      ...createRequestBody("kimi-k3"),
-      reasoningEnabled: true,
-      requestKind: "free",
-      sourceLang: "auto",
-      summaryLocale: "zh-CN",
-    });
+    const request = createReasoningFreeTranslationRequest("kimi-k3");
     const response = createTranslationResponse();
 
     await handleTranslateStream(request, response);
 
     const events = parseSseEvents(response.output);
 
-    assert.equal(fetchCalls, 2);
+    assert.equal(requests.length, 3);
     assert.equal(
       events.find((event) => event.eventName === "reasoning_summary")?.payload.source,
       "local",
     );
     assert.equal(
       events.filter((event) => event.eventName === "usage").at(-1)?.payload.totalTokens,
-      15,
+      21,
     );
-    assert.doesNotMatch(response.output, /event: error/);
+    assert.match(response.output, /event: reasoning_summary_delta/);
+    assert.match(response.output, /event: translation_complete/);
     assert.match(response.output, /event: done/);
+  });
+
+  it("aborts a pending final summary without writing a late snapshot after close", async () => {
+    process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
+    process.env.KIMI_API_KEY = "test-kimi-key";
+    const finalStarted = createDeferred();
+    let finalSignal;
+    globalThis.fetch = async (url, init) => {
+      const call = captureFetchCall(url, init);
+
+      if (isTranslationCall(call)) {
+        return createSuccessfulTranslationResponse({
+          content: "你好",
+          reasoningContent: "RAW_FINAL_ABORT_SECRET",
+        });
+      }
+
+      if (isSummaryPreviewCall(call)) {
+        return Response.json(
+          { error: { message: "preview unavailable" } },
+          { status: 429 },
+        );
+      }
+
+      if (isSummaryFinalCall(call)) {
+        finalSignal = init.signal;
+        finalStarted.resolve();
+
+        return new Promise((_resolve, reject) => {
+          init.signal.addEventListener("abort", () => {
+            reject(new DOMException("Aborted", "AbortError"));
+          }, { once: true });
+        });
+      }
+
+      throw new Error(`Unexpected translation test request: ${JSON.stringify(call.body)}`);
+    };
+    const request = createReasoningFreeTranslationRequest("kimi-k3");
+    const response = createTranslationResponse();
+    const routePromise = handleTranslateStream(request, response);
+
+    await finalStarted.promise;
+
+    assert.match(response.output, /event: translation_complete/);
+    response.emitClose();
+    await routePromise;
+
+    assert.equal(finalSignal.aborted, true);
+    assert.doesNotMatch(response.output, /RAW_FINAL_ABORT_SECRET/);
+    assert.doesNotMatch(response.output, /event: reasoning_summary\n/);
+    assert.doesNotMatch(response.output, /event: done/);
   });
 
   it("drops unexpected raw reasoning and skips summary when thinking is disabled", async () => {
@@ -944,58 +1152,6 @@ describe("translation model client", () => {
     assert.equal(upstreamSignal.aborted, true);
   });
 
-  it("aborts the summary request and stops writing when the browser closes", async () => {
-    process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
-    process.env.KIMI_API_KEY = "test-kimi-key";
-    let fetchCalls = 0;
-    let notifySummaryFetchStarted;
-    let summarySignal;
-    const summaryFetchStarted = new Promise((resolve) => {
-      notifySummaryFetchStarted = resolve;
-    });
-    globalThis.fetch = async (_url, init) => {
-      fetchCalls += 1;
-
-      if (fetchCalls === 1) {
-        return new Response([
-          'data: {"choices":[{"delta":{"reasoning_content":"RAW_ABORT_SECRET"}}]}',
-          "",
-          'data: {"choices":[{"delta":{"content":"你好"},"finish_reason":null}]}',
-          "",
-          'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
-          "",
-          "data: [DONE]",
-          "",
-        ].join("\n"), { status: 200 });
-      }
-
-      summarySignal = init.signal;
-      notifySummaryFetchStarted();
-      await new Promise((_resolve, reject) => {
-        init.signal.addEventListener("abort", () => {
-          reject(new DOMException("Aborted", "AbortError"));
-        }, { once: true });
-      });
-    };
-    const request = createTranslationRequest({
-      ...createRequestBody("kimi-k3"),
-      reasoningEnabled: true,
-      requestKind: "free",
-      sourceLang: "auto",
-    });
-    const response = createTranslationResponse();
-    const routePromise = handleTranslateStream(request, response);
-
-    await summaryFetchStarted;
-    response.emitClose();
-    await routePromise;
-
-    assert.equal(fetchCalls, 2);
-    assert.equal(summarySignal.aborted, true);
-    assert.doesNotMatch(response.output, /RAW_ABORT_SECRET/);
-    assert.doesNotMatch(response.output, /event: reasoning_summary\n/);
-    assert.doesNotMatch(response.output, /event: done/);
-  });
 });
 
 function captureSuccessfulRequest() {
@@ -1054,6 +1210,145 @@ function createRequestBody(model) {
     targetSentence: "Hello",
     translationStyle: { presetId: "academic-faithful" },
   };
+}
+
+function createReasoningFreeTranslationRequest(model) {
+  return createTranslationRequest({
+    ...createRequestBody(model),
+    reasoningEffort: "low",
+    reasoningEnabled: true,
+    requestKind: "free",
+    sourceLang: "auto",
+    summaryLocale: "zh-CN",
+  });
+}
+
+function captureFetchCall(url, init) {
+  return {
+    body: JSON.parse(init.body),
+    headers: init.headers,
+    signal: init.signal,
+    url,
+  };
+}
+
+function isSummaryPreviewCall(call) {
+  return call?.body?.model === "deepseek-v4-flash" &&
+    call.body.stream === true &&
+    Number.isFinite(call.body.max_tokens) &&
+    call.body.max_tokens <= 120;
+}
+
+function isSummaryFinalCall(call) {
+  return call?.body?.model === "deepseek-v4-flash" &&
+    call.body.stream === false;
+}
+
+function isTranslationCall(call) {
+  return Boolean(call) &&
+    !isSummaryPreviewCall(call) &&
+    !isSummaryFinalCall(call);
+}
+
+function findTranslationCall(calls) {
+  return calls.find(isTranslationCall);
+}
+
+function findSummaryPreviewCall(calls) {
+  return calls.find(isSummaryPreviewCall);
+}
+
+function findSummaryFinalCall(calls) {
+  return calls.find(isSummaryFinalCall);
+}
+
+function createSuccessfulTranslationResponse({
+  content,
+  reasoningContent,
+}) {
+  const chunks = [];
+
+  if (reasoningContent) {
+    chunks.push(
+      `data: ${JSON.stringify({
+        choices: [{ delta: { reasoning_content: reasoningContent }, finish_reason: null }],
+      })}`,
+      "",
+    );
+  }
+
+  chunks.push(
+    `data: ${JSON.stringify({
+      choices: [{ delta: { content }, finish_reason: null }],
+    })}`,
+    "",
+    `data: ${JSON.stringify({
+      choices: [{ delta: {}, finish_reason: "stop" }],
+    })}`,
+    "",
+    "data: [DONE]",
+    "",
+  );
+
+  return new Response(chunks.join("\n"), {
+    headers: { "Content-Type": "text/event-stream" },
+    status: 200,
+  });
+}
+
+function createControlledSseResponse() {
+  const encoder = new TextEncoder();
+  let controller;
+  const stream = new ReadableStream({
+    start(value) {
+      controller = value;
+    },
+  });
+
+  return {
+    close() {
+      controller.close();
+    },
+    response: new Response(stream, {
+      headers: { "Content-Type": "text/event-stream" },
+      status: 200,
+    }),
+    writeDone() {
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+    },
+    writeOpenAiChunk(chunk) {
+      controller.enqueue(
+        encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`),
+      );
+    },
+  };
+}
+
+function createDeferred() {
+  let reject;
+  let resolve;
+  const promise = new Promise((promiseResolve, promiseReject) => {
+    reject = promiseReject;
+    resolve = promiseResolve;
+  });
+
+  return { promise, reject, resolve };
+}
+
+async function waitForSseEvent(response, eventName, count) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (
+      parseSseEvents(response.output)
+        .filter((event) => event.eventName === eventName)
+        .length >= count
+    ) {
+      return;
+    }
+
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+
+  assert.fail(`Timed out waiting for ${count} ${eventName} SSE event(s).`);
 }
 
 function parseSseEvents(output) {

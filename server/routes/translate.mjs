@@ -13,10 +13,22 @@ import {
   TRANSLATION_REASONING_EFFORTS,
   TranslationModelError,
 } from "../translationModels/client.mjs";
-import { createTranslationReasoningSummary } from "../translationModels/reasoningSummary.mjs";
+import {
+  createTranslationReasoningPreview,
+  createTranslationReasoningSummary,
+} from "../translationModels/reasoningSummary.mjs";
 
 const MAX_REQUEST_BYTES = 256 * 1024;
 const MAX_SUMMARY_TRANSLATION_CAPTURE_CHARS = 12_000;
+const SSE_HEARTBEAT_INTERVAL_MS = 10_000;
+const TRANSLATION_PROGRESS_PHASES = [
+  "accepted",
+  "connecting",
+  "analyzing",
+  "translating",
+  "finalizing_summary",
+  "complete",
+];
 
 export async function handleTranslateStream(request, response) {
   let requestBody;
@@ -36,6 +48,8 @@ export async function handleTranslateStream(request, response) {
 
   const abortController = new AbortController();
   const model = normalizeTranslationModel(requestBody.model);
+  let previewAbort;
+  let stopHeartbeat = () => {};
   const handleResponseClose = () => {
     if (!response.writableEnded) {
       abortController.abort();
@@ -56,24 +70,107 @@ export async function handleTranslateStream(request, response) {
         enabled: requestBody.reasoningEnabled,
       })
       : undefined;
-    const upstreamStream = await createTranslationChatStream({
+    const usesDynamicReasoningSummary = requestBody.requestKind === "free" &&
+      resolvedReasoning?.enabled === true;
+    const emitProgress = createProgressEmitter(
+      response,
+      usesDynamicReasoningSummary,
+    );
+    let previewSequence = 0;
+    let previewUsage;
+
+    if (usesDynamicReasoningSummary) {
+      writeSseHeaders(response);
+      stopHeartbeat = startSseHeartbeat(
+        response,
+        abortController.signal,
+      );
+      writeSse(response, "meta", {
+        model,
+        promptVersion: getTranslationPromptVersion(requestBody.requestKind),
+        reasoning: resolvedReasoning,
+      });
+      emitProgress("accepted");
+      emitProgress("connecting");
+    }
+
+    const upstreamStreamPromise = createTranslationChatStream({
       messages: buildTranslationMessages(requestBody),
       model,
       resolvedReasoning,
       signal: abortController.signal,
     });
+    let previewPromise = Promise.resolve({});
 
-    writeSseHeaders(response);
-    writeSse(response, "meta", {
-      model,
-      promptVersion: getTranslationPromptVersion(requestBody.requestKind),
-      reasoning: resolvedReasoning,
-    });
+    if (usesDynamicReasoningSummary) {
+      previewAbort = createLinkedAbortController(abortController.signal);
+      previewPromise = createTranslationReasoningPreview({
+        onDelta: (text) => {
+          if (
+            previewAbort.signal.aborted ||
+            isResponseClosed(response, abortController.signal)
+          ) {
+            return;
+          }
 
-    const streamResult = await pipeOpenAiCompatibleStream(upstreamStream, response);
+          emitProgress("analyzing");
+          previewSequence += 1;
+          writeSse(response, "reasoning_summary_delta", {
+            revision: 1,
+            seq: previewSequence,
+            text,
+          });
+        },
+        requestBody,
+        signal: previewAbort.signal,
+      }).then((result) => {
+        if (result?.usage) {
+          previewUsage = normalizeUsage(result.usage);
+        }
+
+        return result;
+      }).catch(() => ({}));
+    }
+
+    const upstreamStream = await upstreamStreamPromise;
+
+    if (!usesDynamicReasoningSummary) {
+      writeSseHeaders(response);
+      stopHeartbeat = startSseHeartbeat(
+        response,
+        abortController.signal,
+      );
+      writeSse(response, "meta", {
+        model,
+        promptVersion: getTranslationPromptVersion(requestBody.requestKind),
+        reasoning: resolvedReasoning,
+      });
+    } else {
+      emitProgress("analyzing");
+    }
+
+    const streamResult = await pipeOpenAiCompatibleStream(
+      upstreamStream,
+      response,
+      {
+        onReasoningContent: () => emitProgress("analyzing"),
+        onTranslationContent: () => emitProgress("translating"),
+        requireStopFinishReason: usesDynamicReasoningSummary,
+        signal: abortController.signal,
+      },
+    );
 
     if (isResponseClosed(response, abortController.signal)) {
       return;
+    }
+
+    if (usesDynamicReasoningSummary) {
+      writeSse(response, "translation_complete", {
+        finishReason: "stop",
+      });
+      previewAbort.abort();
+      await previewPromise;
+      emitProgress("finalizing_summary");
     }
 
     if (resolvedReasoning?.enabled && streamResult.translationText.trim()) {
@@ -92,15 +189,22 @@ export async function handleTranslateStream(request, response) {
       }
 
       writeSse(response, "reasoning_summary", {
+        final: true,
+        revision: 2,
         source: summary.source,
         text: summary.text,
       });
 
-      if (summary.usage) {
+      const summaryUsage = combineUsage(
+        previewUsage,
+        summary.usage ? normalizeUsage(summary.usage) : undefined,
+      );
+
+      if (summaryUsage) {
         writeSse(
           response,
           "usage",
-          combineUsage(streamResult.usage, normalizeUsage(summary.usage)),
+          combineUsage(streamResult.usage, summaryUsage),
         );
       }
     }
@@ -109,7 +213,9 @@ export async function handleTranslateStream(request, response) {
       return;
     }
 
+    emitProgress("complete");
     writeSse(response, "done", {});
+    stopHeartbeat();
     response.end();
   } catch (error) {
     if (abortController.signal.aborted) {
@@ -130,6 +236,9 @@ export async function handleTranslateStream(request, response) {
       error: serializedError,
     });
   } finally {
+    previewAbort?.abort();
+    previewAbort?.dispose();
+    stopHeartbeat();
     response.off("close", handleResponseClose);
   }
 }
@@ -137,49 +246,81 @@ export async function handleTranslateStream(request, response) {
 async function pipeOpenAiCompatibleStream(
   upstreamStream,
   response,
+  {
+    onReasoningContent,
+    onTranslationContent,
+    requireStopFinishReason = false,
+    signal,
+  } = {},
 ) {
   const reader = upstreamStream.getReader();
   const decoder = new TextDecoder();
   const streamState = {
-    lastHeartbeatAt: 0,
+    completionMarkerReceived: false,
+    finishReason: undefined,
     translationText: "",
     usage: undefined,
   };
   let buffer = "";
+  const cancelReader = () => {
+    reader.cancel().catch(() => undefined);
+  };
 
-  while (true) {
-    const { done, value } = await reader.read();
+  signal?.addEventListener("abort", cancelReader, { once: true });
 
-    if (done) {
-      break;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (processOpenAiCompatibleSseLine(
+          line,
+          response,
+          streamState,
+          {
+            onReasoningContent,
+            onTranslationContent,
+          },
+        )) {
+          reader.cancel().catch(() => undefined);
+          assertSuccessfulTranslationCompletion(
+            streamState,
+            requireStopFinishReason,
+          );
+          return streamState;
+        }
+      }
     }
 
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split(/\r?\n/);
-    buffer = lines.pop() ?? "";
+    buffer += decoder.decode();
 
-    for (const line of lines) {
+    if (buffer.trim()) {
       if (processOpenAiCompatibleSseLine(
-        line,
+        buffer,
         response,
         streamState,
+        {
+          onReasoningContent,
+          onTranslationContent,
+        },
       )) {
-        await reader.cancel().catch(() => undefined);
+        assertSuccessfulTranslationCompletion(
+          streamState,
+          requireStopFinishReason,
+        );
         return streamState;
       }
     }
-  }
-
-  buffer += decoder.decode();
-
-  if (buffer.trim()) {
-    if (processOpenAiCompatibleSseLine(
-      buffer,
-      response,
-      streamState,
-    )) {
-      return streamState;
-    }
+  } finally {
+    signal?.removeEventListener("abort", cancelReader);
   }
 
   throw new TranslationModelError(
@@ -193,6 +334,10 @@ function processOpenAiCompatibleSseLine(
   line,
   response,
   streamState,
+  {
+    onReasoningContent,
+    onTranslationContent,
+  } = {},
 ) {
   if (!line.startsWith("data:")) {
     return false;
@@ -205,6 +350,7 @@ function processOpenAiCompatibleSseLine(
   }
 
   if (data === "[DONE]") {
+    streamState.completionMarkerReceived = true;
     return true;
   }
 
@@ -237,13 +383,11 @@ function processOpenAiCompatibleSseLine(
     typeof reasoningContent === "string" &&
     reasoningContent.length > 0
   ) {
-    if (Date.now() - streamState.lastHeartbeatAt >= 5_000) {
-      writeSse(response, "heartbeat", {});
-      streamState.lastHeartbeatAt = Date.now();
-    }
+    onReasoningContent?.();
   }
 
   if (typeof content === "string" && content.length > 0) {
+    onTranslationContent?.();
     streamState.translationText = appendBoundedText(
       streamState.translationText,
       content,
@@ -258,6 +402,7 @@ function processOpenAiCompatibleSseLine(
   }
 
   if (finishReason) {
+    streamState.finishReason = finishReason;
     writeSse(response, "finish", { finishReason });
 
     if (finishReason !== "stop") {
@@ -270,6 +415,24 @@ function processOpenAiCompatibleSseLine(
   }
 
   return false;
+}
+
+function assertSuccessfulTranslationCompletion(
+  streamState,
+  requireStopFinishReason,
+) {
+  if (
+    streamState.completionMarkerReceived &&
+    (!requireStopFinishReason || streamState.finishReason === "stop")
+  ) {
+    return;
+  }
+
+  throw new TranslationModelError(
+    502,
+    "translation_stream_incomplete",
+    "Translation provider stream ended before a successful completion marker.",
+  );
 }
 
 function normalizeTranslationRequest(body) {
@@ -466,17 +629,83 @@ function normalizeNumber(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function createProgressEmitter(response, enabled) {
+  let currentPhaseIndex = -1;
+
+  return (phase) => {
+    if (!enabled) {
+      return;
+    }
+
+    const phaseIndex = TRANSLATION_PROGRESS_PHASES.indexOf(phase);
+
+    if (phaseIndex <= currentPhaseIndex) {
+      return;
+    }
+
+    currentPhaseIndex = phaseIndex;
+    writeSse(response, "progress", { phase });
+  };
+}
+
+function createLinkedAbortController(parentSignal) {
+  const controller = new AbortController();
+  const handleParentAbort = () => controller.abort(parentSignal?.reason);
+
+  if (parentSignal?.aborted) {
+    handleParentAbort();
+  } else {
+    parentSignal?.addEventListener("abort", handleParentAbort, { once: true });
+  }
+
+  return {
+    abort: () => controller.abort(),
+    dispose: () => {
+      parentSignal?.removeEventListener("abort", handleParentAbort);
+    },
+    signal: controller.signal,
+  };
+}
+
+function startSseHeartbeat(response, signal) {
+  const intervalId = setInterval(() => {
+    if (isResponseClosed(response, signal)) {
+      clearInterval(intervalId);
+      return;
+    }
+
+    writeSse(response, "heartbeat", {});
+  }, SSE_HEARTBEAT_INTERVAL_MS);
+  const stop = () => clearInterval(intervalId);
+
+  intervalId.unref?.();
+  signal?.addEventListener("abort", stop, { once: true });
+
+  return () => {
+    stop();
+    signal?.removeEventListener("abort", stop);
+  };
+}
+
 function writeSseHeaders(response) {
   response.writeHead(200, {
-    "Cache-Control": "no-cache",
+    "Cache-Control": "no-cache, no-transform",
     Connection: "keep-alive",
     "Content-Type": "text/event-stream; charset=utf-8",
+    "X-Accel-Buffering": "no",
   });
+  response.flushHeaders?.();
 }
 
 function writeSse(response, eventName, payload) {
-  response.write(`event: ${eventName}\n`);
-  response.write(`data: ${JSON.stringify(payload)}\n\n`);
+  if (response.destroyed || response.writableEnded) {
+    return false;
+  }
+
+  response.write(
+    `event: ${eventName}\ndata: ${JSON.stringify(payload)}\n\n`,
+  );
+  return true;
 }
 
 function serializeError(error) {

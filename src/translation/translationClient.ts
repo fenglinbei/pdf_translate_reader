@@ -9,6 +9,27 @@ import { TranslationNetworkError, TranslationTimeoutError } from "./errors";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
+export type TranslationProgressPhase =
+  | "accepted"
+  | "connecting"
+  | "analyzing"
+  | "translating"
+  | "finalizing_summary"
+  | "complete";
+
+export type TranslationReasoningSummaryDelta = {
+  revision: number;
+  seq: number;
+  text: string;
+};
+
+export type TranslationReasoningSummarySnapshot = {
+  final: boolean;
+  revision: number;
+  source?: string;
+  text: string;
+};
+
 export type TranslationStreamHandlers = {
   onDelta: (text: string) => void;
   onFinish?: (finishReason: string) => void;
@@ -22,8 +43,14 @@ export type TranslationStreamHandlers = {
       requestedEnabled: boolean;
     };
   }) => void;
-  onReasoningSummary?: (text: string) => void;
+  onProgress?: (phase: TranslationProgressPhase) => void;
+  onReasoningSummary?: (
+    text: string,
+    snapshot: TranslationReasoningSummarySnapshot,
+  ) => void;
+  onReasoningSummaryDelta?: (delta: TranslationReasoningSummaryDelta) => void;
   onReasoningSummaryStatus?: (status: "generating") => void;
+  onTranslationComplete?: (finishReason: string) => void;
   onUsage?: (usage: TokenUsage) => void;
 };
 
@@ -158,15 +185,45 @@ async function readEventStream(
     if (eventName === "delta" && typeof payload.text === "string") {
       handlers.onDelta(payload.text);
     } else if (
+      eventName === "progress" &&
+      isTranslationProgressPhase(payload.phase)
+    ) {
+      handlers.onProgress?.(payload.phase);
+    } else if (
+      eventName === "reasoning_summary_delta" &&
+      Number.isInteger(payload.revision) &&
+      payload.revision > 0 &&
+      Number.isInteger(payload.seq) &&
+      payload.seq > 0 &&
+      typeof payload.text === "string"
+    ) {
+      handlers.onReasoningSummaryDelta?.({
+        revision: payload.revision,
+        seq: payload.seq,
+        text: payload.text,
+      });
+    } else if (
       eventName === "reasoning_summary" &&
       typeof payload.text === "string"
     ) {
-      handlers.onReasoningSummary?.(payload.text);
+      handlers.onReasoningSummary?.(payload.text, {
+        final: payload.final !== false,
+        revision: Number.isInteger(payload.revision) && payload.revision > 0
+          ? payload.revision
+          : 2,
+        source: typeof payload.source === "string" ? payload.source : undefined,
+        text: payload.text,
+      });
     } else if (
       eventName === "reasoning_summary_status" &&
       payload.status === "generating"
     ) {
       handlers.onReasoningSummaryStatus?.("generating");
+    } else if (
+      eventName === "translation_complete" &&
+      typeof payload.finishReason === "string"
+    ) {
+      handlers.onTranslationComplete?.(payload.finishReason);
     } else if (eventName === "usage") {
       handlers.onUsage?.(payload);
     } else if (eventName === "meta") {
@@ -228,6 +285,15 @@ async function readEventStream(
   if (!receivedDone) {
     throw new Error("Translation stream ended unexpectedly.");
   }
+}
+
+function isTranslationProgressPhase(value: unknown): value is TranslationProgressPhase {
+  return value === "accepted" ||
+    value === "connecting" ||
+    value === "analyzing" ||
+    value === "translating" ||
+    value === "finalizing_summary" ||
+    value === "complete";
 }
 
 function getStreamErrorMessage(payload: unknown) {
