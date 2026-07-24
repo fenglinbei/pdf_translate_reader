@@ -4666,6 +4666,10 @@ button {
   cursor: pointer;
 }
 
+.free-translation-reasoning-toggle:disabled {
+  cursor: default;
+}
+
 .free-translation-reasoning-toggle:focus-visible {
   outline: 2px solid rgba(139, 92, 246, 0.28);
   outline-offset: 2px;

@@ -358,21 +358,49 @@ describe("translation model client", () => {
     );
   });
 
-  it("forwards Kimi thinking separately from translated content and reports effective reasoning", async () => {
+  it("replaces raw Kimi thinking with a DeepSeek translation-decision summary", async () => {
+    process.env.DEEPSEEK_API_BASE_URL = "https://deepseek-summary.example/v1";
+    process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
     process.env.KIMI_API_KEY = "test-kimi-key";
-    globalThis.fetch = async () => new Response([
-      'data: {"choices":[{"delta":{"reasoning_content":"visible reasoning"}}]}',
-      "",
-      'data: {"choices":[{"delta":{"content":"你好"},"finish_reason":null}]}',
-      "",
-      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"completion_tokens_details":{"reasoning_tokens":4},"total_tokens":15,"cached_tokens":3}}',
-      "",
-      "data: [DONE]",
-      "",
-    ].join("\n"), {
-      headers: { "Content-Type": "text/event-stream" },
-      status: 200,
-    });
+    const upstreamReasoning = "RAW_PRIVATE_REASONING_SENTINEL";
+    const requests = [];
+    globalThis.fetch = async (url, init) => {
+      requests.push({
+        body: JSON.parse(init.body),
+        headers: init.headers,
+        url,
+      });
+
+      if (requests.length === 1) {
+        return new Response([
+          `data: {"choices":[{"delta":{"reasoning_content":"${upstreamReasoning}"}}]}`,
+          "",
+          'data: {"choices":[{"delta":{"content":"你好"},"finish_reason":null}]}',
+          "",
+          'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"completion_tokens_details":{"reasoning_tokens":4},"total_tokens":15,"cached_tokens":3}}',
+          "",
+          "data: [DONE]",
+          "",
+        ].join("\n"), {
+          headers: { "Content-Type": "text/event-stream" },
+          status: 200,
+        });
+      }
+
+      return Response.json({
+        choices: [{
+          finish_reason: "stop",
+          message: {
+            content: "- 核对了语义与术语。\n- 保留了原文结构。",
+          },
+        }],
+        usage: {
+          completion_tokens: 8,
+          prompt_tokens: 20,
+          total_tokens: 28,
+        },
+      });
+    };
     const request = createTranslationRequest({
       contextWindowN: 0,
       localContextAfter: [],
@@ -384,6 +412,7 @@ describe("translation model client", () => {
       requestKind: "free",
       sourceLang: "auto",
       stream: true,
+      summaryLocale: "zh-CN",
       targetLang: "zh",
       targetSentence: "Hello",
       translationStyle: { presetId: "academic-faithful" },
@@ -396,6 +425,7 @@ describe("translation model client", () => {
     assert.equal(response.ended, true);
     const events = parseSseEvents(response.output);
     const meta = events.find((event) => event.eventName === "meta");
+    const finish = events.find((event) => event.eventName === "finish");
 
     assert.equal(meta?.payload.model, "kimi-k3");
     assert.equal(meta?.payload.promptVersion, "free-translation-v1");
@@ -405,23 +435,240 @@ describe("translation model client", () => {
       effort: "low",
       forced: true,
     });
+    assert.deepEqual(events.filter((event) => event.eventName === "thinking"), []);
     assert.deepEqual(
-      events.filter((event) => event.eventName === "thinking").map((event) => event.payload),
-      [{ text: "visible reasoning" }],
+      events
+        .filter((event) => event.eventName === "reasoning_summary_status")
+        .map((event) => event.payload),
+      [{ status: "generating" }],
+    );
+    assert.deepEqual(
+      events
+        .filter((event) => event.eventName === "reasoning_summary")
+        .map((event) => event.payload),
+      [{
+        source: "deepseek-v4-flash",
+        text: "- 核对了语义与术语。\n- 保留了原文结构。",
+      }],
     );
     assert.deepEqual(
       events.filter((event) => event.eventName === "delta").map((event) => event.payload),
       [{ text: "你好" }],
     );
+    assert.equal(requests.length, 2);
+    assert.equal(
+      requests[1].url,
+      "https://deepseek-summary.example/v1/chat/completions",
+    );
+    assert.equal(requests[1].body.model, "deepseek-v4-flash");
+    assert.equal(requests[1].body.stream, false);
+    assert.equal(requests[1].body.max_tokens, 220);
+    assert.deepEqual(requests[1].body.thinking, { type: "disabled" });
+    assert.equal(requests[1].headers.Authorization, "Bearer test-deepseek-key");
+    assert.equal(requests[1].headers["Content-Type"], "application/json");
+    assert.match(requests[1].body.messages[1].content, /Hello/);
+    assert.match(requests[1].body.messages[1].content, /你好/);
+    assert.doesNotMatch(JSON.stringify(requests[1].body), new RegExp(upstreamReasoning));
+    assert.doesNotMatch(response.output, new RegExp(upstreamReasoning));
     assert.match(response.output, /"promptCacheHitTokens":3/);
     assert.match(response.output, /"promptCacheMissTokens":7/);
     assert.match(response.output, /"reasoningTokens":4/);
-    assert.match(response.output, /event: finish/);
-    assert.match(response.output, /event: done/);
-    assert.doesNotMatch(
-      response.output,
-      /event: delta\ndata: \{"text":"visible reasoning"\}/,
+    assert.equal(
+      events.filter((event) => event.eventName === "usage").at(-1)?.payload.totalTokens,
+      43,
     );
+    assert.deepEqual(finish?.payload, { finishReason: "stop" });
+    assert.ok(response.output.indexOf("event: finish") <
+      response.output.indexOf("event: reasoning_summary"));
+    assert.ok(response.output.indexOf("event: reasoning_summary") <
+      response.output.indexOf("event: done"));
+  });
+
+  it("falls back to a local summary when the DeepSeek summary request fails", async () => {
+    process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
+    process.env.KIMI_API_KEY = "test-kimi-key";
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls += 1;
+
+      if (fetchCalls === 1) {
+        return new Response([
+          'data: {"choices":[{"delta":{"reasoning_content":"RAW_FALLBACK_SECRET"}}]}',
+          "",
+          'data: {"choices":[{"delta":{"content":"你好"},"finish_reason":null}]}',
+          "",
+          'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+          "",
+          "data: [DONE]",
+          "",
+        ].join("\n"), { status: 200 });
+      }
+
+      return Response.json(
+        { error: { message: "summary unavailable" } },
+        { status: 503 },
+      );
+    };
+    const request = createTranslationRequest({
+      ...createRequestBody("kimi-k3"),
+      reasoningEnabled: true,
+      requestKind: "free",
+      sourceLang: "auto",
+      summaryLocale: "zh-CN",
+    });
+    const response = createTranslationResponse();
+
+    await handleTranslateStream(request, response);
+
+    const events = parseSseEvents(response.output);
+    const summary = events.find((event) => event.eventName === "reasoning_summary");
+    const finish = events.find((event) => event.eventName === "finish");
+
+    assert.equal(fetchCalls, 2);
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.ended, true);
+    assert.equal(summary?.payload.source, "local");
+    assert.match(summary?.payload.text, /核心语义|翻译风格/);
+    assert.deepEqual(
+      events.filter((event) => event.eventName === "delta").map((event) => event.payload),
+      [{ text: "你好" }],
+    );
+    assert.deepEqual(finish?.payload, { finishReason: "stop" });
+    assert.doesNotMatch(response.output, /RAW_FALLBACK_SECRET/);
+    assert.doesNotMatch(response.output, /event: error/);
+    assert.ok(response.output.indexOf("event: finish") <
+      response.output.indexOf("event: reasoning_summary"));
+    assert.ok(response.output.indexOf("event: reasoning_summary") <
+      response.output.indexOf("event: done"));
+    assert.match(response.output, /event: done/);
+  });
+
+  it("keeps billed summary usage when an empty DeepSeek summary falls back locally", async () => {
+    process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
+    process.env.KIMI_API_KEY = "test-kimi-key";
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls += 1;
+
+      if (fetchCalls === 1) {
+        return new Response([
+          'data: {"choices":[{"delta":{"content":"你好"},"finish_reason":null}]}',
+          "",
+          'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":8,"completion_tokens":2,"total_tokens":10}}',
+          "",
+          "data: [DONE]",
+          "",
+        ].join("\n"), { status: 200 });
+      }
+
+      return Response.json({
+        choices: [{
+          finish_reason: "stop",
+          message: {
+            content: "",
+          },
+        }],
+        usage: {
+          completion_tokens: 1,
+          prompt_tokens: 4,
+          total_tokens: 5,
+        },
+      });
+    };
+    const request = createTranslationRequest({
+      ...createRequestBody("kimi-k3"),
+      reasoningEnabled: true,
+      requestKind: "free",
+      sourceLang: "auto",
+      summaryLocale: "zh-CN",
+    });
+    const response = createTranslationResponse();
+
+    await handleTranslateStream(request, response);
+
+    const events = parseSseEvents(response.output);
+
+    assert.equal(fetchCalls, 2);
+    assert.equal(
+      events.find((event) => event.eventName === "reasoning_summary")?.payload.source,
+      "local",
+    );
+    assert.equal(
+      events.filter((event) => event.eventName === "usage").at(-1)?.payload.totalTokens,
+      15,
+    );
+    assert.doesNotMatch(response.output, /event: error/);
+    assert.match(response.output, /event: done/);
+  });
+
+  it("drops unexpected raw reasoning and skips summary when thinking is disabled", async () => {
+    process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls += 1;
+      return new Response([
+        'data: {"choices":[{"delta":{"reasoning_content":"RAW_DISABLED_SECRET"}}]}',
+        "",
+        'data: {"choices":[{"delta":{"content":"你好"},"finish_reason":null}]}',
+        "",
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+        "",
+        "data: [DONE]",
+        "",
+      ].join("\n"), { status: 200 });
+    };
+    const request = createTranslationRequest({
+      ...createRequestBody("deepseek-v4-flash"),
+      reasoningEnabled: false,
+      requestKind: "free",
+      sourceLang: "auto",
+    });
+    const response = createTranslationResponse();
+
+    await handleTranslateStream(request, response);
+
+    assert.equal(fetchCalls, 1);
+    assert.doesNotMatch(response.output, /RAW_DISABLED_SECRET/);
+    assert.doesNotMatch(response.output, /event: thinking/);
+    assert.doesNotMatch(response.output, /event: reasoning_summary/);
+    assert.doesNotMatch(response.output, /event: error/);
+    assert.match(response.output, /event: done/);
+  });
+
+  it("uses a local summary without an extra call when thinking is enabled but DeepSeek is unavailable", async () => {
+    process.env.KIMI_API_KEY = "test-kimi-key";
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls += 1;
+      return new Response([
+        'data: {"choices":[{"delta":{"content":"你好"},"finish_reason":null}]}',
+        "",
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+        "",
+        "data: [DONE]",
+        "",
+      ].join("\n"), { status: 200 });
+    };
+    const request = createTranslationRequest({
+      ...createRequestBody("kimi-k3"),
+      reasoningEnabled: true,
+      requestKind: "free",
+      sourceLang: "auto",
+      summaryLocale: "zh-CN",
+    });
+    const response = createTranslationResponse();
+
+    await handleTranslateStream(request, response);
+
+    const events = parseSseEvents(response.output);
+    const summary = events.find((event) => event.eventName === "reasoning_summary");
+
+    assert.equal(fetchCalls, 1);
+    assert.equal(summary?.payload.source, "local");
+    assert.match(summary?.payload.text, /核心语义|翻译风格/);
+    assert.doesNotMatch(response.output, /event: thinking/);
+    assert.doesNotMatch(response.output, /event: error/);
+    assert.match(response.output, /event: done/);
   });
 
   it("accepts auto source detection for free translation and returns its prompt version", async () => {
@@ -464,6 +711,38 @@ describe("translation model client", () => {
     const meta = parseSseEvents(response.output)
       .find((event) => event.eventName === "meta");
     assert.equal("reasoning" in meta.payload, false);
+  });
+
+  it("drops unexpected raw reasoning without summarizing selection translation", async () => {
+    process.env.KIMI_API_KEY = "test-kimi-key";
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls += 1;
+      return new Response([
+        'data: {"choices":[{"delta":{"reasoning_content":"RAW_SELECTION_SECRET"}}]}',
+        "",
+        'data: {"choices":[{"delta":{"content":"你好"},"finish_reason":null}]}',
+        "",
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+        "",
+        "data: [DONE]",
+        "",
+      ].join("\n"), { status: 200 });
+    };
+    const request = createTranslationRequest(createRequestBody("kimi-k3"));
+    const response = createTranslationResponse();
+
+    await handleTranslateStream(request, response);
+
+    const events = parseSseEvents(response.output);
+    const meta = events.find((event) => event.eventName === "meta");
+
+    assert.equal(fetchCalls, 1);
+    assert.equal("reasoning" in meta.payload, false);
+    assert.doesNotMatch(response.output, /RAW_SELECTION_SECRET/);
+    assert.doesNotMatch(response.output, /event: thinking/);
+    assert.doesNotMatch(response.output, /event: reasoning_summary/);
+    assert.match(response.output, /event: done/);
   });
 
   it("continues to reject auto source detection for selection translation", async () => {
@@ -543,7 +822,7 @@ describe("translation model client", () => {
     assert.doesNotMatch(response.output, /event: done/);
   });
 
-  it("keeps streamed thinking visible but rejects a reasoning-only stream without completion", async () => {
+  it("never exposes raw thinking from a reasoning-only incomplete stream", async () => {
     process.env.KIMI_API_KEY = "test-kimi-key";
     globalThis.fetch = async () => new Response(
       'data: {"choices":[{"delta":{"reasoning_content":"unfinished thought"}}]}\n\n',
@@ -560,10 +839,9 @@ describe("translation model client", () => {
 
     await handleTranslateStream(request, response);
 
-    assert.match(
-      response.output,
-      /event: thinking\ndata: \{"text":"unfinished thought"\}/,
-    );
+    assert.doesNotMatch(response.output, /unfinished thought/);
+    assert.doesNotMatch(response.output, /event: thinking/);
+    assert.doesNotMatch(response.output, /event: reasoning_summary/);
     assert.match(response.output, /event: error/);
     assert.match(response.output, /"code":"translation_stream_incomplete"/);
     assert.doesNotMatch(response.output, /event: done/);
@@ -590,7 +868,7 @@ describe("translation model client", () => {
   it("rejects a provider error embedded in a successful HTTP stream", async () => {
     process.env.GLM_API_KEY = "test-glm-key";
     globalThis.fetch = async () => new Response([
-      'data: {"error":{"code":"provider_failure","message":"stream failed"}}',
+      'data: {"error":{"code":"provider_failure","message":"RAW_PROVIDER_ERROR_SECRET"}}',
       "",
       "data: [DONE]",
       "",
@@ -602,6 +880,24 @@ describe("translation model client", () => {
 
     assert.match(response.output, /event: error/);
     assert.match(response.output, /"code":"translation_upstream_stream_error"/);
+    assert.doesNotMatch(response.output, /RAW_PROVIDER_ERROR_SECRET/);
+    assert.doesNotMatch(response.output, /event: done/);
+  });
+
+  it("rejects malformed upstream SSE without echoing its payload", async () => {
+    process.env.KIMI_API_KEY = "test-kimi-key";
+    globalThis.fetch = async () => new Response(
+      'data: {"RAW_MALFORMED_STREAM_SECRET":\n\n',
+      { status: 200 },
+    );
+    const request = createTranslationRequest(createRequestBody("kimi-k3"));
+    const response = createTranslationResponse();
+
+    await handleTranslateStream(request, response);
+
+    assert.match(response.output, /event: error/);
+    assert.match(response.output, /"code":"translation_upstream_stream_invalid"/);
+    assert.doesNotMatch(response.output, /RAW_MALFORMED_STREAM_SECRET/);
     assert.doesNotMatch(response.output, /event: done/);
   });
 
@@ -646,6 +942,59 @@ describe("translation model client", () => {
     await routePromise;
 
     assert.equal(upstreamSignal.aborted, true);
+  });
+
+  it("aborts the summary request and stops writing when the browser closes", async () => {
+    process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
+    process.env.KIMI_API_KEY = "test-kimi-key";
+    let fetchCalls = 0;
+    let notifySummaryFetchStarted;
+    let summarySignal;
+    const summaryFetchStarted = new Promise((resolve) => {
+      notifySummaryFetchStarted = resolve;
+    });
+    globalThis.fetch = async (_url, init) => {
+      fetchCalls += 1;
+
+      if (fetchCalls === 1) {
+        return new Response([
+          'data: {"choices":[{"delta":{"reasoning_content":"RAW_ABORT_SECRET"}}]}',
+          "",
+          'data: {"choices":[{"delta":{"content":"你好"},"finish_reason":null}]}',
+          "",
+          'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+          "",
+          "data: [DONE]",
+          "",
+        ].join("\n"), { status: 200 });
+      }
+
+      summarySignal = init.signal;
+      notifySummaryFetchStarted();
+      await new Promise((_resolve, reject) => {
+        init.signal.addEventListener("abort", () => {
+          reject(new DOMException("Aborted", "AbortError"));
+        }, { once: true });
+      });
+    };
+    const request = createTranslationRequest({
+      ...createRequestBody("kimi-k3"),
+      reasoningEnabled: true,
+      requestKind: "free",
+      sourceLang: "auto",
+    });
+    const response = createTranslationResponse();
+    const routePromise = handleTranslateStream(request, response);
+
+    await summaryFetchStarted;
+    response.emitClose();
+    await routePromise;
+
+    assert.equal(fetchCalls, 2);
+    assert.equal(summarySignal.aborted, true);
+    assert.doesNotMatch(response.output, /RAW_ABORT_SECRET/);
+    assert.doesNotMatch(response.output, /event: reasoning_summary\n/);
+    assert.doesNotMatch(response.output, /event: done/);
   });
 });
 

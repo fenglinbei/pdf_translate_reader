@@ -112,9 +112,10 @@ for (const {
   });
 }
 
-test("free-translation history stores effective reasoning without storing its trace", () => {
+test("free-translation history stores only the reasoning summary, never its trace", () => {
   const record = repository.createFreeTranslationRecord({
     reasoning: "private chain of thought",
+    reasoningSummary: "- Preserved terminology and document structure.",
     request: {
       ...createRequestSnapshot("glm-5.2"),
       reasoningEffort: "low",
@@ -128,6 +129,10 @@ test("free-translation history stores effective reasoning without storing its tr
 
   assert.equal(record.request.reasoningEnabled, true);
   assert.equal(record.request.reasoningEffort, "high");
+  assert.equal(
+    record.reasoningSummary,
+    "- Preserved terminology and document structure.",
+  );
   assert.equal(record.usage.reasoningTokens, 7);
   assert.equal("reasoning" in record, false);
   assert.equal("thinking" in record, false);

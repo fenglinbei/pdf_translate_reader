@@ -22,7 +22,8 @@ export type TranslationStreamHandlers = {
       requestedEnabled: boolean;
     };
   }) => void;
-  onThinking?: (text: string) => void;
+  onReasoningSummary?: (text: string) => void;
+  onReasoningSummaryStatus?: (status: "generating") => void;
   onUsage?: (usage: TokenUsage) => void;
 };
 
@@ -156,8 +157,16 @@ async function readEventStream(
 
     if (eventName === "delta" && typeof payload.text === "string") {
       handlers.onDelta(payload.text);
-    } else if (eventName === "thinking" && typeof payload.text === "string") {
-      handlers.onThinking?.(payload.text);
+    } else if (
+      eventName === "reasoning_summary" &&
+      typeof payload.text === "string"
+    ) {
+      handlers.onReasoningSummary?.(payload.text);
+    } else if (
+      eventName === "reasoning_summary_status" &&
+      payload.status === "generating"
+    ) {
+      handlers.onReasoningSummaryStatus?.("generating");
     } else if (eventName === "usage") {
       handlers.onUsage?.(payload);
     } else if (eventName === "meta") {

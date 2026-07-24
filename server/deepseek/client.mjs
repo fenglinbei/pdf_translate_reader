@@ -59,6 +59,71 @@ export async function createDeepSeekChatStream({
   return response.body;
 }
 
+export async function createDeepSeekChatCompletion({
+  maxTokens,
+  messages,
+  model,
+  signal,
+  temperature = 0.1,
+}) {
+  const config = getDeepSeekRuntimeConfig();
+
+  if (!config.apiKey) {
+    throw new DeepSeekClientError(500, "deepseek_api_key_missing", "DEEPSEEK_API_KEY is not configured.");
+  }
+
+  let response;
+
+  try {
+    response = await fetch(`${config.apiBaseUrl}/chat/completions`, {
+      body: JSON.stringify({
+        max_tokens: normalizeOptionalPositiveInteger(maxTokens),
+        messages,
+        model,
+        stream: false,
+        temperature,
+        thinking: {
+          type: "disabled",
+        },
+      }),
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+      signal,
+    });
+  } catch (error) {
+    if (signal?.aborted) {
+      throw error;
+    }
+
+    throw new DeepSeekClientError(
+      502,
+      "deepseek_network_error",
+      "Network connection to DeepSeek failed.",
+    );
+  }
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new DeepSeekClientError(
+      response.status,
+      getDeepSeekErrorCode(response.status),
+      parseDeepSeekErrorMessage(body) ?? `DeepSeek API returned ${response.status}.`,
+    );
+  }
+
+  const payload = await response.json();
+  const content = payload?.choices?.[0]?.message?.content;
+
+  return {
+    content: typeof content === "string" ? content : "",
+    finishReason: payload?.choices?.[0]?.finish_reason,
+    usage: payload?.usage,
+  };
+}
+
 function createChatCompletionBody({ messages, model, resolvedReasoning }) {
   const body = {
     messages,
@@ -82,6 +147,12 @@ function createChatCompletionBody({ messages, model, resolvedReasoning }) {
   }
 
   return body;
+}
+
+function normalizeOptionalPositiveInteger(value) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.round(value)
+    : undefined;
 }
 
 function getDeepSeekErrorCode(statusCode) {

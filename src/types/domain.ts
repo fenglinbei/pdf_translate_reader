@@ -179,6 +179,7 @@ export type FreeTranslationRequest = Omit<
   reasoningEnabled: boolean;
   reasoningEffort: TranslationReasoningEffort;
   sourceLang: FreeTranslationSourceLanguage;
+  summaryLocale: UiLocale;
 };
 
 export type TranslationStreamRequest = TranslationRequest | FreeTranslationRequest;
@@ -234,6 +235,7 @@ export type FreeTranslationRecord = {
   userId: string;
   sourceText: string;
   translation: string;
+  reasoningSummary?: string;
   request: FreeTranslationRequestSnapshot;
   usage?: TokenUsage;
   cloudDocumentId?: string;

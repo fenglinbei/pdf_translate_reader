@@ -93,7 +93,7 @@ export function FreeTranslationPanel({
   settings,
   userId,
 }: FreeTranslationPanelProps) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const abortControllerRef = useRef<AbortController>();
   const activeRequestIdRef = useRef(0);
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -127,7 +127,9 @@ export function FreeTranslationPanel({
   const [reasoningEnabled, setReasoningEnabled] = useState(
     () => getTranslationReasoningCapability(settings.defaultModel).defaultEnabled,
   );
-  const [reasoningText, setReasoningText] = useState("");
+  const [reasoningExpanded, setReasoningExpanded] = useState(false);
+  const [reasoningSummaryPending, setReasoningSummaryPending] = useState(false);
+  const [reasoningSummary, setReasoningSummary] = useState("");
   const [sourceLang, setSourceLang] = useState<FreeTranslationSourceLanguage>("auto");
   const [status, setStatus] = useState<FreeTranslationStatus>("idle");
   const [targetLang, setTargetLang] = useState(settings.targetLang);
@@ -320,7 +322,9 @@ export function FreeTranslationPanel({
     setCompletedSignature(undefined);
     setCopyStatus("idle");
     setErrorMessage(undefined);
-    setReasoningText("");
+    setReasoningExpanded(false);
+    setReasoningSummaryPending(false);
+    setReasoningSummary("");
     setStatus("idle");
     setTranslation("");
     setUsage(undefined);
@@ -480,6 +484,7 @@ export function FreeTranslationPanel({
       requestKind: "free",
       sourceLang,
       stream: true,
+      summaryLocale: locale,
       targetLang,
       targetSentence: inputText,
       terminologyOverride: entriesToPaperContextTerms(requestSnapshot.terminology),
@@ -492,12 +497,15 @@ export function FreeTranslationPanel({
     setCompletedSignature(undefined);
     setCopyStatus("idle");
     setErrorMessage(undefined);
-    setReasoningText("");
+    setReasoningExpanded(false);
+    setReasoningSummaryPending(false);
+    setReasoningSummary("");
     setStatus("loading");
     setTranslation("");
     setUsage(undefined);
 
     let streamedTranslation = "";
+    let streamedReasoningSummary = "";
     let streamedUsage: TokenUsage | undefined;
 
     void (async () => {
@@ -533,15 +541,27 @@ export function FreeTranslationPanel({
                 };
               }
             },
-            onThinking: (text) => {
+            onReasoningSummary: (text) => {
               if (activeRequestIdRef.current !== requestId) {
                 return;
               }
 
-              setStatus("streaming");
-              setReasoningText((current) => current + text);
+              streamedReasoningSummary = text;
+              setReasoningSummaryPending(false);
+              setReasoningSummary(text);
+            },
+            onReasoningSummaryStatus: () => {
+              if (activeRequestIdRef.current !== requestId) {
+                return;
+              }
+
+              setReasoningSummaryPending(true);
             },
             onUsage: (nextUsage) => {
+              if (activeRequestIdRef.current !== requestId) {
+                return;
+              }
+
               streamedUsage = nextUsage;
               setUsage(nextUsage);
             },
@@ -558,6 +578,7 @@ export function FreeTranslationPanel({
         }
 
         if (activeRequestIdRef.current === requestId) {
+          setReasoningSummaryPending(false);
           setCompletedSignature(createResultSignature(inputText, activeSnapshot));
           setStatus("success");
         }
@@ -576,6 +597,7 @@ export function FreeTranslationPanel({
             pdfFingerprint: entry?.fingerprint,
             pdfTitle: paperTitle,
             request: activeSnapshot,
+            reasoningSummary: streamedReasoningSummary,
             sourceText: inputText,
             translation: streamedTranslation,
             usage: streamedUsage,
@@ -609,6 +631,7 @@ export function FreeTranslationPanel({
         }
 
         if (activeRequestIdRef.current === requestId) {
+          setReasoningSummaryPending(false);
           setErrorMessage(nextErrorMessage);
           setStatus("error");
         }
@@ -630,6 +653,7 @@ export function FreeTranslationPanel({
     entry?.cloudDocumentId,
     entry?.fingerprint,
     inputText,
+    locale,
     model,
     paperContext,
     paperTitle,
@@ -649,6 +673,7 @@ export function FreeTranslationPanel({
     abortControllerRef.current?.abort();
     setCompletedSignature(undefined);
     setErrorMessage(t("freeTranslation.stopped"));
+    setReasoningSummaryPending(false);
     setStatus("stopped");
   }, [isBusy, t]);
 
@@ -706,7 +731,9 @@ export function FreeTranslationPanel({
     setTerms(createTermDrafts(record.request.terminology));
     setReasoningEnabled(record.request.reasoningEnabled);
     setReasoningEffort(record.request.reasoningEffort);
-    setReasoningText("");
+    setReasoningExpanded(false);
+    setReasoningSummaryPending(false);
+    setReasoningSummary(record.reasoningSummary ?? "");
     setTranslationStyle(normalizeTranslationStyle(record.request.translationStyle));
     setTranslation(record.translation);
     setUsage(record.usage);
@@ -927,10 +954,12 @@ export function FreeTranslationPanel({
                 aria-live={isBusy ? "off" : "polite"}
                 className={`free-translation-output free-translation-output--${status}`}
               >
-                {reasoningText ? (
+                {reasoningSummaryPending || reasoningSummary ? (
                   <FreeTranslationReasoningPanel
-                    isStreaming={isBusy && !translation}
-                    text={reasoningText}
+                    expanded={reasoningExpanded}
+                    isGenerating={reasoningSummaryPending}
+                    onExpandedChange={setReasoningExpanded}
+                    text={reasoningSummary}
                   />
                 ) : null}
                 {translation ? (
@@ -1046,27 +1075,26 @@ export function FreeTranslationPanel({
 }
 
 function FreeTranslationReasoningPanel({
-  isStreaming,
+  expanded,
+  isGenerating,
+  onExpandedChange,
   text,
 }: {
-  isStreaming: boolean;
+  expanded: boolean;
+  isGenerating: boolean;
+  onExpandedChange: (expanded: boolean) => void;
   text: string;
 }) {
   const { t } = useI18n();
-  const [expanded, setExpanded] = useState(true);
-
-  useEffect(() => {
-    if (!isStreaming) {
-      setExpanded(false);
-    }
-  }, [isStreaming]);
 
   return (
     <div className="free-translation-reasoning-panel">
       <button
+        aria-controls="free-translation-reasoning-summary"
         aria-expanded={expanded}
         className="free-translation-reasoning-toggle"
-        onClick={() => setExpanded((current) => !current)}
+        disabled={!text}
+        onClick={() => onExpandedChange(!expanded)}
         type="button"
       >
         <ChevronRight
@@ -1076,11 +1104,15 @@ function FreeTranslationReasoningPanel({
           strokeWidth={2.2}
         />
         <span>{t("freeTranslation.reasoningPanel")}</span>
-        {isStreaming ? <small>{t("freeTranslation.reasoningThinking")}</small> : null}
+        {isGenerating ? <small>{t("freeTranslation.reasoningThinking")}</small> : null}
       </button>
-      {expanded ? (
-        <div className="free-translation-reasoning-text">{text}</div>
-      ) : null}
+      <div
+        className="free-translation-reasoning-text"
+        hidden={!expanded}
+        id="free-translation-reasoning-summary"
+      >
+        {text}
+      </div>
     </div>
   );
 }

@@ -22,6 +22,7 @@ import {
 
 const FREE_TRANSLATION_SCHEMA_VERSION = 1 as const;
 const DEFAULT_TRANSLATION_MODEL: TranslationModel = "deepseek-v4-flash";
+const FREE_TRANSLATION_REASONING_SUMMARY_MAX_CHARACTERS = 1_200;
 
 export const DEFAULT_FREE_TRANSLATION_HISTORY_LIMIT = 20;
 export const FREE_TRANSLATION_HISTORY_MAX_ENTRIES = 50;
@@ -217,6 +218,7 @@ export function createFreeTranslationRecord(
     id: createFreeTranslationRecordId(createdAt),
     pdfFingerprint: normalizeOptionalString(input.pdfFingerprint),
     pdfTitle: normalizeOptionalString(input.pdfTitle),
+    reasoningSummary: normalizeReasoningSummary(input.reasoningSummary),
     request: normalizeFreeTranslationRequestSnapshot(input.request),
     schemaVersion: FREE_TRANSLATION_SCHEMA_VERSION,
     sourceText,
@@ -264,6 +266,7 @@ export function getFreeTranslationRecordCharacterCount(record: FreeTranslationRe
 
   return record.sourceText.length +
     record.translation.length +
+    (record.reasoningSummary?.length ?? 0) +
     (record.request.translationStyle.customInstruction?.length ?? 0) +
     terminologyCharacters;
 }
@@ -323,6 +326,7 @@ function normalizeFreeTranslationRecord(
     id: input.id,
     pdfFingerprint: normalizeOptionalString(input.pdfFingerprint),
     pdfTitle: normalizeOptionalString(input.pdfTitle),
+    reasoningSummary: normalizeReasoningSummary(input.reasoningSummary),
     request: normalizeFreeTranslationRequestSnapshot(input.request),
     schemaVersion: FREE_TRANSLATION_SCHEMA_VERSION,
     sourceText: input.sourceText,
@@ -482,6 +486,14 @@ function normalizeOptionalString(value: unknown) {
   const normalized = typeof value === "string" ? value.trim() : "";
 
   return normalized || undefined;
+}
+
+function normalizeReasoningSummary(value: unknown) {
+  const normalized = typeof value === "string" ? value.trim() : "";
+
+  return normalized
+    ? normalized.slice(0, FREE_TRANSLATION_REASONING_SUMMARY_MAX_CHARACTERS)
+    : undefined;
 }
 
 function normalizeTimestamp(value: unknown, fallback = Date.now()) {

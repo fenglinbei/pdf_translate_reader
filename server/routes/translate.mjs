@@ -13,8 +13,10 @@ import {
   TRANSLATION_REASONING_EFFORTS,
   TranslationModelError,
 } from "../translationModels/client.mjs";
+import { createTranslationReasoningSummary } from "../translationModels/reasoningSummary.mjs";
 
 const MAX_REQUEST_BYTES = 256 * 1024;
+const MAX_SUMMARY_TRANSLATION_CAPTURE_CHARS = 12_000;
 
 export async function handleTranslateStream(request, response) {
   let requestBody;
@@ -68,9 +70,45 @@ export async function handleTranslateStream(request, response) {
       reasoning: resolvedReasoning,
     });
 
-    await pipeOpenAiCompatibleStream(upstreamStream, response, {
-      emitThinking: Boolean(resolvedReasoning?.enabled),
-    });
+    const streamResult = await pipeOpenAiCompatibleStream(upstreamStream, response);
+
+    if (isResponseClosed(response, abortController.signal)) {
+      return;
+    }
+
+    if (resolvedReasoning?.enabled && streamResult.translationText.trim()) {
+      writeSse(response, "reasoning_summary_status", {
+        status: "generating",
+      });
+      writeSse(response, "heartbeat", {});
+      const summary = await createTranslationReasoningSummary({
+        requestBody,
+        signal: abortController.signal,
+        translationText: streamResult.translationText,
+      });
+
+      if (isResponseClosed(response, abortController.signal)) {
+        return;
+      }
+
+      writeSse(response, "reasoning_summary", {
+        source: summary.source,
+        text: summary.text,
+      });
+
+      if (summary.usage) {
+        writeSse(
+          response,
+          "usage",
+          combineUsage(streamResult.usage, normalizeUsage(summary.usage)),
+        );
+      }
+    }
+
+    if (isResponseClosed(response, abortController.signal)) {
+      return;
+    }
+
     writeSse(response, "done", {});
     response.end();
   } catch (error) {
@@ -99,11 +137,14 @@ export async function handleTranslateStream(request, response) {
 async function pipeOpenAiCompatibleStream(
   upstreamStream,
   response,
-  { emitThinking = false } = {},
 ) {
   const reader = upstreamStream.getReader();
   const decoder = new TextDecoder();
-  const streamState = { lastHeartbeatAt: 0 };
+  const streamState = {
+    lastHeartbeatAt: 0,
+    translationText: "",
+    usage: undefined,
+  };
   let buffer = "";
 
   while (true) {
@@ -122,10 +163,9 @@ async function pipeOpenAiCompatibleStream(
         line,
         response,
         streamState,
-        emitThinking,
       )) {
         await reader.cancel().catch(() => undefined);
-        return;
+        return streamState;
       }
     }
   }
@@ -137,9 +177,8 @@ async function pipeOpenAiCompatibleStream(
       buffer,
       response,
       streamState,
-      emitThinking,
     )) {
-      return;
+      return streamState;
     }
   }
 
@@ -154,7 +193,6 @@ function processOpenAiCompatibleSseLine(
   line,
   response,
   streamState,
-  emitThinking,
 ) {
   if (!line.startsWith("data:")) {
     return false;
@@ -170,15 +208,23 @@ function processOpenAiCompatibleSseLine(
     return true;
   }
 
-  const chunk = JSON.parse(data);
+  let chunk;
+
+  try {
+    chunk = JSON.parse(data);
+  } catch {
+    throw new TranslationModelError(
+      502,
+      "translation_upstream_stream_invalid",
+      "Translation provider returned malformed stream data.",
+    );
+  }
 
   if (chunk?.error) {
     throw new TranslationModelError(
       502,
       "translation_upstream_stream_error",
-      typeof chunk.error.message === "string"
-        ? chunk.error.message
-        : "Translation provider returned a stream error.",
+      "Translation provider returned a stream error.",
     );
   }
 
@@ -188,28 +234,27 @@ function processOpenAiCompatibleSseLine(
   const usage = chunk.usage ?? chunk.choices?.[0]?.usage;
 
   if (
-    emitThinking &&
     typeof reasoningContent === "string" &&
     reasoningContent.length > 0
   ) {
-    writeSse(response, "thinking", { text: reasoningContent });
-  }
-
-  if (
-    typeof reasoningContent === "string" &&
-    reasoningContent.length > 0 &&
-    Date.now() - streamState.lastHeartbeatAt >= 5_000
-  ) {
-    writeSse(response, "heartbeat", {});
-    streamState.lastHeartbeatAt = Date.now();
+    if (Date.now() - streamState.lastHeartbeatAt >= 5_000) {
+      writeSse(response, "heartbeat", {});
+      streamState.lastHeartbeatAt = Date.now();
+    }
   }
 
   if (typeof content === "string" && content.length > 0) {
+    streamState.translationText = appendBoundedText(
+      streamState.translationText,
+      content,
+      MAX_SUMMARY_TRANSLATION_CAPTURE_CHARS,
+    );
     writeSse(response, "delta", { text: content });
   }
 
   if (usage) {
-    writeSse(response, "usage", normalizeUsage(usage));
+    streamState.usage = normalizeUsage(usage);
+    writeSse(response, "usage", streamState.usage);
   }
 
   if (finishReason) {
@@ -273,9 +318,13 @@ function normalizeTranslationRequest(body) {
       : model === "kimi-k3"
         ? "max"
         : "high";
+    normalizedRequest.summaryLocale = body.summaryLocale === "zh-CN"
+      ? "zh-CN"
+      : "en-US";
   } else {
     delete normalizedRequest.reasoningEnabled;
     delete normalizedRequest.reasoningEffort;
+    delete normalizedRequest.summaryLocale;
   }
 
   return normalizedRequest;
@@ -364,6 +413,53 @@ function normalizeUsage(usage) {
     ),
     totalTokens: normalizeNumber(usage.total_tokens ?? usage.totalTokens),
   };
+}
+
+function combineUsage(primaryUsage, secondaryUsage) {
+  if (!primaryUsage) {
+    return secondaryUsage;
+  }
+
+  if (!secondaryUsage) {
+    return primaryUsage;
+  }
+
+  const combined = {};
+
+  for (const key of [
+    "completionTokens",
+    "promptCacheHitTokens",
+    "promptCacheMissTokens",
+    "promptTokens",
+    "reasoningTokens",
+    "totalTokens",
+  ]) {
+    const primaryValue = primaryUsage[key];
+    const secondaryValue = secondaryUsage[key];
+
+    if (primaryValue !== undefined || secondaryValue !== undefined) {
+      combined[key] = (primaryValue ?? 0) + (secondaryValue ?? 0);
+    }
+  }
+
+  return combined;
+}
+
+function appendBoundedText(current, text, maxCharacters) {
+  const next = `${current}${text}`;
+
+  if (next.length <= maxCharacters) {
+    return next;
+  }
+
+  const marker = "\n[…]\n";
+  const segmentLength = Math.floor((maxCharacters - marker.length) / 2);
+
+  return `${next.slice(0, segmentLength)}${marker}${next.slice(-segmentLength)}`;
+}
+
+function isResponseClosed(response, signal) {
+  return signal.aborted || response.destroyed || response.writableEnded;
 }
 
 function normalizeNumber(value) {
