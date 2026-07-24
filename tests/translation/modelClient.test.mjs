@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import {
   createTranslationChatStream,
   normalizeTranslationModel,
+  resolveTranslationReasoningConfig,
   TranslationModelError,
 } from "../../server/translationModels/client.mjs";
 import { FREE_TRANSLATION_MAX_SOURCE_CHARS } from "../../server/deepseek/prompt.mjs";
@@ -68,6 +69,32 @@ describe("translation model client", () => {
     });
   });
 
+  it("honors an explicit disabled reasoning request for DeepSeek", async () => {
+    process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
+    process.env.DEEPSEEK_API_BASE_URL = "https://deepseek.example/v1";
+    const request = captureSuccessfulRequest();
+
+    await createTranslationChatStream({
+      messages,
+      model: "deepseek-v4-flash",
+      resolvedReasoning: createResolvedReasoning({
+        effort: "max",
+        enabled: false,
+        requestedEnabled: false,
+      }),
+    });
+
+    assert.deepEqual(request.body, {
+      messages,
+      model: "deepseek-v4-flash",
+      stream: true,
+      stream_options: { include_usage: true },
+      temperature: 0.2,
+      thinking: { type: "disabled" },
+    });
+    assert.equal("reasoning_effort" in request.body, false);
+  });
+
   it("disables GLM thinking and sampling for translation", async () => {
     process.env.GLM_API_KEY = "test-glm-key";
     process.env.GLM_API_BASE_URL = "https://glm.example/v4/";
@@ -84,6 +111,32 @@ describe("translation model client", () => {
       stream: true,
       thinking: { type: "disabled" },
     });
+  });
+
+  it("honors an explicit disabled reasoning request for GLM", async () => {
+    process.env.GLM_API_KEY = "test-glm-key";
+    process.env.GLM_API_BASE_URL = "https://glm.example/v4/";
+    const request = captureSuccessfulRequest();
+
+    await createTranslationChatStream({
+      messages,
+      model: "glm-5.2",
+      resolvedReasoning: createResolvedReasoning({
+        effort: "max",
+        enabled: false,
+        requestedEnabled: false,
+      }),
+    });
+
+    assert.deepEqual(request.body, {
+      do_sample: false,
+      max_tokens: 16_384,
+      messages,
+      model: "glm-5.2",
+      stream: true,
+      thinking: { type: "disabled" },
+    });
+    assert.equal("reasoning_effort" in request.body, false);
   });
 
   it("uses Kimi K3 fixed-parameter compatible payload", async () => {
@@ -105,6 +158,118 @@ describe("translation model client", () => {
     assert.equal("thinking" in request.body, false);
   });
 
+  for (const {
+    effort,
+    expectedEffort,
+    model,
+  } of [
+    {
+      effort: "low",
+      expectedEffort: "high",
+      model: "deepseek-v4-flash",
+    },
+    {
+      effort: "high",
+      expectedEffort: "high",
+      model: "deepseek-v4-pro",
+    },
+    {
+      effort: "max",
+      expectedEffort: "max",
+      model: "deepseek-v4-pro",
+    },
+  ]) {
+    it(`maps ${model} ${effort} reasoning to provider effort ${expectedEffort}`, async () => {
+      process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
+      process.env.DEEPSEEK_API_BASE_URL = "https://deepseek.example/v1";
+      const request = captureSuccessfulRequest();
+
+      await createTranslationChatStream({
+        messages,
+        model,
+        resolvedReasoning: createResolvedReasoning({
+          effort,
+          enabled: true,
+          requestedEnabled: true,
+        }),
+      });
+
+      assert.equal(request.body.model, model);
+      assert.deepEqual(request.body.thinking, { type: "enabled" });
+      assert.equal(request.body.reasoning_effort, expectedEffort);
+      assert.equal("temperature" in request.body, false);
+    });
+  }
+
+  for (const { effort, expectedEffort } of [
+    { effort: "low", expectedEffort: "high" },
+    { effort: "high", expectedEffort: "high" },
+    { effort: "max", expectedEffort: "max" },
+  ]) {
+    it(`maps GLM ${effort} reasoning to provider effort ${expectedEffort}`, async () => {
+      process.env.GLM_API_KEY = "test-glm-key";
+      process.env.GLM_API_BASE_URL = "https://glm.example/v4/";
+      const request = captureSuccessfulRequest();
+
+      await createTranslationChatStream({
+        messages,
+        model: "glm-5.2",
+        resolvedReasoning: createResolvedReasoning({
+          effort,
+          enabled: true,
+          requestedEnabled: true,
+        }),
+      });
+
+      assert.equal(request.body.do_sample, false);
+      assert.deepEqual(request.body.thinking, { type: "enabled" });
+      assert.equal(request.body.reasoning_effort, expectedEffort);
+      assert.equal("temperature" in request.body, false);
+    });
+  }
+
+  for (const effort of ["low", "high", "max"]) {
+    it(`adjusts Kimi K3 reasoning intensity to ${effort} without a thinking field`, async () => {
+      process.env.KIMI_API_KEY = "test-kimi-key";
+      process.env.KIMI_API_BASE_URL = "https://kimi.example/v1/";
+      const request = captureSuccessfulRequest();
+
+      await createTranslationChatStream({
+        messages,
+        model: "kimi-k3",
+        resolvedReasoning: createResolvedReasoning({
+          effort,
+          enabled: true,
+          requestedEnabled: true,
+        }),
+      });
+
+      assert.equal(request.body.reasoning_effort, effort);
+      assert.equal("thinking" in request.body, false);
+      assert.equal("temperature" in request.body, false);
+    });
+  }
+
+  it("uses Kimi K3 effective reasoning when a disabled request is forced on", async () => {
+    process.env.KIMI_API_KEY = "test-kimi-key";
+    process.env.KIMI_API_BASE_URL = "https://kimi.example/v1/";
+    const request = captureSuccessfulRequest();
+
+    await createTranslationChatStream({
+      messages,
+      model: "kimi-k3",
+      resolvedReasoning: createResolvedReasoning({
+        effort: "low",
+        enabled: true,
+        forced: true,
+        requestedEnabled: false,
+      }),
+    });
+
+    assert.equal(request.body.reasoning_effort, "low");
+    assert.equal("thinking" in request.body, false);
+  });
+
   it("reports the selected provider when its key is missing", async () => {
     await assert.rejects(
       createTranslationChatStream({ messages, model: "kimi-k3" }),
@@ -123,14 +288,84 @@ describe("translation model client", () => {
     assert.equal(normalizeTranslationModel("unsupported"), "deepseek-v4-flash");
   });
 
-  it("forwards only translated content while preserving Kimi usage", async () => {
+  it("normalizes legacy reasoning defaults by model", () => {
+    for (const [model, expected] of [
+      [
+        "deepseek-v4-flash",
+        {
+          effort: "high",
+          enabled: false,
+          forced: false,
+          requestedEnabled: false,
+        },
+      ],
+      [
+        "deepseek-v4-pro",
+        {
+          effort: "high",
+          enabled: false,
+          forced: false,
+          requestedEnabled: false,
+        },
+      ],
+      [
+        "glm-5.2",
+        {
+          effort: "high",
+          enabled: false,
+          forced: false,
+          requestedEnabled: false,
+        },
+      ],
+      [
+        "kimi-k3",
+        {
+          effort: "max",
+          enabled: true,
+          forced: false,
+          requestedEnabled: true,
+        },
+      ],
+    ]) {
+      assert.deepEqual(resolveTranslationReasoningConfig(model), expected);
+    }
+  });
+
+  it("normalizes unsupported reasoning values and exposes Kimi forced-on behavior", () => {
+    assert.deepEqual(
+      resolveTranslationReasoningConfig("glm-5.2", {
+        effort: "extreme",
+        enabled: "false",
+      }),
+      {
+        effort: "high",
+        enabled: false,
+        forced: false,
+        requestedEnabled: false,
+      },
+    );
+    assert.deepEqual(
+      resolveTranslationReasoningConfig("kimi-k3", {
+        effort: "low",
+        enabled: false,
+      }),
+      {
+        effort: "low",
+        enabled: true,
+        forced: true,
+        requestedEnabled: false,
+      },
+    );
+  });
+
+  it("forwards Kimi thinking separately from translated content and reports effective reasoning", async () => {
     process.env.KIMI_API_KEY = "test-kimi-key";
     globalThis.fetch = async () => new Response([
-      'data: {"choices":[{"delta":{"reasoning_content":"hidden reasoning"}}]}',
+      'data: {"choices":[{"delta":{"reasoning_content":"visible reasoning"}}]}',
       "",
       'data: {"choices":[{"delta":{"content":"你好"},"finish_reason":null}]}',
       "",
-      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15,"cached_tokens":3}}',
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"completion_tokens_details":{"reasoning_tokens":4},"total_tokens":15,"cached_tokens":3}}',
       "",
       "data: [DONE]",
       "",
@@ -144,8 +379,10 @@ describe("translation model client", () => {
       localContextBefore: [],
       longContextEnabled: false,
       model: "kimi-k3",
-      requestKind: "selection",
-      sourceLang: "en",
+      reasoningEffort: "low",
+      reasoningEnabled: false,
+      requestKind: "free",
+      sourceLang: "auto",
       stream: true,
       targetLang: "zh",
       targetSentence: "Hello",
@@ -157,16 +394,34 @@ describe("translation model client", () => {
 
     assert.equal(response.statusCode, 200);
     assert.equal(response.ended, true);
-    assert.match(response.output, /event: meta/);
-    assert.match(response.output, /event: heartbeat/);
-    assert.match(response.output, /"model":"kimi-k3"/);
-    assert.match(response.output, /"promptVersion":"translation-v3"/);
-    assert.match(response.output, /event: delta\ndata: \{"text":"你好"\}/);
+    const events = parseSseEvents(response.output);
+    const meta = events.find((event) => event.eventName === "meta");
+
+    assert.equal(meta?.payload.model, "kimi-k3");
+    assert.equal(meta?.payload.promptVersion, "free-translation-v1");
+    assert.deepEqual(meta?.payload.reasoning, {
+      requestedEnabled: false,
+      enabled: true,
+      effort: "low",
+      forced: true,
+    });
+    assert.deepEqual(
+      events.filter((event) => event.eventName === "thinking").map((event) => event.payload),
+      [{ text: "visible reasoning" }],
+    );
+    assert.deepEqual(
+      events.filter((event) => event.eventName === "delta").map((event) => event.payload),
+      [{ text: "你好" }],
+    );
     assert.match(response.output, /"promptCacheHitTokens":3/);
     assert.match(response.output, /"promptCacheMissTokens":7/);
+    assert.match(response.output, /"reasoningTokens":4/);
     assert.match(response.output, /event: finish/);
     assert.match(response.output, /event: done/);
-    assert.doesNotMatch(response.output, /hidden reasoning/);
+    assert.doesNotMatch(
+      response.output,
+      /event: delta\ndata: \{"text":"visible reasoning"\}/,
+    );
   });
 
   it("accepts auto source detection for free translation and returns its prompt version", async () => {
@@ -189,6 +444,26 @@ describe("translation model client", () => {
       upstreamRequest.body.messages[1].content,
       /Source language: auto-detect from the source document/,
     );
+  });
+
+  it("keeps reasoning controls scoped to free translation requests", async () => {
+    process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
+    const upstreamRequest = captureSuccessfulRequest();
+    const request = createTranslationRequest({
+      ...createRequestBody("deepseek-v4-flash"),
+      reasoningEffort: "max",
+      reasoningEnabled: true,
+      requestKind: "selection",
+    });
+    const response = createTranslationResponse();
+
+    await handleTranslateStream(request, response);
+
+    assert.deepEqual(upstreamRequest.body.thinking, { type: "disabled" });
+    assert.equal("reasoning_effort" in upstreamRequest.body, false);
+    const meta = parseSseEvents(response.output)
+      .find((event) => event.eventName === "meta");
+    assert.equal("reasoning" in meta.payload, false);
   });
 
   it("continues to reject auto source detection for selection translation", async () => {
@@ -263,6 +538,32 @@ describe("translation model client", () => {
     await handleTranslateStream(request, response);
 
     assert.match(response.output, /event: delta/);
+    assert.match(response.output, /event: error/);
+    assert.match(response.output, /"code":"translation_stream_incomplete"/);
+    assert.doesNotMatch(response.output, /event: done/);
+  });
+
+  it("keeps streamed thinking visible but rejects a reasoning-only stream without completion", async () => {
+    process.env.KIMI_API_KEY = "test-kimi-key";
+    globalThis.fetch = async () => new Response(
+      'data: {"choices":[{"delta":{"reasoning_content":"unfinished thought"}}]}\n\n',
+      { status: 200 },
+    );
+    const request = createTranslationRequest({
+      ...createRequestBody("kimi-k3"),
+      reasoningEffort: "high",
+      reasoningEnabled: true,
+      requestKind: "free",
+      sourceLang: "auto",
+    });
+    const response = createTranslationResponse();
+
+    await handleTranslateStream(request, response);
+
+    assert.match(
+      response.output,
+      /event: thinking\ndata: \{"text":"unfinished thought"\}/,
+    );
     assert.match(response.output, /event: error/);
     assert.match(response.output, /"code":"translation_stream_incomplete"/);
     assert.doesNotMatch(response.output, /event: done/);
@@ -376,6 +677,20 @@ function createTranslationRequest(body) {
   };
 }
 
+function createResolvedReasoning({
+  effort,
+  enabled,
+  forced = false,
+  requestedEnabled,
+}) {
+  return {
+    effort,
+    enabled,
+    forced,
+    requestedEnabled,
+  };
+}
+
 function createRequestBody(model) {
   return {
     contextWindowN: 0,
@@ -390,6 +705,30 @@ function createRequestBody(model) {
     targetSentence: "Hello",
     translationStyle: { presetId: "academic-faithful" },
   };
+}
+
+function parseSseEvents(output) {
+  return output
+    .split(/\r?\n\r?\n/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .map((block) => {
+      let eventName = "message";
+      const dataLines = [];
+
+      for (const line of block.split(/\r?\n/)) {
+        if (line.startsWith("event:")) {
+          eventName = line.slice("event:".length).trim();
+        } else if (line.startsWith("data:")) {
+          dataLines.push(line.slice("data:".length).trim());
+        }
+      }
+
+      return {
+        eventName,
+        payload: JSON.parse(dataLines.join("\n")),
+      };
+    });
 }
 
 function createTranslationResponse() {

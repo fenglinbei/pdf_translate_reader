@@ -8,7 +8,9 @@ import { writeJson } from "../http/json.mjs";
 import {
   createTranslationChatStream,
   normalizeTranslationModel,
+  resolveTranslationReasoningConfig,
   TRANSLATION_MODELS,
+  TRANSLATION_REASONING_EFFORTS,
   TranslationModelError,
 } from "../translationModels/client.mjs";
 
@@ -46,9 +48,16 @@ export async function handleTranslateStream(request, response) {
   }
 
   try {
+    const resolvedReasoning = requestBody.requestKind === "free"
+      ? resolveTranslationReasoningConfig(model, {
+        effort: requestBody.reasoningEffort,
+        enabled: requestBody.reasoningEnabled,
+      })
+      : undefined;
     const upstreamStream = await createTranslationChatStream({
       messages: buildTranslationMessages(requestBody),
       model,
+      resolvedReasoning,
       signal: abortController.signal,
     });
 
@@ -56,9 +65,12 @@ export async function handleTranslateStream(request, response) {
     writeSse(response, "meta", {
       model,
       promptVersion: getTranslationPromptVersion(requestBody.requestKind),
+      reasoning: resolvedReasoning,
     });
 
-    await pipeOpenAiCompatibleStream(upstreamStream, response);
+    await pipeOpenAiCompatibleStream(upstreamStream, response, {
+      emitThinking: Boolean(resolvedReasoning?.enabled),
+    });
     writeSse(response, "done", {});
     response.end();
   } catch (error) {
@@ -84,7 +96,11 @@ export async function handleTranslateStream(request, response) {
   }
 }
 
-async function pipeOpenAiCompatibleStream(upstreamStream, response) {
+async function pipeOpenAiCompatibleStream(
+  upstreamStream,
+  response,
+  { emitThinking = false } = {},
+) {
   const reader = upstreamStream.getReader();
   const decoder = new TextDecoder();
   const streamState = { lastHeartbeatAt: 0 };
@@ -102,7 +118,12 @@ async function pipeOpenAiCompatibleStream(upstreamStream, response) {
     buffer = lines.pop() ?? "";
 
     for (const line of lines) {
-      if (processOpenAiCompatibleSseLine(line, response, streamState)) {
+      if (processOpenAiCompatibleSseLine(
+        line,
+        response,
+        streamState,
+        emitThinking,
+      )) {
         await reader.cancel().catch(() => undefined);
         return;
       }
@@ -112,7 +133,12 @@ async function pipeOpenAiCompatibleStream(upstreamStream, response) {
   buffer += decoder.decode();
 
   if (buffer.trim()) {
-    if (processOpenAiCompatibleSseLine(buffer, response, streamState)) {
+    if (processOpenAiCompatibleSseLine(
+      buffer,
+      response,
+      streamState,
+      emitThinking,
+    )) {
       return;
     }
   }
@@ -124,7 +150,12 @@ async function pipeOpenAiCompatibleStream(upstreamStream, response) {
   );
 }
 
-function processOpenAiCompatibleSseLine(line, response, streamState) {
+function processOpenAiCompatibleSseLine(
+  line,
+  response,
+  streamState,
+  emitThinking,
+) {
   if (!line.startsWith("data:")) {
     return false;
   }
@@ -155,6 +186,14 @@ function processOpenAiCompatibleSseLine(line, response, streamState) {
   const content = chunk.choices?.[0]?.delta?.content;
   const finishReason = chunk.choices?.[0]?.finish_reason;
   const usage = chunk.usage ?? chunk.choices?.[0]?.usage;
+
+  if (
+    emitThinking &&
+    typeof reasoningContent === "string" &&
+    reasoningContent.length > 0
+  ) {
+    writeSse(response, "thinking", { text: reasoningContent });
+  }
 
   if (
     typeof reasoningContent === "string" &&
@@ -212,14 +251,34 @@ function normalizeTranslationRequest(body) {
     throw new Error(`Unsupported model: ${body.model}`);
   }
 
-  return {
+  const model = normalizeTranslationModel(body.model);
+  const normalizedRequest = {
     ...body,
+    model,
     requestKind,
     sourceLang,
     targetLang,
     terminologyOverride: normalizeTerminologyOverride(body.terminologyOverride),
     translationStyle: normalizeTranslationStyle(body.translationStyle),
   };
+
+  if (requestKind === "free") {
+    normalizedRequest.reasoningEnabled = typeof body.reasoningEnabled === "boolean"
+      ? body.reasoningEnabled
+      : model === "kimi-k3";
+    normalizedRequest.reasoningEffort = TRANSLATION_REASONING_EFFORTS.has(
+      body.reasoningEffort,
+    )
+      ? body.reasoningEffort
+      : model === "kimi-k3"
+        ? "max"
+        : "high";
+  } else {
+    delete normalizedRequest.reasoningEnabled;
+    delete normalizedRequest.reasoningEffort;
+  }
+
+  return normalizedRequest;
 }
 
 function normalizeTranslationStyle(value) {
@@ -299,6 +358,10 @@ function normalizeUsage(usage) {
         : Math.max(0, promptTokens - promptCacheHitTokens)
     ),
     promptTokens,
+    reasoningTokens: normalizeNumber(
+      usage.completion_tokens_details?.reasoning_tokens ??
+        usage.completionTokensDetails?.reasoningTokens,
+    ),
     totalTokens: normalizeNumber(usage.total_tokens ?? usage.totalTokens),
   };
 }

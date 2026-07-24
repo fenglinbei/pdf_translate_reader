@@ -3,6 +3,7 @@ import { after, before, test } from "node:test";
 import { createServer } from "vite";
 
 let repository;
+let translationModels;
 let vite;
 
 before(async () => {
@@ -13,6 +14,7 @@ before(async () => {
     server: { middlewareMode: true },
   });
   repository = await vite.ssrLoadModule("/src/translation/freeTranslationRepository.ts");
+  translationModels = await vite.ssrLoadModule("/src/translation/models.ts");
 });
 
 after(async () => {
@@ -24,6 +26,8 @@ test("free-translation draft normalization preserves Markdown and accepts auto d
   const draft = repository.createFreeTranslationDraft({
     includePaperContext: false,
     model: "deepseek-v4-flash",
+    reasoningEffort: "max",
+    reasoningEnabled: true,
     sourceLang: "auto",
     sourceText,
     targetLang: "zh",
@@ -35,8 +39,121 @@ test("free-translation draft normalization preserves Markdown and accepts auto d
 
   assert.equal(draft.sourceText, sourceText);
   assert.equal(draft.sourceLang, "auto");
+  assert.equal(draft.reasoningEnabled, true);
+  assert.equal(draft.reasoningEffort, "max");
   assert.equal(draft.updatedAt, 123);
   assert.deepEqual(draft.terminology, [{ source: "mass", target: "质量" }]);
+});
+
+test("reasoning controls expose only provider efforts that take effect", () => {
+  assert.deepEqual(
+    [...translationModels.getTranslationReasoningCapability("deepseek-v4-flash").efforts],
+    ["high", "max"],
+  );
+  assert.deepEqual(
+    [...translationModels.getTranslationReasoningCapability("glm-5.2").efforts],
+    ["high", "max"],
+  );
+  assert.deepEqual(
+    [...translationModels.getTranslationReasoningCapability("kimi-k3").efforts],
+    ["low", "high", "max"],
+  );
+  assert.equal(
+    translationModels.getTranslationReasoningCapability("kimi-k3").canDisable,
+    false,
+  );
+});
+
+for (const {
+  expectedEffort,
+  expectedEnabled,
+  model,
+} of [
+  {
+    expectedEffort: "high",
+    expectedEnabled: false,
+    model: "deepseek-v4-flash",
+  },
+  {
+    expectedEffort: "high",
+    expectedEnabled: false,
+    model: "deepseek-v4-pro",
+  },
+  {
+    expectedEffort: "high",
+    expectedEnabled: false,
+    model: "glm-5.2",
+  },
+  {
+    expectedEffort: "max",
+    expectedEnabled: true,
+    model: "kimi-k3",
+  },
+]) {
+  test(`legacy ${model} drafts recover the model-specific reasoning default`, () => {
+    const draft = repository.createFreeTranslationDraft(
+      createDraftInput(model),
+    );
+
+    assert.equal(draft.reasoningEnabled, expectedEnabled);
+    assert.equal(draft.reasoningEffort, expectedEffort);
+  });
+
+  test(`legacy ${model} history snapshots recover the model-specific reasoning default`, () => {
+    const record = repository.createFreeTranslationRecord({
+      request: createRequestSnapshot(model),
+      sourceText: "Source",
+      translation: "译文",
+      userId: "user-legacy",
+    });
+
+    assert.equal(record.request.reasoningEnabled, expectedEnabled);
+    assert.equal(record.request.reasoningEffort, expectedEffort);
+  });
+}
+
+test("free-translation history stores effective reasoning without storing its trace", () => {
+  const record = repository.createFreeTranslationRecord({
+    reasoning: "private chain of thought",
+    request: {
+      ...createRequestSnapshot("glm-5.2"),
+      reasoningEffort: "low",
+      reasoningEnabled: true,
+    },
+    sourceText: "Source",
+    translation: "译文",
+    usage: { reasoningTokens: 7 },
+    userId: "user-new",
+  });
+
+  assert.equal(record.request.reasoningEnabled, true);
+  assert.equal(record.request.reasoningEffort, "high");
+  assert.equal(record.usage.reasoningTokens, 7);
+  assert.equal("reasoning" in record, false);
+  assert.equal("thinking" in record, false);
+});
+
+test("invalid persisted reasoning values fall back instead of coercing strings", () => {
+  const deepSeekDraft = repository.createFreeTranslationDraft({
+    ...createDraftInput("deepseek-v4-pro"),
+    reasoningEffort: "extreme",
+    reasoningEnabled: "false",
+  });
+  const kimiRecord = repository.createFreeTranslationRecord({
+    request: {
+      ...createRequestSnapshot("kimi-k3"),
+      reasoningEffort: "extreme",
+      reasoningEnabled: "false",
+    },
+    sourceText: "Source",
+    translation: "译文",
+    userId: "user-invalid",
+  });
+
+  assert.equal(deepSeekDraft.reasoningEnabled, false);
+  assert.equal(deepSeekDraft.reasoningEffort, "high");
+  assert.equal(kimiRecord.request.reasoningEnabled, true);
+  assert.equal(kimiRecord.request.reasoningEffort, "max");
 });
 
 test("history pruning keeps the newest records within the entry limit", () => {
@@ -105,5 +222,32 @@ function createRecord(id, createdAt, sourceText) {
     translation: "译文",
     updatedAt: createdAt,
     userId: "user-1",
+  };
+}
+
+function createDraftInput(model) {
+  return {
+    includePaperContext: false,
+    model,
+    sourceLang: "auto",
+    sourceText: "Source",
+    targetLang: "zh",
+    terminology: [],
+    translationStyle: { presetId: "academic-faithful" },
+    updatedAt: 123,
+    userId: `user-draft-${model}`,
+  };
+}
+
+function createRequestSnapshot(model) {
+  return {
+    includePaperContext: false,
+    model,
+    promptVersion: "free-translation-v1",
+    sourceLang: "auto",
+    targetLang: "zh",
+    terminology: [],
+    translationStyle: { presetId: "academic-faithful" },
+    translationStyleHash: "style-test",
   };
 }

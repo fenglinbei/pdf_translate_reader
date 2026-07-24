@@ -12,6 +12,7 @@ import type {
   FreeTranslationTerminologyEntry,
   TokenUsage,
   TranslationModel,
+  TranslationReasoningEffort,
 } from "../types/domain";
 import { isTranslationModel } from "./models";
 import {
@@ -182,12 +183,15 @@ export function createFreeTranslationDraft(
   const targetLang = isTranslationLanguage(input.targetLang)
     ? input.targetLang
     : DEFAULT_TARGET_LANG;
+  const model = normalizeTranslationModel(input.model);
 
   return {
     includePaperContext: Boolean(input.includePaperContext),
-    model: normalizeTranslationModel(input.model),
+    model,
     pdfFingerprint: normalizeOptionalString(input.pdfFingerprint),
     pdfTitle: normalizeOptionalString(input.pdfTitle),
+    reasoningEffort: normalizeReasoningEffort(input.reasoningEffort, model),
+    reasoningEnabled: normalizeReasoningEnabled(input.reasoningEnabled, model),
     schemaVersion: FREE_TRANSLATION_SCHEMA_VERSION,
     sourceLang,
     sourceText: normalizeText(input.sourceText),
@@ -272,11 +276,15 @@ function normalizeFreeTranslationDraft(
     return undefined;
   }
 
+  const model = normalizeTranslationModel(input.model);
+
   return createFreeTranslationDraft({
     includePaperContext: input.includePaperContext === true,
-    model: normalizeTranslationModel(input.model),
+    model,
     pdfFingerprint: normalizeOptionalString(input.pdfFingerprint),
     pdfTitle: normalizeOptionalString(input.pdfTitle),
+    reasoningEffort: normalizeReasoningEffort(input.reasoningEffort, model),
+    reasoningEnabled: normalizeReasoningEnabled(input.reasoningEnabled, model),
     sourceLang: normalizeFreeTranslationSourceLanguage(input.sourceLang),
     sourceText: normalizeText(input.sourceText),
     targetLang: isTranslationLanguage(input.targetLang)
@@ -329,12 +337,15 @@ function normalizeFreeTranslationRequestSnapshot(
   input: FreeTranslationRequestSnapshot | Record<string, unknown>,
 ): FreeTranslationRequestSnapshot {
   const translationStyle = normalizeTranslationStyle(input.translationStyle);
+  const model = normalizeTranslationModel(input.model);
 
   return {
     includePaperContext: input.includePaperContext === true,
-    model: normalizeTranslationModel(input.model),
+    model,
     paperContextHash: normalizeOptionalString(input.paperContextHash),
     promptVersion: normalizeOptionalString(input.promptVersion) ?? "unknown",
+    reasoningEffort: normalizeReasoningEffort(input.reasoningEffort, model),
+    reasoningEnabled: normalizeReasoningEnabled(input.reasoningEnabled, model),
     sourceLang: normalizeFreeTranslationSourceLanguage(input.sourceLang),
     targetLang: isTranslationLanguage(input.targetLang)
       ? input.targetLang
@@ -357,6 +368,28 @@ function normalizeFreeTranslationSourceLanguage(
 
 function normalizeTranslationModel(value: unknown): TranslationModel {
   return isTranslationModel(value) ? value : DEFAULT_TRANSLATION_MODEL;
+}
+
+function normalizeReasoningEnabled(value: unknown, model: TranslationModel) {
+  if (model === "kimi-k3") {
+    return true;
+  }
+
+  return typeof value === "boolean" ? value : false;
+}
+
+function normalizeReasoningEffort(
+  value: unknown,
+  model: TranslationModel,
+): TranslationReasoningEffort {
+  const defaultEffort = model === "kimi-k3" ? "max" : "high";
+  const normalizedEffort = value === "low" || value === "high" || value === "max"
+    ? value
+    : defaultEffort;
+
+  return model !== "kimi-k3" && normalizedEffort === "low"
+    ? "high"
+    : normalizedEffort;
 }
 
 function normalizeTerminology(value: unknown, omitIncomplete: boolean) {
@@ -383,6 +416,7 @@ function normalizeTokenUsage(value: unknown): TokenUsage | undefined {
     promptCacheHitTokens: normalizeOptionalNonNegativeNumber(value.promptCacheHitTokens),
     promptCacheMissTokens: normalizeOptionalNonNegativeNumber(value.promptCacheMissTokens),
     promptTokens: normalizeOptionalNonNegativeNumber(value.promptTokens),
+    reasoningTokens: normalizeOptionalNonNegativeNumber(value.reasoningTokens),
     totalTokens: normalizeOptionalNonNegativeNumber(value.totalTokens),
   };
 

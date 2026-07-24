@@ -4638,6 +4638,64 @@ button {
   background: rgba(194, 65, 58, 0.06);
 }
 
+.free-translation-reasoning-panel {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 9px 10px;
+  border: 1px solid rgba(139, 92, 246, 0.22);
+  border-radius: 8px;
+  background: rgba(245, 243, 255, 0.58);
+}
+
+.free-translation-reasoning-toggle {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 26px;
+  padding: 0;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+
+.free-translation-reasoning-toggle:focus-visible {
+  outline: 2px solid rgba(139, 92, 246, 0.28);
+  outline-offset: 2px;
+}
+
+.free-translation-reasoning-toggle-icon {
+  color: var(--text-muted);
+  transition: transform 140ms ease;
+}
+
+.free-translation-reasoning-toggle[aria-expanded="true"] .free-translation-reasoning-toggle-icon {
+  transform: rotate(90deg);
+}
+
+.free-translation-reasoning-toggle small {
+  color: rgba(109, 40, 217, 0.88);
+  font-size: 10.5px;
+  font-weight: 760;
+}
+
+.free-translation-reasoning-text {
+  max-height: 200px;
+  overflow-y: auto;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .free-translation-loading {
   display: inline-flex;
   align-items: center;
@@ -4730,6 +4788,13 @@ button {
 .free-translation-context-toggle {
   min-height: 36px;
   align-self: end;
+}
+
+.free-translation-reasoning-options {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-width: 0;
 }
 
 .free-translation-custom-style,

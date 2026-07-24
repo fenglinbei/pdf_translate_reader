@@ -3,7 +3,12 @@ import { getDeepSeekRuntimeConfig } from "./config.mjs";
 export const DEEPSEEK_MODELS = new Set(["deepseek-v4-flash", "deepseek-v4-pro"]);
 export const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash";
 
-export async function createDeepSeekChatStream({ messages, model, signal }) {
+export async function createDeepSeekChatStream({
+  messages,
+  model,
+  resolvedReasoning,
+  signal,
+}) {
   const config = getDeepSeekRuntimeConfig();
 
   if (!config.apiKey) {
@@ -14,18 +19,11 @@ export async function createDeepSeekChatStream({ messages, model, signal }) {
 
   try {
     response = await fetch(`${config.apiBaseUrl}/chat/completions`, {
-      body: JSON.stringify({
+      body: JSON.stringify(createChatCompletionBody({
         messages,
         model,
-        stream: true,
-        stream_options: {
-          include_usage: true,
-        },
-        temperature: 0.2,
-        thinking: {
-          type: "disabled",
-        },
-      }),
+        resolvedReasoning,
+      })),
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
         "Content-Type": "application/json",
@@ -59,6 +57,31 @@ export async function createDeepSeekChatStream({ messages, model, signal }) {
   }
 
   return response.body;
+}
+
+function createChatCompletionBody({ messages, model, resolvedReasoning }) {
+  const body = {
+    messages,
+    model,
+    stream: true,
+    stream_options: {
+      include_usage: true,
+    },
+  };
+
+  if (resolvedReasoning?.enabled) {
+    body.reasoning_effort = resolvedReasoning.effort === "max" ? "max" : "high";
+    body.thinking = {
+      type: "enabled",
+    };
+  } else {
+    body.temperature = 0.2;
+    body.thinking = {
+      type: "disabled",
+    };
+  }
+
+  return body;
 }
 
 function getDeepSeekErrorCode(statusCode) {

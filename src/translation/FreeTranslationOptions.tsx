@@ -1,13 +1,17 @@
 import { Plus, Trash2 } from "lucide-react";
-import type { Dispatch, SetStateAction } from "react";
+import { useEffect, type Dispatch, type SetStateAction } from "react";
 import { useI18n } from "../i18n/I18nProvider";
 import type { MessageKey } from "../i18n/messages";
 import type {
   TranslationModel,
+  TranslationReasoningEffort,
   TranslationStylePresetId,
   TranslationStyleSettings,
 } from "../types/domain";
-import { TRANSLATION_MODEL_OPTIONS } from "./models";
+import {
+  getTranslationReasoningCapability,
+  TRANSLATION_MODEL_OPTIONS,
+} from "./models";
 import {
   TRANSLATION_STYLE_CUSTOM_MAX_LENGTH,
   TRANSLATION_STYLE_PRESET_IDS,
@@ -26,8 +30,12 @@ type FreeTranslationOptionsProps = {
   model: TranslationModel;
   onIncludePaperContextChange: (enabled: boolean) => void;
   onModelChange: (model: TranslationModel) => void;
+  onReasoningEffortChange: (effort: TranslationReasoningEffort) => void;
+  onReasoningEnabledChange: (enabled: boolean) => void;
   setTerms: Dispatch<SetStateAction<FreeTranslationTermDraft[]>>;
   terms: FreeTranslationTermDraft[];
+  reasoningEffort: TranslationReasoningEffort;
+  reasoningEnabled: boolean;
   translationStyle: TranslationStyleSettings;
   onTranslationStyleChange: (style: TranslationStyleSettings) => void;
 };
@@ -39,12 +47,31 @@ export function FreeTranslationOptions({
   model,
   onIncludePaperContextChange,
   onModelChange,
+  onReasoningEffortChange,
+  onReasoningEnabledChange,
   onTranslationStyleChange,
+  reasoningEffort,
+  reasoningEnabled,
   setTerms,
   terms,
   translationStyle,
 }: FreeTranslationOptionsProps) {
   const { t } = useI18n();
+  const reasoningCapability = getTranslationReasoningCapability(model);
+  const effectiveReasoningEnabled = !reasoningCapability.canDisable || reasoningEnabled;
+  const effectiveReasoningEffort = reasoningCapability.efforts.includes(reasoningEffort)
+    ? reasoningEffort
+    : reasoningCapability.defaultEffort;
+
+  useEffect(() => {
+    if (effectiveReasoningEffort !== reasoningEffort) {
+      onReasoningEffortChange(effectiveReasoningEffort);
+    }
+  }, [
+    effectiveReasoningEffort,
+    onReasoningEffortChange,
+    reasoningEffort,
+  ]);
 
   function updateTerm(termId: string, patch: Partial<FreeTranslationTermDraft>) {
     setTerms((currentTerms) =>
@@ -76,6 +103,40 @@ export function FreeTranslationOptions({
             type="checkbox"
           />
           <span>{t("freeTranslation.includePaperContext")}</span>
+        </label>
+
+        <div className="free-translation-reasoning-options">
+          <label className="settings-toggle">
+            <input
+              checked={effectiveReasoningEnabled}
+              disabled={disabled || !reasoningCapability.canDisable}
+              onChange={(event) => onReasoningEnabledChange(event.currentTarget.checked)}
+              type="checkbox"
+            />
+            <span>{t("freeTranslation.reasoningEnabled")}</span>
+          </label>
+          <small className="settings-field-hint">
+            {reasoningCapability.canDisable
+              ? t("freeTranslation.reasoningHint")
+              : t("freeTranslation.reasoningRequiredHint")}
+          </small>
+        </div>
+
+        <label className="settings-field">
+          <span>{t("freeTranslation.reasoningEffort")}</span>
+          <select
+            disabled={disabled || !effectiveReasoningEnabled}
+            onChange={(event) => onReasoningEffortChange(
+              event.currentTarget.value as TranslationReasoningEffort,
+            )}
+            value={effectiveReasoningEffort}
+          >
+            {reasoningCapability.efforts.map((effort) => (
+              <option key={effort} value={effort}>
+                {t(getReasoningEffortLabelKey(effort))}
+              </option>
+            ))}
+          </select>
         </label>
 
         <label className="settings-field">
@@ -172,6 +233,20 @@ export function FreeTranslationOptions({
       </fieldset>
     </details>
   );
+}
+
+function getReasoningEffortLabelKey(
+  effort: TranslationReasoningEffort,
+): MessageKey {
+  switch (effort) {
+    case "low":
+      return "freeTranslation.reasoningEffortLow";
+    case "max":
+      return "freeTranslation.reasoningEffortMax";
+    case "high":
+    default:
+      return "freeTranslation.reasoningEffortHigh";
+  }
 }
 
 function getTranslationStylePresetLabelKey(presetId: TranslationStylePresetId): MessageKey {

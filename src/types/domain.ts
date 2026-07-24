@@ -14,6 +14,7 @@ export type AnnotationColor = "yellow" | "blue" | "green" | "red";
 export type TextExtractionSource = "pdfjs" | "mathpix-v3-pdf";
 export type TranslationRequestKind = "selection" | "free";
 export type FreeTranslationSourceLanguage = SourceLanguage | "auto";
+export type TranslationReasoningEffort = "low" | "high" | "max";
 export type TranslationStylePresetId =
   | "academic-faithful"
   | "academic-fluent"
@@ -175,6 +176,8 @@ export type FreeTranslationRequest = Omit<
   "requestKind" | "sourceLang"
 > & {
   requestKind: "free";
+  reasoningEnabled: boolean;
+  reasoningEffort: TranslationReasoningEffort;
   sourceLang: FreeTranslationSourceLanguage;
 };
 
@@ -183,6 +186,7 @@ export type TranslationStreamRequest = TranslationRequest | FreeTranslationReque
 export type TokenUsage = {
   promptTokens?: number;
   completionTokens?: number;
+  reasoningTokens?: number;
   totalTokens?: number;
   promptCacheHitTokens?: number;
   promptCacheMissTokens?: number;
@@ -201,6 +205,8 @@ export type FreeTranslationDraft = {
   targetLang: TargetLanguage;
   model: TranslationModel;
   includePaperContext: boolean;
+  reasoningEnabled: boolean;
+  reasoningEffort: TranslationReasoningEffort;
   translationStyle: TranslationStyleSettings;
   terminology: FreeTranslationTerminologyEntry[];
   pdfFingerprint?: string;
@@ -213,6 +219,8 @@ export type FreeTranslationRequestSnapshot = {
   targetLang: TargetLanguage;
   model: TranslationModel;
   includePaperContext: boolean;
+  reasoningEnabled: boolean;
+  reasoningEffort: TranslationReasoningEffort;
   paperContextHash?: string;
   promptVersion: string;
   translationStyle: TranslationStyleSettings;

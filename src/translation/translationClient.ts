@@ -1,4 +1,8 @@
-import type { TokenUsage, TranslationStreamRequest } from "../types/domain";
+import type {
+  TokenUsage,
+  TranslationReasoningEffort,
+  TranslationStreamRequest,
+} from "../types/domain";
 import { PROJECT_CONFIG } from "../config/projectConfig";
 import { getSupabaseAccessToken } from "../auth/supabaseClient";
 import { TranslationNetworkError, TranslationTimeoutError } from "./errors";
@@ -8,7 +12,17 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api";
 export type TranslationStreamHandlers = {
   onDelta: (text: string) => void;
   onFinish?: (finishReason: string) => void;
-  onMeta?: (metadata: { model?: string; promptVersion?: string }) => void;
+  onMeta?: (metadata: {
+    model?: string;
+    promptVersion?: string;
+    reasoning?: {
+      effort: TranslationReasoningEffort;
+      enabled: boolean;
+      forced: boolean;
+      requestedEnabled: boolean;
+    };
+  }) => void;
+  onThinking?: (text: string) => void;
   onUsage?: (usage: TokenUsage) => void;
 };
 
@@ -142,6 +156,8 @@ async function readEventStream(
 
     if (eventName === "delta" && typeof payload.text === "string") {
       handlers.onDelta(payload.text);
+    } else if (eventName === "thinking" && typeof payload.text === "string") {
+      handlers.onThinking?.(payload.text);
     } else if (eventName === "usage") {
       handlers.onUsage?.(payload);
     } else if (eventName === "meta") {

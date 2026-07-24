@@ -1,5 +1,6 @@
 import {
   ArrowLeftRight,
+  ChevronRight,
   Copy,
   Languages,
   LoaderCircle,
@@ -27,6 +28,7 @@ import type {
   PdfLibraryEntry,
   TokenUsage,
   TranslationModel,
+  TranslationReasoningEffort,
   TranslationStyleSettings,
 } from "../types/domain";
 import { copyTextToClipboard } from "../utils/clipboard";
@@ -52,6 +54,7 @@ import {
   type FreeTranslationDraftWriteInput,
 } from "./freeTranslationRepository";
 import { streamTranslation } from "./translationClient";
+import { getTranslationReasoningCapability } from "./models";
 import {
   DEFAULT_TRANSLATION_STYLE,
   getEffectiveTranslationStyle,
@@ -118,6 +121,13 @@ export function FreeTranslationPanel({
   const [isDraftHydrated, setIsDraftHydrated] = useState(false);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [model, setModel] = useState<TranslationModel>(settings.defaultModel);
+  const [reasoningEffort, setReasoningEffort] = useState<TranslationReasoningEffort>(
+    () => getTranslationReasoningCapability(settings.defaultModel).defaultEffort,
+  );
+  const [reasoningEnabled, setReasoningEnabled] = useState(
+    () => getTranslationReasoningCapability(settings.defaultModel).defaultEnabled,
+  );
+  const [reasoningText, setReasoningText] = useState("");
   const [sourceLang, setSourceLang] = useState<FreeTranslationSourceLanguage>("auto");
   const [status, setStatus] = useState<FreeTranslationStatus>("idle");
   const [targetLang, setTargetLang] = useState(settings.targetLang);
@@ -132,6 +142,13 @@ export function FreeTranslationPanel({
   const isBusy = status === "loading" || status === "streaming";
   const paperTitle = entry?.pdfMetadata?.title || entry?.fileName;
   const effectiveIncludePaperContext = includePaperContext && Boolean(paperContext);
+  const reasoningCapability = getTranslationReasoningCapability(model);
+  const effectiveReasoningEnabled = reasoningCapability.canDisable
+    ? reasoningEnabled
+    : true;
+  const effectiveReasoningEffort = reasoningCapability.efforts.includes(reasoningEffort)
+    ? reasoningEffort
+    : reasoningCapability.defaultEffort;
   const requestSnapshot = useMemo<FreeTranslationRequestSnapshot>(() => {
     const effectiveStyle = getEffectiveTranslationStyle(translationStyle);
 
@@ -140,6 +157,8 @@ export function FreeTranslationPanel({
       model,
       paperContextHash: effectiveIncludePaperContext ? paperContext?.contextHash : undefined,
       promptVersion: FREE_TRANSLATION_PROMPT_VERSION,
+      reasoningEffort: effectiveReasoningEffort,
+      reasoningEnabled: effectiveReasoningEnabled,
       sourceLang,
       targetLang,
       terminology: termsToEntries(terms),
@@ -150,6 +169,8 @@ export function FreeTranslationPanel({
     effectiveIncludePaperContext,
     model,
     paperContext?.contextHash,
+    effectiveReasoningEffort,
+    effectiveReasoningEnabled,
     sourceLang,
     targetLang,
     terms,
@@ -160,6 +181,8 @@ export function FreeTranslationPanel({
     model,
     pdfFingerprint: entry?.fingerprint,
     pdfTitle: paperTitle,
+    reasoningEffort: effectiveReasoningEffort,
+    reasoningEnabled: effectiveReasoningEnabled,
     sourceLang,
     sourceText: inputText,
     targetLang,
@@ -172,6 +195,8 @@ export function FreeTranslationPanel({
     inputText,
     model,
     paperTitle,
+    effectiveReasoningEffort,
+    effectiveReasoningEnabled,
     sourceLang,
     targetLang,
     terms,
@@ -295,6 +320,7 @@ export function FreeTranslationPanel({
     setCompletedSignature(undefined);
     setCopyStatus("idle");
     setErrorMessage(undefined);
+    setReasoningText("");
     setStatus("idle");
     setTranslation("");
     setUsage(undefined);
@@ -330,6 +356,8 @@ export function FreeTranslationPanel({
             setIncludePaperContext,
             setInputText,
             setModel,
+            setReasoningEffort,
+            setReasoningEnabled,
             setSourceLang,
             setTargetLang,
             setTerms,
@@ -447,6 +475,8 @@ export function FreeTranslationPanel({
       paperContext: effectiveIncludePaperContext ? paperContext : undefined,
       pdfFingerprint: entry?.fingerprint ?? STANDALONE_PDF_FINGERPRINT,
       promptVersion: FREE_TRANSLATION_PROMPT_VERSION,
+      reasoningEffort: effectiveReasoningEffort,
+      reasoningEnabled: effectiveReasoningEnabled,
       requestKind: "free",
       sourceLang,
       stream: true,
@@ -462,6 +492,7 @@ export function FreeTranslationPanel({
     setCompletedSignature(undefined);
     setCopyStatus("idle");
     setErrorMessage(undefined);
+    setReasoningText("");
     setStatus("loading");
     setTranslation("");
     setUsage(undefined);
@@ -491,6 +522,24 @@ export function FreeTranslationPanel({
                   promptVersion: metadata.promptVersion,
                 };
               }
+
+              if (metadata.reasoning) {
+                request.reasoningEnabled = metadata.reasoning.enabled;
+                request.reasoningEffort = metadata.reasoning.effort;
+                activeSnapshot = {
+                  ...activeSnapshot,
+                  reasoningEnabled: metadata.reasoning.enabled,
+                  reasoningEffort: metadata.reasoning.effort,
+                };
+              }
+            },
+            onThinking: (text) => {
+              if (activeRequestIdRef.current !== requestId) {
+                return;
+              }
+
+              setStatus("streaming");
+              setReasoningText((current) => current + text);
             },
             onUsage: (nextUsage) => {
               streamedUsage = nextUsage;
@@ -576,6 +625,8 @@ export function FreeTranslationPanel({
   }, [
     canTranslate,
     effectiveIncludePaperContext,
+    effectiveReasoningEffort,
+    effectiveReasoningEnabled,
     entry?.cloudDocumentId,
     entry?.fingerprint,
     inputText,
@@ -653,6 +704,9 @@ export function FreeTranslationPanel({
     setIncludePaperContext(canRestorePaperContext);
     setInputText(record.sourceText);
     setTerms(createTermDrafts(record.request.terminology));
+    setReasoningEnabled(record.request.reasoningEnabled);
+    setReasoningEffort(record.request.reasoningEffort);
+    setReasoningText("");
     setTranslationStyle(normalizeTranslationStyle(record.request.translationStyle));
     setTranslation(record.translation);
     setUsage(record.usage);
@@ -873,6 +927,12 @@ export function FreeTranslationPanel({
                 aria-live={isBusy ? "off" : "polite"}
                 className={`free-translation-output free-translation-output--${status}`}
               >
+                {reasoningText ? (
+                  <FreeTranslationReasoningPanel
+                    isStreaming={isBusy && !translation}
+                    text={reasoningText}
+                  />
+                ) : null}
                 {translation ? (
                   <FreeTranslationMarkdown text={translation} />
                 ) : status === "loading" || status === "streaming" ? (
@@ -930,7 +990,32 @@ export function FreeTranslationPanel({
               }}
               onModelChange={(nextModel) => {
                 hasUserInteractionRef.current = true;
+                const currentCapability = getTranslationReasoningCapability(model);
+                const nextCapability = getTranslationReasoningCapability(nextModel);
+
                 setModel(nextModel);
+                setReasoningEnabled((current) => {
+                  if (!nextCapability.canDisable) {
+                    return true;
+                  }
+
+                  return currentCapability.canDisable
+                    ? current
+                    : nextCapability.defaultEnabled;
+                });
+                setReasoningEffort((current) =>
+                  nextCapability.efforts.includes(current)
+                    ? current
+                    : nextCapability.defaultEffort
+                );
+              }}
+              onReasoningEffortChange={(effort) => {
+                hasUserInteractionRef.current = true;
+                setReasoningEffort(effort);
+              }}
+              onReasoningEnabledChange={(enabled) => {
+                hasUserInteractionRef.current = true;
+                setReasoningEnabled(enabled);
               }}
               onTranslationStyleChange={(nextStyle) => {
                 hasUserInteractionRef.current = true;
@@ -941,6 +1026,8 @@ export function FreeTranslationPanel({
                 setTerms(action);
               }}
               terms={terms}
+              reasoningEffort={effectiveReasoningEffort}
+              reasoningEnabled={effectiveReasoningEnabled}
               translationStyle={translationStyle}
             />
             <FreeTranslationHistory
@@ -958,6 +1045,46 @@ export function FreeTranslationPanel({
   );
 }
 
+function FreeTranslationReasoningPanel({
+  isStreaming,
+  text,
+}: {
+  isStreaming: boolean;
+  text: string;
+}) {
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useState(true);
+
+  useEffect(() => {
+    if (!isStreaming) {
+      setExpanded(false);
+    }
+  }, [isStreaming]);
+
+  return (
+    <div className="free-translation-reasoning-panel">
+      <button
+        aria-expanded={expanded}
+        className="free-translation-reasoning-toggle"
+        onClick={() => setExpanded((current) => !current)}
+        type="button"
+      >
+        <ChevronRight
+          aria-hidden="true"
+          className="free-translation-reasoning-toggle-icon"
+          size={14}
+          strokeWidth={2.2}
+        />
+        <span>{t("freeTranslation.reasoningPanel")}</span>
+        {isStreaming ? <small>{t("freeTranslation.reasoningThinking")}</small> : null}
+      </button>
+      {expanded ? (
+        <div className="free-translation-reasoning-text">{text}</div>
+      ) : null}
+    </div>
+  );
+}
+
 function applyDraft(
   draft: FreeTranslationDraft,
   setters: {
@@ -966,6 +1093,8 @@ function applyDraft(
     setIncludePaperContext: (value: boolean) => void;
     setInputText: (value: string) => void;
     setModel: (value: TranslationModel) => void;
+    setReasoningEffort: (value: TranslationReasoningEffort) => void;
+    setReasoningEnabled: (value: boolean) => void;
     setSourceLang: (value: FreeTranslationSourceLanguage) => void;
     setTargetLang: (value: TranslationLanguage) => void;
     setTerms: (value: FreeTranslationTermDraft[]) => void;
@@ -981,6 +1110,8 @@ function applyDraft(
   setters.setSourceLang(draft.sourceLang);
   setters.setTargetLang(draft.targetLang);
   setters.setModel(draft.model);
+  setters.setReasoningEffort(draft.reasoningEffort);
+  setters.setReasoningEnabled(draft.reasoningEnabled);
   setters.setIncludePaperContext(draft.includePaperContext && contextMatches);
   setters.setTranslationStyle(normalizeTranslationStyle(draft.translationStyle));
   setters.setTerms(createTermDrafts(draft.terminology));
