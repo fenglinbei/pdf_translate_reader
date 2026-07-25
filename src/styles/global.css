@@ -4348,11 +4348,15 @@ button {
 }
 
 .free-translation-panel {
+  container-name: free-translation-panel;
+  container-type: inline-size;
+  position: relative;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  width: min(1240px, 100%);
-  height: min(820px, calc(100vh - 32px));
-  height: min(820px, calc(100dvh - 32px));
+  width: min(1600px, calc(100vw - 32px));
+  height: min(960px, calc(100vh - 32px));
+  height: min(960px, calc(100dvh - 32px));
+  max-width: calc(100vw - 32px);
   max-height: calc(100vh - 32px);
   max-height: calc(100dvh - 32px);
   overflow: hidden;
@@ -4361,6 +4365,31 @@ button {
   color: var(--text);
   background: rgba(255, 253, 250, 0.98);
   box-shadow: 0 24px 70px rgba(23, 32, 45, 0.22);
+  transition:
+    border-radius 160ms ease,
+    height 180ms cubic-bezier(0.2, 0, 0, 1),
+    left 180ms cubic-bezier(0.2, 0, 0, 1),
+    top 180ms cubic-bezier(0.2, 0, 0, 1),
+    width 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.free-translation-panel[data-desktop-layout="true"] {
+  position: absolute;
+}
+
+.free-translation-panel[data-desktop-layout="true"][data-maximized="true"] {
+  max-width: none;
+  max-height: none;
+  border-radius: 10px;
+}
+
+.free-translation-panel[data-resizing="true"] {
+  user-select: none;
+  transition: none;
+}
+
+.free-translation-panel[data-panel-resizing="true"] .free-translation-body {
+  pointer-events: none;
 }
 
 .free-translation-header {
@@ -4405,6 +4434,35 @@ button {
   min-width: 0;
 }
 
+.free-translation-size-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.free-translation-size-select {
+  width: auto;
+  max-width: 132px;
+  min-height: 32px;
+  padding: 0 28px 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  background: var(--surface-strong);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.free-translation-size-select:hover,
+.free-translation-size-select:focus-visible {
+  border-color: rgba(31, 111, 159, 0.42);
+  outline: 2px solid rgba(31, 111, 159, 0.16);
+  outline-offset: 1px;
+}
+
 .free-translation-context-chip {
   display: inline-flex;
   align-items: center;
@@ -4433,7 +4491,10 @@ button {
 
 .free-translation-workbench {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 48px minmax(0, 1fr);
+  grid-template-columns:
+    minmax(0, var(--free-translation-source-fr, 1fr))
+    48px
+    minmax(0, var(--free-translation-result-fr, 1fr));
   align-items: stretch;
   min-width: 0;
   min-height: 430px;
@@ -4456,6 +4517,59 @@ button {
 
 .free-translation-pane--result {
   border-radius: 0 11px 11px 0;
+}
+
+.free-translation-divider-column {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
+}
+
+.free-translation-pane-divider {
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  z-index: 0;
+  width: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+  transform: translateX(-50%);
+}
+
+.free-translation-pane-divider::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: rgba(103, 112, 122, 0.24);
+  content: "";
+  transform: translateX(-50%);
+  transition:
+    background-color 140ms ease,
+    width 140ms ease;
+}
+
+.free-translation-pane-divider:hover::before,
+.free-translation-pane-divider:focus-visible::before,
+.free-translation-panel[data-resizing="true"] .free-translation-pane-divider::before {
+  background: rgba(31, 111, 159, 0.58);
+}
+
+.free-translation-pane-divider:hover::before,
+.free-translation-pane-divider:focus-visible::before {
+  width: 2px;
+}
+
+.free-translation-pane-divider:focus-visible {
+  outline: 2px solid rgba(31, 111, 159, 0.24);
+  outline-offset: -5px;
 }
 
 .free-translation-pane-header,
@@ -4535,9 +4649,10 @@ button {
 }
 
 .free-translation-swap-button {
+  position: relative;
   align-self: center;
   justify-self: center;
-  z-index: 1;
+  z-index: 2;
   display: inline-grid;
   place-items: center;
   width: 34px;
@@ -4562,6 +4677,74 @@ button {
   background: var(--surface-muted);
   box-shadow: none;
   cursor: not-allowed;
+}
+
+.free-translation-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 0 0 13px 0;
+  background: transparent;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.free-translation-resize-handle::before {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  width: 15px;
+  height: 15px;
+  border-radius: 0 0 3px 0;
+  background:
+    linear-gradient(
+      135deg,
+      transparent 42%,
+      rgba(103, 112, 122, 0.72) 43%,
+      rgba(103, 112, 122, 0.72) 52%,
+      transparent 53%
+    ),
+    linear-gradient(
+      135deg,
+      transparent 61%,
+      rgba(103, 112, 122, 0.4) 62%,
+      rgba(103, 112, 122, 0.4) 71%,
+      transparent 72%
+    );
+  content: "";
+}
+
+.free-translation-resize-handle:hover::before,
+.free-translation-resize-handle:focus-visible::before {
+  background:
+    linear-gradient(
+      135deg,
+      transparent 42%,
+      var(--accent-strong) 43%,
+      var(--accent-strong) 52%,
+      transparent 53%
+    ),
+    linear-gradient(
+      135deg,
+      transparent 61%,
+      rgba(15, 76, 207, 0.48) 62%,
+      rgba(15, 76, 207, 0.48) 71%,
+      transparent 72%
+    );
+}
+
+.free-translation-resize-handle:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.28);
+  outline-offset: -6px;
+}
+
+.free-translation-panel[data-maximized="true"] .free-translation-resize-handle {
+  display: none;
 }
 
 .primary-action-button {
@@ -4734,6 +4917,11 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .free-translation-panel,
+  .free-translation-pane-divider::before {
+    transition: none;
+  }
+
   .free-translation-reasoning-cursor {
     animation: none;
   }
@@ -5074,6 +5262,57 @@ button {
   justify-items: stretch;
 }
 
+@container free-translation-panel (max-width: 860px) {
+  .free-translation-header {
+    padding-inline: 12px;
+  }
+
+  .free-translation-header-actions {
+    gap: 5px;
+  }
+
+  .free-translation-context-chip {
+    display: none;
+  }
+
+  .free-translation-size-select {
+    max-width: 112px;
+  }
+
+  .free-translation-workbench {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+    padding: 12px;
+  }
+
+  .free-translation-pane--source,
+  .free-translation-pane--result {
+    border-radius: 10px;
+  }
+
+  .free-translation-divider-column {
+    min-height: 50px;
+  }
+
+  .free-translation-pane-divider {
+    display: none;
+  }
+
+  .free-translation-swap-button {
+    margin: 8px auto;
+    transform: rotate(90deg);
+  }
+
+  .free-translation-lower-panels {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0 12px 12px;
+  }
+
+  .free-translation-options-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 920px) {
   .app-shell {
     grid-template-rows: 48px minmax(0, 1fr);
@@ -5363,10 +5602,19 @@ button {
   }
 
   .free-translation-panel {
-    width: 100%;
+    position: relative !important;
+    inset: auto !important;
+    width: 100% !important;
+    max-width: none;
     max-height: none;
-    height: 100%;
+    height: 100% !important;
     border-radius: 11px;
+  }
+
+  .free-translation-size-controls,
+  .free-translation-resize-handle,
+  .free-translation-pane-divider {
+    display: none;
   }
 
   .free-translation-header {
@@ -5391,6 +5639,10 @@ button {
     grid-template-columns: minmax(0, 1fr);
     min-height: 0;
     padding: 10px;
+  }
+
+  .free-translation-divider-column {
+    min-height: 50px;
   }
 
   .free-translation-pane--source,

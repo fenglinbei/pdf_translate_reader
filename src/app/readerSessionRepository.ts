@@ -5,9 +5,15 @@ import type {
 
 const READER_SESSION_STORAGE_KEY = "pdf-translate-reader-session-v1";
 
+export type FreeTranslationPanelMode = "standard" | "wide" | "custom";
+
 export type ReaderSession = {
   activeCloudDocumentId?: string;
   activeFingerprint?: string;
+  freeTranslationPanelHeight?: number;
+  freeTranslationPanelMode?: FreeTranslationPanelMode;
+  freeTranslationPanelWidth?: number;
+  freeTranslationSourceRatio?: number;
   isLibraryPaneOpen?: boolean;
   isPinsPaneOpen?: boolean;
   libraryPaneWidth?: number;
@@ -118,6 +124,10 @@ function normalizeReaderSession(input: unknown): ReaderSession | undefined {
   return {
     activeCloudDocumentId: getOptionalString(input.activeCloudDocumentId),
     activeFingerprint: getOptionalString(input.activeFingerprint),
+    freeTranslationPanelHeight: getOptionalNumber(input.freeTranslationPanelHeight),
+    freeTranslationPanelMode: getFreeTranslationPanelMode(input.freeTranslationPanelMode),
+    freeTranslationPanelWidth: getOptionalNumber(input.freeTranslationPanelWidth),
+    freeTranslationSourceRatio: getOptionalNumber(input.freeTranslationSourceRatio),
     isLibraryPaneOpen: getOptionalBoolean(input.isLibraryPaneOpen),
     isPinsPaneOpen: getOptionalBoolean(input.isPinsPaneOpen),
     libraryPaneWidth: getOptionalNumber(input.libraryPaneWidth),
@@ -132,6 +142,14 @@ function normalizeReaderSession(input: unknown): ReaderSession | undefined {
     updatedAt: getOptionalNumber(input.updatedAt) ?? Date.now(),
     userId: input.userId,
   };
+}
+
+function getFreeTranslationPanelMode(
+  value: unknown,
+): FreeTranslationPanelMode | undefined {
+  return value === "standard" || value === "wide" || value === "custom"
+    ? value
+    : undefined;
 }
 
 function getMobileInteractionMode(value: unknown): MobileInteractionMode | undefined {

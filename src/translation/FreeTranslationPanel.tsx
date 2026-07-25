@@ -4,12 +4,24 @@ import {
   Copy,
   Languages,
   LoaderCircle,
+  Maximize2,
+  Minimize2,
+  RotateCcw,
   Square,
   Trash2,
   X,
 } from "lucide-react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import type {
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  getReaderSession,
+  updateReaderSession,
+  type FreeTranslationPanelMode,
+} from "../app/readerSessionRepository";
 import {
   TRANSLATION_LANGUAGES,
   type TranslationLanguage,
@@ -54,6 +66,20 @@ import {
   type FreeTranslationDraftWriteInput,
 } from "./freeTranslationRepository";
 import {
+  clampFreeTranslationPanelBounds,
+  clampFreeTranslationSourceRatio,
+  createCenteredFreeTranslationBounds,
+  createMaximizedFreeTranslationBounds,
+  FREE_TRANSLATION_SOURCE_RATIO_DEFAULT,
+  getFreeTranslationPresetSize,
+  getFreeTranslationViewport,
+  getInitialFreeTranslationLayout,
+  isFreeTranslationDesktopViewport,
+  resizeFreeTranslationBounds,
+  type FreeTranslationPanelBounds,
+  type FreeTranslationPanelSize,
+} from "./freeTranslationPanelLayout";
+import {
   streamTranslation,
   type TranslationProgressPhase,
 } from "./translationClient";
@@ -83,9 +109,29 @@ type FreeTranslationStatus =
   | "error";
 type CopyStatus = "idle" | "copied" | "error";
 type DraftStatus = "idle" | "saving" | "saved" | "error";
+type PanelResizeState = {
+  pointerId: number;
+  startBounds: FreeTranslationPanelBounds;
+  startX: number;
+  startY: number;
+};
+type PaneResizeState = {
+  availableWidth: number;
+  pointerId: number;
+  startRatio: number;
+  startX: number;
+};
+type FreeTranslationWorkbenchStyle = CSSProperties & {
+  "--free-translation-result-fr": string;
+  "--free-translation-source-fr": string;
+};
 
 const STANDALONE_PDF_FINGERPRINT = "standalone-free-translation";
 const DRAFT_SAVE_DELAY_MS = 450;
+const PANEL_KEYBOARD_RESIZE_STEP = 16;
+const PANEL_KEYBOARD_RESIZE_LARGE_STEP = 64;
+const PANE_KEYBOARD_RESIZE_STEP = 2;
+const PANE_KEYBOARD_RESIZE_LARGE_STEP = 10;
 
 export function FreeTranslationPanel({
   entry,
@@ -97,6 +143,17 @@ export function FreeTranslationPanel({
   userId,
 }: FreeTranslationPanelProps) {
   const { locale, t } = useI18n();
+  const resizePanelHintId = useId();
+  const initialPanelLayoutRef = useRef<ReturnType<typeof getInitialFreeTranslationLayout>>();
+
+  if (!initialPanelLayoutRef.current) {
+    initialPanelLayoutRef.current = getInitialFreeTranslationLayout(
+      getReaderSession(userId),
+      getFreeTranslationViewport(),
+    );
+  }
+
+  const initialPanelLayout = initialPanelLayoutRef.current;
   const abortControllerRef = useRef<AbortController>();
   const activeRequestIdRef = useRef(0);
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -111,8 +168,21 @@ export function FreeTranslationPanel({
   const latestDraftRef = useRef<FreeTranslationDraftWriteInput>();
   const latestDraftSignatureRef = useRef<string>();
   const onCloseRef = useRef(onClose);
+  const paneResizeFrameRef = useRef<number>();
+  const paneResizeStateRef = useRef<PaneResizeState>();
+  const panelResizeFrameRef = useRef<number>();
+  const panelResizeStateRef = useRef<PanelResizeState>();
   const panelRef = useRef<HTMLElement>(null);
+  const pendingPaneRatioRef = useRef(initialPanelLayout.sourceRatio);
+  const pendingPanelBoundsRef = useRef(initialPanelLayout.bounds);
   const paperContextRef = useRef(paperContext);
+  const preferredPanelSizeRef = useRef<FreeTranslationPanelSize>(
+    initialPanelLayout.preferredSize,
+  );
+  const resultPaneRef = useRef<HTMLElement>(null);
+  const restorePanelBoundsRef = useRef<FreeTranslationPanelBounds>();
+  const sourcePaneRef = useRef<HTMLElement>(null);
+  const workbenchRef = useRef<HTMLDivElement>(null);
   const [completedSignature, setCompletedSignature] = useState<string>();
   const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
   const [draftStatus, setDraftStatus] = useState<DraftStatus>("idle");
@@ -121,9 +191,20 @@ export function FreeTranslationPanel({
   const [historyRecords, setHistoryRecords] = useState<FreeTranslationRecord[]>([]);
   const [includePaperContext, setIncludePaperContext] = useState(Boolean(paperContext));
   const [inputText, setInputText] = useState("");
+  const [isDesktopLayout, setIsDesktopLayout] = useState(() =>
+    isFreeTranslationDesktopViewport(getFreeTranslationViewport())
+  );
   const [isDraftHydrated, setIsDraftHydrated] = useState(false);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
+  const [isMaximized, setIsMaximized] = useState(false);
+  const [isPaneResizing, setIsPaneResizing] = useState(false);
+  const [isPanelResizing, setIsPanelResizing] = useState(false);
+  const [layoutAnnouncement, setLayoutAnnouncement] = useState("");
   const [model, setModel] = useState<TranslationModel>(settings.defaultModel);
+  const [panelBounds, setPanelBounds] = useState(initialPanelLayout.bounds);
+  const [panelMode, setPanelMode] = useState<FreeTranslationPanelMode>(
+    initialPanelLayout.mode,
+  );
   const [reasoningEffort, setReasoningEffort] = useState<TranslationReasoningEffort>(
     () => getTranslationReasoningCapability(settings.defaultModel).defaultEffort,
   );
@@ -139,6 +220,9 @@ export function FreeTranslationPanel({
   const [reasoningSummary, setReasoningSummary] = useState("");
   const [reasoningSummaryNotice, setReasoningSummaryNotice] = useState<string>();
   const [sourceLang, setSourceLang] = useState<FreeTranslationSourceLanguage>("auto");
+  const [sourcePaneRatio, setSourcePaneRatio] = useState(
+    initialPanelLayout.sourceRatio,
+  );
   const [status, setStatus] = useState<FreeTranslationStatus>("idle");
   const [targetLang, setTargetLang] = useState(settings.targetLang);
   const [terms, setTerms] = useState<FreeTranslationTermDraft[]>(() =>
@@ -225,6 +309,19 @@ export function FreeTranslationPanel({
     inputText.length <= FREE_TRANSLATION_MAX_SOURCE_CHARS &&
     !isBusy;
   const canCopy = Boolean(translation.trim()) && status === "success" && !isResultStale;
+  const isLayoutResizing = isPaneResizing || isPanelResizing;
+  const panelStyle = isDesktopLayout
+    ? {
+      height: panelBounds.height,
+      left: panelBounds.left,
+      top: panelBounds.top,
+      width: panelBounds.width,
+    }
+    : undefined;
+  const workbenchStyle: FreeTranslationWorkbenchStyle = {
+    "--free-translation-result-fr": `${100 - sourcePaneRatio}fr`,
+    "--free-translation-source-fr": `${sourcePaneRatio}fr`,
+  };
 
   entryRef.current = entry;
   paperContextRef.current = paperContext;
@@ -236,6 +333,41 @@ export function FreeTranslationPanel({
   useEffect(() => {
     initialTextRef.current = initialText;
   }, [initialText]);
+
+  useEffect(() => {
+    const updatePanelForViewport = () => {
+      const viewport = getFreeTranslationViewport();
+      const nextIsDesktopLayout = isFreeTranslationDesktopViewport(viewport);
+
+      setIsDesktopLayout(nextIsDesktopLayout);
+
+      if (!nextIsDesktopLayout) {
+        return;
+      }
+
+      const nextBounds = isMaximized
+        ? createMaximizedFreeTranslationBounds(viewport)
+        : createCenteredFreeTranslationBounds(
+          panelMode === "custom"
+            ? preferredPanelSizeRef.current
+            : getFreeTranslationPresetSize(panelMode),
+          viewport,
+        );
+
+      pendingPanelBoundsRef.current = nextBounds;
+      setPanelBounds(nextBounds);
+    };
+
+    window.addEventListener("resize", updatePanelForViewport);
+    window.visualViewport?.addEventListener("resize", updatePanelForViewport);
+    window.visualViewport?.addEventListener("scroll", updatePanelForViewport);
+
+    return () => {
+      window.removeEventListener("resize", updatePanelForViewport);
+      window.visualViewport?.removeEventListener("resize", updatePanelForViewport);
+      window.visualViewport?.removeEventListener("scroll", updatePanelForViewport);
+    };
+  }, [isMaximized, panelMode]);
 
   useEffect(() => {
     isPanelMountedRef.current = true;
@@ -300,6 +432,12 @@ export function FreeTranslationPanel({
       window.removeEventListener("keydown", handleKeyDown);
       abortControllerRef.current?.abort();
       window.clearTimeout(draftSaveTimerRef.current);
+      if (paneResizeFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(paneResizeFrameRef.current);
+      }
+      if (panelResizeFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(panelResizeFrameRef.current);
+      }
       const latestDraft = latestDraftRef.current;
       const latestDraftSignature = latestDraftSignatureRef.current;
 
@@ -944,6 +1082,501 @@ export function FreeTranslationPanel({
       .catch(() => setHistoryError(t("freeTranslation.historyError")));
   }, [t, userId]);
 
+  const applyPanelBoundsToElement = useCallback((
+    bounds: FreeTranslationPanelBounds,
+  ) => {
+    const panel = panelRef.current;
+
+    if (!panel) {
+      return;
+    }
+
+    panel.style.height = `${bounds.height}px`;
+    panel.style.left = `${bounds.left}px`;
+    panel.style.top = `${bounds.top}px`;
+    panel.style.width = `${bounds.width}px`;
+  }, []);
+
+  const schedulePanelBoundsUpdate = useCallback((
+    bounds: FreeTranslationPanelBounds,
+  ) => {
+    pendingPanelBoundsRef.current = bounds;
+
+    if (panelResizeFrameRef.current !== undefined) {
+      return;
+    }
+
+    panelResizeFrameRef.current = window.requestAnimationFrame(() => {
+      panelResizeFrameRef.current = undefined;
+      applyPanelBoundsToElement(pendingPanelBoundsRef.current);
+    });
+  }, [applyPanelBoundsToElement]);
+
+  const applyPaneRatioToElement = useCallback((ratio: number) => {
+    const workbench = workbenchRef.current;
+
+    if (!workbench) {
+      return;
+    }
+
+    workbench.style.setProperty(
+      "--free-translation-source-fr",
+      `${ratio}fr`,
+    );
+    workbench.style.setProperty(
+      "--free-translation-result-fr",
+      `${100 - ratio}fr`,
+    );
+  }, []);
+
+  const schedulePaneRatioUpdate = useCallback((ratio: number) => {
+    pendingPaneRatioRef.current = ratio;
+
+    if (paneResizeFrameRef.current !== undefined) {
+      return;
+    }
+
+    paneResizeFrameRef.current = window.requestAnimationFrame(() => {
+      paneResizeFrameRef.current = undefined;
+      applyPaneRatioToElement(pendingPaneRatioRef.current);
+    });
+  }, [applyPaneRatioToElement]);
+
+  const persistPanelSize = useCallback((
+    mode: FreeTranslationPanelMode,
+    size?: FreeTranslationPanelSize,
+  ) => {
+    updateReaderSession(userId, {
+      freeTranslationPanelHeight: mode === "custom" ? size?.height : undefined,
+      freeTranslationPanelMode: mode,
+      freeTranslationPanelWidth: mode === "custom" ? size?.width : undefined,
+    });
+  }, [userId]);
+
+  const announcePanelBounds = useCallback((
+    bounds: FreeTranslationPanelBounds,
+  ) => {
+    setLayoutAnnouncement(t("freeTranslation.resizePanelWithDimensions", {
+      height: Math.round(bounds.height),
+      width: Math.round(bounds.width),
+    }));
+  }, [t]);
+
+  const commitCustomPanelBounds = useCallback((
+    requestedBounds: FreeTranslationPanelBounds,
+  ) => {
+    const nextBounds = clampFreeTranslationPanelBounds(
+      requestedBounds,
+      getFreeTranslationViewport(),
+    );
+    const nextSize = {
+      height: nextBounds.height,
+      width: nextBounds.width,
+    };
+
+    applyPanelBoundsToElement(nextBounds);
+    pendingPanelBoundsRef.current = nextBounds;
+    preferredPanelSizeRef.current = nextSize;
+    setPanelBounds(nextBounds);
+    setPanelMode("custom");
+    persistPanelSize("custom", nextSize);
+    announcePanelBounds(nextBounds);
+  }, [
+    announcePanelBounds,
+    applyPanelBoundsToElement,
+    persistPanelSize,
+  ]);
+
+  const applyPanelMode = useCallback((
+    nextMode: Exclude<FreeTranslationPanelMode, "custom">,
+  ) => {
+    const nextSize = getFreeTranslationPresetSize(nextMode);
+    const nextBounds = createCenteredFreeTranslationBounds(
+      nextSize,
+      getFreeTranslationViewport(),
+    );
+
+    setIsMaximized(false);
+    restorePanelBoundsRef.current = undefined;
+    preferredPanelSizeRef.current = nextSize;
+    pendingPanelBoundsRef.current = nextBounds;
+    setPanelMode(nextMode);
+    setPanelBounds(nextBounds);
+    persistPanelSize(nextMode);
+    announcePanelBounds(nextBounds);
+  }, [announcePanelBounds, persistPanelSize]);
+
+  const handlePanelModeChange = useCallback((
+    nextMode: FreeTranslationPanelMode,
+  ) => {
+    if (nextMode === "custom") {
+      return;
+    }
+
+    applyPanelMode(nextMode);
+  }, [applyPanelMode]);
+
+  const handleTogglePanelMaximized = useCallback(() => {
+    if (!isDesktopLayout) {
+      return;
+    }
+
+    if (!isMaximized) {
+      restorePanelBoundsRef.current = panelBounds;
+      const nextBounds = createMaximizedFreeTranslationBounds(
+        getFreeTranslationViewport(),
+      );
+
+      pendingPanelBoundsRef.current = nextBounds;
+      setPanelBounds(nextBounds);
+      setIsMaximized(true);
+      announcePanelBounds(nextBounds);
+      return;
+    }
+
+    const viewport = getFreeTranslationViewport();
+    const nextBounds = clampFreeTranslationPanelBounds(
+      restorePanelBoundsRef.current ??
+        createCenteredFreeTranslationBounds(
+          panelMode === "custom"
+            ? preferredPanelSizeRef.current
+            : getFreeTranslationPresetSize(panelMode),
+          viewport,
+        ),
+      viewport,
+    );
+
+    restorePanelBoundsRef.current = undefined;
+    pendingPanelBoundsRef.current = nextBounds;
+    setPanelBounds(nextBounds);
+    setIsMaximized(false);
+    announcePanelBounds(nextBounds);
+  }, [
+    announcePanelBounds,
+    isDesktopLayout,
+    isMaximized,
+    panelBounds,
+    panelMode,
+  ]);
+
+  const handleResetPanelLayout = useCallback(() => {
+    const nextSize = getFreeTranslationPresetSize("wide");
+    const nextBounds = createCenteredFreeTranslationBounds(
+      nextSize,
+      getFreeTranslationViewport(),
+    );
+
+    restorePanelBoundsRef.current = undefined;
+    preferredPanelSizeRef.current = nextSize;
+    pendingPanelBoundsRef.current = nextBounds;
+    pendingPaneRatioRef.current = FREE_TRANSLATION_SOURCE_RATIO_DEFAULT;
+    applyPaneRatioToElement(FREE_TRANSLATION_SOURCE_RATIO_DEFAULT);
+    setIsMaximized(false);
+    setPanelMode("wide");
+    setPanelBounds(nextBounds);
+    setSourcePaneRatio(FREE_TRANSLATION_SOURCE_RATIO_DEFAULT);
+    updateReaderSession(userId, {
+      freeTranslationPanelHeight: undefined,
+      freeTranslationPanelMode: "wide",
+      freeTranslationPanelWidth: undefined,
+      freeTranslationSourceRatio: FREE_TRANSLATION_SOURCE_RATIO_DEFAULT,
+    });
+    setLayoutAnnouncement(t("freeTranslation.resetPanelLayout"));
+  }, [applyPaneRatioToElement, t, userId]);
+
+  const handlePanelResizeStart = useCallback((
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    if (!isDesktopLayout || isMaximized) {
+      return;
+    }
+
+    const rect = panelRef.current?.getBoundingClientRect();
+
+    if (!rect) {
+      return;
+    }
+
+    const startBounds = {
+      height: rect.height,
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+    };
+
+    panelResizeStateRef.current = {
+      pointerId: event.pointerId,
+      startBounds,
+      startX: event.clientX,
+      startY: event.clientY,
+    };
+    pendingPanelBoundsRef.current = startBounds;
+    setIsPanelResizing(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.stopPropagation();
+    event.preventDefault();
+  }, [isDesktopLayout, isMaximized]);
+
+  const handlePanelResizeMove = useCallback((
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    const resizeState = panelResizeStateRef.current;
+
+    if (!resizeState || resizeState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    schedulePanelBoundsUpdate(resizeFreeTranslationBounds(
+      resizeState.startBounds,
+      {
+        x: event.clientX - resizeState.startX,
+        y: event.clientY - resizeState.startY,
+      },
+      getFreeTranslationViewport(),
+    ));
+    event.preventDefault();
+  }, [schedulePanelBoundsUpdate]);
+
+  const releasePanelResizeCapture = useCallback((
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }, []);
+
+  const handlePanelResizeEnd = useCallback((
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    const resizeState = panelResizeStateRef.current;
+
+    if (!resizeState || resizeState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    if (panelResizeFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(panelResizeFrameRef.current);
+      panelResizeFrameRef.current = undefined;
+    }
+
+    const nextBounds = resizeFreeTranslationBounds(
+      resizeState.startBounds,
+      {
+        x: event.clientX - resizeState.startX,
+        y: event.clientY - resizeState.startY,
+      },
+      getFreeTranslationViewport(),
+    );
+
+    panelResizeStateRef.current = undefined;
+    setIsPanelResizing(false);
+    releasePanelResizeCapture(event);
+    commitCustomPanelBounds(nextBounds);
+    event.stopPropagation();
+    event.preventDefault();
+  }, [commitCustomPanelBounds, releasePanelResizeCapture]);
+
+  const handlePanelResizeCancel = useCallback((
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    const resizeState = panelResizeStateRef.current;
+
+    if (!resizeState || resizeState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    if (panelResizeFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(panelResizeFrameRef.current);
+      panelResizeFrameRef.current = undefined;
+    }
+
+    panelResizeStateRef.current = undefined;
+    pendingPanelBoundsRef.current = resizeState.startBounds;
+    applyPanelBoundsToElement(resizeState.startBounds);
+    setIsPanelResizing(false);
+    releasePanelResizeCapture(event);
+  }, [applyPanelBoundsToElement, releasePanelResizeCapture]);
+
+  const handlePanelResizeKeyDown = useCallback((
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+  ) => {
+    if (isMaximized) {
+      return;
+    }
+
+    const step = event.shiftKey
+      ? PANEL_KEYBOARD_RESIZE_LARGE_STEP
+      : PANEL_KEYBOARD_RESIZE_STEP;
+    const delta = {
+      x: event.key === "ArrowRight"
+        ? step
+        : event.key === "ArrowLeft"
+          ? -step
+          : 0,
+      y: event.key === "ArrowDown"
+        ? step
+        : event.key === "ArrowUp"
+          ? -step
+          : 0,
+    };
+
+    if (!delta.x && !delta.y) {
+      return;
+    }
+
+    commitCustomPanelBounds(resizeFreeTranslationBounds(
+      panelBounds,
+      delta,
+      getFreeTranslationViewport(),
+    ));
+    event.stopPropagation();
+    event.preventDefault();
+  }, [commitCustomPanelBounds, isMaximized, panelBounds]);
+
+  const persistSourcePaneRatio = useCallback((ratio: number) => {
+    updateReaderSession(userId, {
+      freeTranslationSourceRatio: ratio,
+    });
+  }, [userId]);
+
+  const commitSourcePaneRatio = useCallback((requestedRatio: number) => {
+    const nextRatio = clampFreeTranslationSourceRatio(requestedRatio);
+
+    applyPaneRatioToElement(nextRatio);
+    pendingPaneRatioRef.current = nextRatio;
+    setSourcePaneRatio(nextRatio);
+    persistSourcePaneRatio(nextRatio);
+    setLayoutAnnouncement(t("freeTranslation.resizePaneRatioWithValue", {
+      value: nextRatio,
+    }));
+  }, [applyPaneRatioToElement, persistSourcePaneRatio, t]);
+
+  const handlePaneResizeStart = useCallback((
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    const sourceRect = sourcePaneRef.current?.getBoundingClientRect();
+    const resultRect = resultPaneRef.current?.getBoundingClientRect();
+
+    if (!isDesktopLayout || !sourceRect || !resultRect) {
+      return;
+    }
+
+    paneResizeStateRef.current = {
+      availableWidth: sourceRect.width + resultRect.width,
+      pointerId: event.pointerId,
+      startRatio: sourcePaneRatio,
+      startX: event.clientX,
+    };
+    pendingPaneRatioRef.current = sourcePaneRatio;
+    setIsPaneResizing(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.stopPropagation();
+    event.preventDefault();
+  }, [isDesktopLayout, sourcePaneRatio]);
+
+  const getPaneRatioFromPointer = useCallback((
+    event: ReactPointerEvent<HTMLDivElement>,
+    resizeState: PaneResizeState,
+  ) => clampFreeTranslationSourceRatio(
+    resizeState.startRatio +
+      ((event.clientX - resizeState.startX) / resizeState.availableWidth) * 100,
+  ), []);
+
+  const handlePaneResizeMove = useCallback((
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    const resizeState = paneResizeStateRef.current;
+
+    if (!resizeState || resizeState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    schedulePaneRatioUpdate(getPaneRatioFromPointer(event, resizeState));
+    event.preventDefault();
+  }, [getPaneRatioFromPointer, schedulePaneRatioUpdate]);
+
+  const releasePaneResizeCapture = useCallback((
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }, []);
+
+  const handlePaneResizeEnd = useCallback((
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    const resizeState = paneResizeStateRef.current;
+
+    if (!resizeState || resizeState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    if (paneResizeFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(paneResizeFrameRef.current);
+      paneResizeFrameRef.current = undefined;
+    }
+
+    const nextRatio = getPaneRatioFromPointer(event, resizeState);
+
+    paneResizeStateRef.current = undefined;
+    setIsPaneResizing(false);
+    releasePaneResizeCapture(event);
+    commitSourcePaneRatio(nextRatio);
+    event.stopPropagation();
+    event.preventDefault();
+  }, [
+    commitSourcePaneRatio,
+    getPaneRatioFromPointer,
+    releasePaneResizeCapture,
+  ]);
+
+  const handlePaneResizeCancel = useCallback((
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    const resizeState = paneResizeStateRef.current;
+
+    if (!resizeState || resizeState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    if (paneResizeFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(paneResizeFrameRef.current);
+      paneResizeFrameRef.current = undefined;
+    }
+
+    paneResizeStateRef.current = undefined;
+    pendingPaneRatioRef.current = resizeState.startRatio;
+    applyPaneRatioToElement(resizeState.startRatio);
+    setIsPaneResizing(false);
+    releasePaneResizeCapture(event);
+  }, [applyPaneRatioToElement, releasePaneResizeCapture]);
+
+  const handlePaneResizeKeyDown = useCallback((
+    event: ReactKeyboardEvent<HTMLDivElement>,
+  ) => {
+    const step = event.shiftKey
+      ? PANE_KEYBOARD_RESIZE_LARGE_STEP
+      : PANE_KEYBOARD_RESIZE_STEP;
+    let nextRatio: number | undefined;
+
+    if (event.key === "ArrowLeft") {
+      nextRatio = sourcePaneRatio - step;
+    } else if (event.key === "ArrowRight") {
+      nextRatio = sourcePaneRatio + step;
+    } else if (event.key === "Home") {
+      nextRatio = FREE_TRANSLATION_SOURCE_RATIO_DEFAULT;
+    }
+
+    if (nextRatio === undefined) {
+      return;
+    }
+
+    commitSourcePaneRatio(nextRatio);
+    event.stopPropagation();
+    event.preventDefault();
+  }, [commitSourcePaneRatio, sourcePaneRatio]);
+
   function handleSourceLanguageChange(nextSourceLang: FreeTranslationSourceLanguage) {
     hasUserInteractionRef.current = true;
     setSourceLang(nextSourceLang);
@@ -979,8 +1612,14 @@ export function FreeTranslationPanel({
         aria-label={t("freeTranslation.title")}
         aria-modal="true"
         className="free-translation-panel"
+        data-desktop-layout={isDesktopLayout ? "true" : "false"}
+        data-maximized={isMaximized ? "true" : "false"}
+        data-panel-resizing={isPanelResizing ? "true" : "false"}
+        data-resizing={isLayoutResizing ? "true" : "false"}
+        data-size-mode={isMaximized ? "maximized" : panelMode}
         ref={panelRef}
         role="dialog"
+        style={panelStyle}
         tabIndex={-1}
       >
         <header className="free-translation-header">
@@ -999,6 +1638,62 @@ export function FreeTranslationPanel({
                 {t("freeTranslation.contextActive", { title: paperTitle })}
               </span>
             ) : null}
+            {isDesktopLayout ? (
+              <div className="free-translation-size-controls">
+                <label>
+                  <span className="sr-only">{t("freeTranslation.panelSize")}</span>
+                  <select
+                    aria-label={t("freeTranslation.panelSize")}
+                    className="free-translation-size-select"
+                    disabled={isMaximized}
+                    onChange={(event) => handlePanelModeChange(
+                      event.currentTarget.value as FreeTranslationPanelMode,
+                    )}
+                    value={panelMode}
+                  >
+                    <option value="standard">
+                      {t("freeTranslation.panelSizeStandard")}
+                    </option>
+                    <option value="wide">
+                      {t("freeTranslation.panelSizeWide")}
+                    </option>
+                    <option disabled={panelMode !== "custom"} value="custom">
+                      {t("freeTranslation.panelSizeCustom")}
+                    </option>
+                  </select>
+                </label>
+                <button
+                  aria-label={t("freeTranslation.resetPanelLayout")}
+                  className="icon-button icon-button--small"
+                  onClick={handleResetPanelLayout}
+                  title={t("freeTranslation.resetPanelLayout")}
+                  type="button"
+                >
+                  <RotateCcw aria-hidden="true" size={16} strokeWidth={2} />
+                </button>
+                <button
+                  aria-label={t(
+                    isMaximized
+                      ? "freeTranslation.restorePanel"
+                      : "freeTranslation.maximizePanel",
+                  )}
+                  className="icon-button icon-button--small"
+                  onClick={handleTogglePanelMaximized}
+                  title={t(
+                    isMaximized
+                      ? "freeTranslation.restorePanel"
+                      : "freeTranslation.maximizePanel",
+                  )}
+                  type="button"
+                >
+                  {isMaximized ? (
+                    <Minimize2 aria-hidden="true" size={16} strokeWidth={2} />
+                  ) : (
+                    <Maximize2 aria-hidden="true" size={16} strokeWidth={2} />
+                  )}
+                </button>
+              </div>
+            ) : null}
             <button
               aria-label={t("common.close")}
               className="icon-button"
@@ -1012,8 +1707,15 @@ export function FreeTranslationPanel({
         </header>
 
         <div className="free-translation-body">
-          <div className="free-translation-workbench">
-            <section className="free-translation-pane free-translation-pane--source">
+          <div
+            className="free-translation-workbench"
+            ref={workbenchRef}
+            style={workbenchStyle}
+          >
+            <section
+              className="free-translation-pane free-translation-pane--source"
+              ref={sourcePaneRef}
+            >
               <header className="free-translation-pane-header">
                 <label className="free-translation-language-select">
                   <span className="sr-only">{t("settings.source")}</span>
@@ -1080,18 +1782,43 @@ export function FreeTranslationPanel({
               </footer>
             </section>
 
-            <button
-              aria-label={t("freeTranslation.swapLanguages")}
-              className="free-translation-swap-button"
-              disabled={sourceLang === "auto" || isBusy}
-              onClick={handleSwapLanguages}
-              title={t("freeTranslation.swapLanguages")}
-              type="button"
-            >
-              <ArrowLeftRight aria-hidden="true" size={17} strokeWidth={2} />
-            </button>
+            <div className="free-translation-divider-column">
+              <div
+                aria-label={t("freeTranslation.resizePaneRatio")}
+                aria-orientation="vertical"
+                aria-valuemax={70}
+                aria-valuemin={30}
+                aria-valuenow={sourcePaneRatio}
+                aria-valuetext={t("freeTranslation.resizePaneRatioWithValue", {
+                  value: sourcePaneRatio,
+                })}
+                className="free-translation-pane-divider"
+                onKeyDown={handlePaneResizeKeyDown}
+                onLostPointerCapture={handlePaneResizeCancel}
+                onPointerCancel={handlePaneResizeCancel}
+                onPointerDown={handlePaneResizeStart}
+                onPointerMove={handlePaneResizeMove}
+                onPointerUp={handlePaneResizeEnd}
+                role="separator"
+                tabIndex={0}
+                title={t("freeTranslation.resizePaneRatio")}
+              />
+              <button
+                aria-label={t("freeTranslation.swapLanguages")}
+                className="free-translation-swap-button"
+                disabled={sourceLang === "auto" || isBusy}
+                onClick={handleSwapLanguages}
+                title={t("freeTranslation.swapLanguages")}
+                type="button"
+              >
+                <ArrowLeftRight aria-hidden="true" size={17} strokeWidth={2} />
+              </button>
+            </div>
 
-            <section className="free-translation-pane free-translation-pane--result">
+            <section
+              className="free-translation-pane free-translation-pane--result"
+              ref={resultPaneRef}
+            >
               <header className="free-translation-pane-header">
                 <label className="free-translation-language-select">
                   <span className="sr-only">{t("settings.target")}</span>
@@ -1259,6 +1986,33 @@ export function FreeTranslationPanel({
             />
           </div>
         </div>
+        <span aria-live="polite" className="sr-only" role="status">
+          {layoutAnnouncement}
+        </span>
+        {isDesktopLayout ? (
+          <>
+            <span className="sr-only" id={resizePanelHintId}>
+              {t("freeTranslation.resizePanelKeyboardHint")}
+            </span>
+            <button
+              aria-describedby={resizePanelHintId}
+              aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown"
+              aria-label={t("freeTranslation.resizePanelWithDimensions", {
+                height: Math.round(panelBounds.height),
+                width: Math.round(panelBounds.width),
+              })}
+              className="free-translation-resize-handle"
+              onKeyDown={handlePanelResizeKeyDown}
+              onLostPointerCapture={handlePanelResizeCancel}
+              onPointerCancel={handlePanelResizeCancel}
+              onPointerDown={handlePanelResizeStart}
+              onPointerMove={handlePanelResizeMove}
+              onPointerUp={handlePanelResizeEnd}
+              title={t("freeTranslation.resizePanel")}
+              type="button"
+            />
+          </>
+        ) : null}
       </section>
     </div>
   );
