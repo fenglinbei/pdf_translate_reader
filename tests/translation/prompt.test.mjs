@@ -10,16 +10,18 @@ import {
 } from "../../server/deepseek/prompt.mjs";
 
 describe("translation prompts", () => {
-  it("keeps selection translation on the translation-v3 prompt behavior", () => {
+  it("keeps selection translation on the translation-v4 prompt behavior", () => {
     const messages = buildTranslationMessages(createRequest({
       requestKind: "selection",
       targetSentence: "First line\n\nSecond line",
     }));
 
-    assert.equal(TRANSLATION_PROMPT_VERSION, "translation-v3");
-    assert.equal(getTranslationPromptVersion("selection"), "translation-v3");
+    assert.equal(TRANSLATION_PROMPT_VERSION, "translation-v4");
+    assert.equal(getTranslationPromptVersion("selection"), "translation-v4");
     assert.match(messages[0].content, /Only translate the target sentence/);
     assert.match(messages[0].content, /Do not add commentary, explanation, markdown/);
+    assert.match(messages[0].content, /Preserve LaTeX structural commands and environments exactly/);
+    assert.match(messages[0].content, /\\begin\{itemize}/);
     assert.match(messages[1].content, /Target sentence:\nFirst line Second line\n/);
     assert.doesNotMatch(messages[0].content, /professional document translator/);
   });

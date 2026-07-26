@@ -13,6 +13,11 @@ type RichMathToken =
       text: string;
     }
   | {
+      environment: RichMathListEnvironment;
+      items: RichMathListItem[];
+      kind: "list";
+    }
+  | {
       displayMode: boolean;
       kind: "math";
       raw: string;
@@ -22,6 +27,14 @@ type RichMathToken =
       kind: "text";
       text: string;
     };
+
+type RichMathListEnvironment = "description" | "enumerate" | "itemize";
+
+type RichMathListItem = {
+  content: RichMathToken[];
+  customMarker: boolean;
+  marker: RichMathToken[];
+};
 
 const DISPLAY_ENVIRONMENTS = [
   "align",
@@ -36,6 +49,9 @@ const DISPLAY_ENVIRONMENTS = [
   "multline*",
 ];
 const HEADING_PATTERN = /^\\(section|subsection|subsubsection|paragraph)\*?\{([^{}]*)\}\s*/;
+const LIST_ENVIRONMENT_PATTERN = /^\\begin\s*\{\s*(description|enumerate|itemize)\s*}/;
+const LIST_STRUCTURE_PATTERN =
+  /\\(begin|end)\s*\{\s*(description|enumerate|itemize)\s*}|\\item\b/g;
 const MARKDOWN_HEADING_PATTERN = /^[ \t]{0,3}#{1,6}[ \t]+([^\r\n]+?)(?:[ \t]+#+[ \t]*)?(?:\r?\n|$)/;
 const OVERFLOW_TOLERANCE_PX = 4;
 
@@ -43,12 +59,12 @@ export function RichMathText({ className, scale, text }: RichMathTextProps) {
   const tokens = tokenizeRichMathText(text);
 
   return (
-    <span
+    <div
       className={["rich-math-text", className].filter(Boolean).join(" ")}
       style={typeof scale === "number" ? { fontSize: `${scale}em` } : undefined}
     >
       {tokens.map((token, index) => renderToken(token, index, scale))}
-    </span>
+    </div>
   );
 }
 
@@ -62,6 +78,41 @@ function renderToken(token: RichMathToken, index: number, scale: number | undefi
       <span className="rich-math-text-heading" key={index}>
         {token.text}
       </span>
+    );
+  }
+
+  if (token.kind === "list") {
+    const ListTag = token.environment === "enumerate" ? "ol" : "ul";
+
+    return (
+      <ListTag
+        className={`rich-math-text-list rich-math-text-list--${token.environment}`}
+        key={index}
+      >
+        {token.items.map((item, itemIndex) => (
+          <li
+            className={
+              item.customMarker
+                ? "rich-math-text-list-item rich-math-text-list-item--custom-marker"
+                : "rich-math-text-list-item"
+            }
+            key={itemIndex}
+          >
+            {item.customMarker ? (
+              <span className="rich-math-text-list-marker">
+                {item.marker.map((markerToken, markerIndex) =>
+                  renderToken(markerToken, markerIndex, scale)
+                )}
+              </span>
+            ) : null}
+            <div className="rich-math-text-list-content">
+              {item.content.map((contentToken, contentIndex) =>
+                renderToken(contentToken, contentIndex, scale)
+              )}
+            </div>
+          </li>
+        ))}
+      </ListTag>
     );
   }
 
@@ -157,7 +208,7 @@ function getContentWidth(element: HTMLElement) {
   return element.scrollWidth;
 }
 
-function tokenizeRichMathText(input: string): RichMathToken[] {
+export function tokenizeRichMathText(input: string): RichMathToken[] {
   const tokens: RichMathToken[] = [];
   let textBuffer = "";
   let index = 0;
@@ -176,6 +227,15 @@ function tokenizeRichMathText(input: string): RichMathToken[] {
       flushTextBuffer();
       tokens.push({ kind: "heading", text: heading.text });
       index = heading.end;
+      continue;
+    }
+
+    const list = readListEnvironment(input, index);
+
+    if (list) {
+      flushTextBuffer();
+      tokens.push(list.token);
+      index = list.end;
       continue;
     }
 
@@ -207,6 +267,183 @@ function tokenizeRichMathText(input: string): RichMathToken[] {
   flushTextBuffer();
 
   return mergeAdjacentTextTokens(tokens);
+}
+
+function readListEnvironment(input: string, start: number) {
+  const openMatch = LIST_ENVIRONMENT_PATTERN.exec(input.slice(start));
+
+  if (!openMatch) {
+    return undefined;
+  }
+
+  const environment = openMatch[1] as RichMathListEnvironment;
+  const bodyStart = start + openMatch[0].length;
+  const structurePattern = new RegExp(LIST_STRUCTURE_PATTERN.source, "g");
+  const environmentStack: RichMathListEnvironment[] = [environment];
+
+  structurePattern.lastIndex = bodyStart;
+
+  for (
+    let match = structurePattern.exec(input);
+    match;
+    match = structurePattern.exec(input)
+  ) {
+    const markerKind = match[1];
+
+    if (!markerKind) {
+      continue;
+    }
+
+    const markerEnvironment = match[2] as RichMathListEnvironment;
+
+    if (markerKind === "begin") {
+      environmentStack.push(markerEnvironment);
+      continue;
+    }
+
+    if (environmentStack[environmentStack.length - 1] !== markerEnvironment) {
+      return undefined;
+    }
+
+    environmentStack.pop();
+
+    if (environmentStack.length === 0) {
+      const items = readListItems(input.slice(bodyStart, match.index));
+
+      if (items.length === 0) {
+        return undefined;
+      }
+
+      return {
+        end: match.index + match[0].length,
+        token: {
+          environment,
+          items,
+          kind: "list" as const,
+        },
+      };
+    }
+  }
+
+  return undefined;
+}
+
+function readListItems(body: string): RichMathListItem[] {
+  const structurePattern = new RegExp(LIST_STRUCTURE_PATTERN.source, "g");
+  const itemStarts: Array<{
+    commandEnd: number;
+    commandStart: number;
+  }> = [];
+  let nestedListDepth = 0;
+
+  for (
+    let match = structurePattern.exec(body);
+    match;
+    match = structurePattern.exec(body)
+  ) {
+    const markerKind = match[1];
+
+    if (markerKind === "begin") {
+      nestedListDepth += 1;
+    } else if (markerKind === "end") {
+      nestedListDepth = Math.max(0, nestedListDepth - 1);
+    } else if (nestedListDepth === 0) {
+      itemStarts.push({
+        commandEnd: match.index + match[0].length,
+        commandStart: match.index,
+      });
+    }
+  }
+
+  return itemStarts.map((itemStart, itemIndex) => {
+    const nextItemStart = itemStarts[itemIndex + 1]?.commandStart ?? body.length;
+    const header = readListItemHeader(body, itemStart.commandEnd);
+    const leadingContent = itemIndex === 0
+      ? body.slice(0, itemStart.commandStart).trim()
+      : "";
+    const itemContent = body.slice(header.contentStart, nextItemStart).trim();
+    const content = [leadingContent, itemContent].filter(Boolean).join(" ");
+
+    return {
+      content: tokenizeRichMathText(content),
+      customMarker: header.customMarker,
+      marker: header.customMarker
+        ? tokenizeRichMathText(header.marker)
+        : [],
+    };
+  });
+}
+
+function readListItemHeader(body: string, commandEnd: number) {
+  let cursor = commandEnd;
+
+  while (cursor < body.length && /\s/.test(body[cursor])) {
+    cursor += 1;
+  }
+
+  if (body[cursor] !== "[") {
+    return {
+      contentStart: cursor,
+      customMarker: false,
+      marker: "",
+    };
+  }
+
+  const marker = readBracketArgument(body, cursor);
+
+  if (!marker) {
+    return {
+      contentStart: cursor,
+      customMarker: false,
+      marker: "",
+    };
+  }
+
+  cursor = marker.end;
+
+  while (cursor < body.length && /\s/.test(body[cursor])) {
+    cursor += 1;
+  }
+
+  return {
+    contentStart: cursor,
+    customMarker: true,
+    marker: marker.body.trim(),
+  };
+}
+
+function readBracketArgument(input: string, openingBracketIndex: number) {
+  let depth = 0;
+
+  for (let index = openingBracketIndex; index < input.length; index += 1) {
+    const character = input[index];
+    const escaped = isEscaped(input, index);
+
+    if (character === "[" && !escaped) {
+      depth += 1;
+    } else if (character === "]" && !escaped) {
+      depth -= 1;
+
+      if (depth === 0) {
+        return {
+          body: input.slice(openingBracketIndex + 1, index),
+          end: index + 1,
+        };
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function isEscaped(input: string, index: number) {
+  let backslashCount = 0;
+
+  for (let cursor = index - 1; cursor >= 0 && input[cursor] === "\\"; cursor -= 1) {
+    backslashCount += 1;
+  }
+
+  return backslashCount % 2 === 1;
 }
 
 function readHeading(input: string, start: number) {

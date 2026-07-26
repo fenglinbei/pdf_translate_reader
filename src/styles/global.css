@@ -2955,6 +2955,55 @@ button {
   white-space: normal;
 }
 
+.rich-math-text-list {
+  display: block;
+  margin: 7px 0;
+  padding-inline-start: 2.15em;
+  white-space: normal;
+}
+
+.rich-math-text-list .rich-math-text-list {
+  margin: 5px 0 2px;
+}
+
+.rich-math-text-list-item {
+  position: relative;
+  min-width: 0;
+  margin: 0 0 6px;
+  padding-inline-start: 0.15em;
+}
+
+.rich-math-text-list-item:last-child {
+  margin-bottom: 0;
+}
+
+.rich-math-text-list-item--custom-marker {
+  list-style: none;
+}
+
+.rich-math-text-list-marker {
+  position: absolute;
+  inset-inline-end: calc(100% + 0.45em);
+  display: block;
+  width: max-content;
+  max-width: 4.5em;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-weight: 680;
+  text-align: end;
+  white-space: nowrap;
+}
+
+.rich-math-text-list-marker:empty {
+  display: none;
+}
+
+.rich-math-text-list-content {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .rich-math-text-math {
   white-space: normal;
 }

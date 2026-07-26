@@ -1,6 +1,6 @@
 import { getTranslationLanguagePromptLabel } from "./languages.mjs";
 
-export const TRANSLATION_PROMPT_VERSION = "translation-v3";
+export const TRANSLATION_PROMPT_VERSION = "translation-v4";
 export const FREE_TRANSLATION_PROMPT_VERSION = "free-translation-v1";
 export const FREE_TRANSLATION_MAX_SOURCE_CHARS = 20_000;
 
@@ -59,6 +59,7 @@ function buildSelectionTranslationMessages(requestBody) {
         "Preserve established English acronyms, API names, product names, benchmark names, metric names, code identifiers, and class or label tokens unless terminology explicitly maps them.",
         "When the source enumerates benchmark label values or tag-like classes, preserve their original casing and hyphenation, e.g. true, mostly-true, half-true, barely-true, false, and pants-fire.",
         "Preserve LaTeX math delimited by \\( \\), \\[ \\], or $$ $$ exactly, including equation tags.",
+        "Preserve LaTeX structural commands and environments exactly, including \\begin{itemize}, \\begin{enumerate}, \\begin{description}, \\item, and their matching \\end commands; translate only the natural-language text inside them.",
         "Follow this priority order: preserve formulas, citations, terminology, acronyms, identifiers, and label tokens first; then apply custom style requirements; then apply preset style; then use general academic translation rules.",
         "Do not add commentary, explanation, markdown, or quotation marks.",
       ].join("\n"),
