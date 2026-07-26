@@ -194,6 +194,7 @@ export const MESSAGES = {
 
     "freeTranslation.advancedOptions": "Advanced options",
     "freeTranslation.autoDetect": "Detect language",
+    "freeTranslation.autoDetectedLanguage": "Detected: {language}",
     "freeTranslation.characterCount": "{count} / {limit}",
     "freeTranslation.clearHistory": "Clear history",
     "freeTranslation.clearHistoryConfirm": "Clear all local free-translation history?",
@@ -249,7 +250,11 @@ export const MESSAGES = {
     "freeTranslation.standalone": "Standalone translator",
     "freeTranslation.stop": "Stop translation",
     "freeTranslation.stopped": "Translation stopped. Partial output is kept.",
+    "freeTranslation.swapAwaitingDetection": "Translate once to detect the source language, or choose it manually.",
+    "freeTranslation.swapDetectedSameLanguage": "The detected source language matches the target language. Choose the languages manually.",
     "freeTranslation.swapLanguages": "Swap languages",
+    "freeTranslation.swapReady": "Translation moved to the source pane. Ready for reverse translation.",
+    "freeTranslation.swapResultTooLong": "The translation is too long to move into the source pane.",
     "freeTranslation.title": "Free Translation",
 
     "library.deleteHistory": "Delete PDF history",
@@ -675,6 +680,7 @@ export const MESSAGES = {
 
     "freeTranslation.advancedOptions": "高级选项",
     "freeTranslation.autoDetect": "检测语言",
+    "freeTranslation.autoDetectedLanguage": "检测到：{language}",
     "freeTranslation.characterCount": "{count} / {limit}",
     "freeTranslation.clearHistory": "清空历史",
     "freeTranslation.clearHistoryConfirm": "清空此浏览器中的全部自由翻译历史？",
@@ -730,7 +736,11 @@ export const MESSAGES = {
     "freeTranslation.standalone": "独立翻译器",
     "freeTranslation.stop": "停止翻译",
     "freeTranslation.stopped": "翻译已停止，已保留部分结果。",
+    "freeTranslation.swapAwaitingDetection": "请先完成一次翻译以检测源语言，或手动选择源语言。",
+    "freeTranslation.swapDetectedSameLanguage": "检测到的源语言与目标语言相同，请手动选择语言。",
     "freeTranslation.swapLanguages": "交换语言",
+    "freeTranslation.swapReady": "译文已移到原文栏，可以开始反向翻译。",
+    "freeTranslation.swapResultTooLong": "译文过长，无法移入原文栏。",
     "freeTranslation.title": "自由翻译",
 
     "library.deleteHistory": "删除 PDF 历史",

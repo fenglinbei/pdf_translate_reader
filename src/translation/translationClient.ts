@@ -3,6 +3,10 @@ import type {
   TranslationReasoningEffort,
   TranslationStreamRequest,
 } from "../types/domain";
+import {
+  isTranslationLanguage,
+  type TranslationLanguage,
+} from "../config/translationLanguages";
 import { PROJECT_CONFIG } from "../config/projectConfig";
 import { getSupabaseAccessToken } from "../auth/supabaseClient";
 import { TranslationNetworkError, TranslationTimeoutError } from "./errors";
@@ -30,8 +34,17 @@ export type TranslationReasoningSummarySnapshot = {
   text: string;
 };
 
+export type TranslationDetectedSourceLanguage = {
+  confidence?: number;
+  language: TranslationLanguage;
+  source?: string;
+};
+
 export type TranslationStreamHandlers = {
   onDelta: (text: string) => void;
+  onDetectedSourceLanguage?: (
+    detected: TranslationDetectedSourceLanguage,
+  ) => void;
   onFinish?: (finishReason: string) => void;
   onMeta?: (metadata: {
     model?: string;
@@ -184,6 +197,18 @@ async function readEventStream(
 
     if (eventName === "delta" && typeof payload.text === "string") {
       handlers.onDelta(payload.text);
+    } else if (
+      eventName === "source_language" &&
+      isTranslationLanguage(payload.language)
+    ) {
+      handlers.onDetectedSourceLanguage?.({
+        confidence: typeof payload.confidence === "number" &&
+            Number.isFinite(payload.confidence)
+          ? payload.confidence
+          : undefined,
+        language: payload.language,
+        source: typeof payload.source === "string" ? payload.source : undefined,
+      });
     } else if (
       eventName === "progress" &&
       isTranslationProgressPhase(payload.phase)

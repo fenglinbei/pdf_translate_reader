@@ -14,6 +14,9 @@ import {
   TranslationModelError,
 } from "../translationModels/client.mjs";
 import {
+  detectTranslationSourceLanguage,
+} from "../translationModels/languageDetection.mjs";
+import {
   createTranslationReasoningPreview,
   createTranslationReasoningSummary,
 } from "../translationModels/reasoningSummary.mjs";
@@ -70,6 +73,10 @@ export async function handleTranslateStream(request, response) {
         enabled: requestBody.reasoningEnabled,
       })
       : undefined;
+    const detectedSourceLanguage =
+      requestBody.requestKind === "free" && requestBody.sourceLang === "auto"
+        ? detectTranslationSourceLanguage(requestBody.targetSentence)
+        : undefined;
     const usesDynamicReasoningSummary = requestBody.requestKind === "free" &&
       resolvedReasoning?.enabled === true;
     const emitProgress = createProgressEmitter(
@@ -90,6 +97,7 @@ export async function handleTranslateStream(request, response) {
         promptVersion: getTranslationPromptVersion(requestBody.requestKind),
         reasoning: resolvedReasoning,
       });
+      writeDetectedSourceLanguage(response, detectedSourceLanguage);
       emitProgress("accepted");
       emitProgress("connecting");
     }
@@ -145,6 +153,7 @@ export async function handleTranslateStream(request, response) {
         promptVersion: getTranslationPromptVersion(requestBody.requestKind),
         reasoning: resolvedReasoning,
       });
+      writeDetectedSourceLanguage(response, detectedSourceLanguage);
     } else {
       emitProgress("analyzing");
     }
@@ -706,6 +715,18 @@ function writeSse(response, eventName, payload) {
     `event: ${eventName}\ndata: ${JSON.stringify(payload)}\n\n`,
   );
   return true;
+}
+
+function writeDetectedSourceLanguage(response, detection) {
+  if (!detection) {
+    return;
+  }
+
+  writeSse(response, "source_language", {
+    confidence: detection.confidence,
+    language: detection.language,
+    source: detection.source,
+  });
 }
 
 function serializeError(error) {

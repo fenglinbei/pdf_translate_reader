@@ -892,12 +892,42 @@ describe("translation model client", () => {
 
     await handleTranslateStream(request, response);
 
+    const events = parseSseEvents(response.output);
+    const detectedSourceLanguage = events
+      .find((event) => event.eventName === "source_language");
+
     assert.equal(response.statusCode, 200);
     assert.match(response.output, /"promptVersion":"free-translation-v1"/);
+    assert.equal(detectedSourceLanguage?.payload.language, "en");
+    assert.equal(detectedSourceLanguage?.payload.source, "local");
+    assert.ok(
+      detectedSourceLanguage?.payload.confidence >= 0 &&
+      detectedSourceLanguage?.payload.confidence <= 1,
+    );
     assert.match(upstreamRequest.body.messages[0].content, /Auto-detect the source language/);
     assert.match(
       upstreamRequest.body.messages[1].content,
       /Source language: auto-detect from the source document/,
+    );
+  });
+
+  it("does not emit detected-language metadata for an explicit free-translation source", async () => {
+    process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
+    captureSuccessfulRequest();
+    const request = createTranslationRequest({
+      ...createRequestBody("deepseek-v4-flash"),
+      requestKind: "free",
+      sourceLang: "en",
+    });
+    const response = createTranslationResponse();
+
+    await handleTranslateStream(request, response);
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(
+      parseSseEvents(response.output)
+        .some((event) => event.eventName === "source_language"),
+      false,
     );
   });
 

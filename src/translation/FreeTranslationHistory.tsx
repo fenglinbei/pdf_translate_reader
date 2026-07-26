@@ -58,7 +58,7 @@ export function FreeTranslationHistory({
                     {createPreview(record.sourceText)}
                   </span>
                   <span className="free-translation-history-meta">
-                    {getLanguageLabel(record.request.sourceLang, t)} →{" "}
+                    {getSourceLanguageLabel(record, t)} →{" "}
                     {getLanguageLabel(record.request.targetLang, t)} ·{" "}
                     {getTranslationModelShortLabel(record.request.model)} ·{" "}
                     {new Date(record.updatedAt).toLocaleString()}
@@ -106,4 +106,17 @@ function getLanguageLabel(
   }
 
   return TRANSLATION_LANGUAGES.find((item) => item.code === language)?.label ?? language;
+}
+
+function getSourceLanguageLabel(
+  record: FreeTranslationRecord,
+  t: ReturnType<typeof useI18n>["t"],
+) {
+  if (record.request.sourceLang === "auto" && record.detectedSourceLang) {
+    return t("freeTranslation.autoDetectedLanguage", {
+      language: getLanguageLabel(record.detectedSourceLang, t),
+    });
+  }
+
+  return getLanguageLabel(record.request.sourceLang, t);
 }

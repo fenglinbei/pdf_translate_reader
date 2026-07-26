@@ -215,6 +215,9 @@ export function createFreeTranslationRecord(
   return {
     cloudDocumentId: normalizeOptionalString(input.cloudDocumentId),
     createdAt,
+    detectedSourceLang: isTranslationLanguage(input.detectedSourceLang)
+      ? input.detectedSourceLang
+      : undefined,
     id: createFreeTranslationRecordId(createdAt),
     pdfFingerprint: normalizeOptionalString(input.pdfFingerprint),
     pdfTitle: normalizeOptionalString(input.pdfTitle),
@@ -323,6 +326,9 @@ function normalizeFreeTranslationRecord(
   return {
     cloudDocumentId: normalizeOptionalString(input.cloudDocumentId),
     createdAt,
+    detectedSourceLang: isTranslationLanguage(input.detectedSourceLang)
+      ? input.detectedSourceLang
+      : undefined,
     id: input.id,
     pdfFingerprint: normalizeOptionalString(input.pdfFingerprint),
     pdfTitle: normalizeOptionalString(input.pdfTitle),

@@ -235,6 +235,7 @@ export type FreeTranslationRecord = {
   userId: string;
   sourceText: string;
   translation: string;
+  detectedSourceLang?: TranslationLanguage;
   reasoningSummary?: string;
   request: FreeTranslationRequestSnapshot;
   usage?: TokenUsage;

@@ -4728,6 +4728,13 @@ button {
   cursor: not-allowed;
 }
 
+.free-translation-swap-button[data-swap-available="false"]:not(:disabled) {
+  color: var(--text-muted);
+  background: var(--surface-muted);
+  box-shadow: none;
+  cursor: help;
+}
+
 .free-translation-resize-handle {
   position: absolute;
   right: 0;

@@ -138,6 +138,26 @@ test("free-translation history stores only the reasoning summary, never its trac
   assert.equal("thinking" in record, false);
 });
 
+test("free-translation history preserves only supported detected source languages", () => {
+  const detectedRecord = repository.createFreeTranslationRecord({
+    detectedSourceLang: "en",
+    request: createRequestSnapshot("deepseek-v4-flash"),
+    sourceText: "Source",
+    translation: "译文",
+    userId: "user-detected",
+  });
+  const invalidRecord = repository.createFreeTranslationRecord({
+    detectedSourceLang: "ru",
+    request: createRequestSnapshot("deepseek-v4-flash"),
+    sourceText: "Источник",
+    translation: "译文",
+    userId: "user-unsupported-detected",
+  });
+
+  assert.equal(detectedRecord.detectedSourceLang, "en");
+  assert.equal(invalidRecord.detectedSourceLang, undefined);
+});
+
 test("invalid persisted reasoning values fall back instead of coercing strings", () => {
   const deepSeekDraft = repository.createFreeTranslationDraft({
     ...createDraftInput("deepseek-v4-pro"),

@@ -65,6 +65,7 @@ import {
   putFreeTranslationRecord,
   type FreeTranslationDraftWriteInput,
 } from "./freeTranslationRepository";
+import { createFreeTranslationSwapPlan } from "./freeTranslationSwap";
 import {
   clampFreeTranslationPanelBounds,
   clampFreeTranslationSourceRatio,
@@ -182,9 +183,11 @@ export function FreeTranslationPanel({
   const resultPaneRef = useRef<HTMLElement>(null);
   const restorePanelBoundsRef = useRef<FreeTranslationPanelBounds>();
   const sourcePaneRef = useRef<HTMLElement>(null);
+  const userIdRef = useRef(userId);
   const workbenchRef = useRef<HTMLDivElement>(null);
   const [completedSignature, setCompletedSignature] = useState<string>();
   const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
+  const [detectedSourceLang, setDetectedSourceLang] = useState<TranslationLanguage>();
   const [draftStatus, setDraftStatus] = useState<DraftStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string>();
   const [historyError, setHistoryError] = useState<string>();
@@ -233,6 +236,9 @@ export function FreeTranslationPanel({
     normalizeTranslationStyle(paperContext?.translationStyle ?? DEFAULT_TRANSLATION_STYLE)
   );
   const [usage, setUsage] = useState<TokenUsage>();
+
+  userIdRef.current = userId;
+
   const isBusy = status === "loading" || status === "streaming";
   const paperTitle = entry?.pdfMetadata?.title || entry?.fileName;
   const effectiveIncludePaperContext = includePaperContext && Boolean(paperContext);
@@ -302,6 +308,12 @@ export function FreeTranslationPanel({
     () => createResultSignature(inputText, requestSnapshot),
     [inputText, requestSnapshot],
   );
+  const hasFreshCompletedTranslation = Boolean(
+    translation.trim() &&
+    status === "success" &&
+    completedSignature &&
+    completedSignature === currentSignature,
+  );
   const isResultStale = Boolean(
     translation && completedSignature && completedSignature !== currentSignature,
   );
@@ -309,6 +321,40 @@ export function FreeTranslationPanel({
     inputText.length <= FREE_TRANSLATION_MAX_SOURCE_CHARS &&
     !isBusy;
   const canCopy = Boolean(translation.trim()) && status === "success" && !isResultStale;
+  const swapPlan = useMemo(() => createFreeTranslationSwapPlan({
+    busy: isBusy,
+    detectedSourceLang,
+    hasFreshCompletedTranslation,
+    maxSourceCharacters: FREE_TRANSLATION_MAX_SOURCE_CHARS,
+    sourceLang,
+    sourceText: inputText,
+    targetLang,
+    translation,
+  }), [
+    detectedSourceLang,
+    hasFreshCompletedTranslation,
+    inputText,
+    isBusy,
+    sourceLang,
+    targetLang,
+    translation,
+  ]);
+  const swapUnavailableMessage = swapPlan.reason === "translation-too-long"
+    ? t("freeTranslation.swapResultTooLong")
+    : swapPlan.reason === "same-language"
+      ? t("freeTranslation.swapDetectedSameLanguage")
+      : swapPlan.reason === "auto-source-result-not-ready" ||
+          swapPlan.reason === "auto-source-unresolved"
+        ? t("freeTranslation.swapAwaitingDetection")
+        : undefined;
+  const swapButtonTitle = swapPlan.enabled || !swapUnavailableMessage
+    ? t("freeTranslation.swapLanguages")
+    : swapUnavailableMessage;
+  const autoSourceOptionLabel = sourceLang === "auto" && detectedSourceLang
+    ? t("freeTranslation.autoDetectedLanguage", {
+      language: getTranslationLanguageLabel(detectedSourceLang),
+    })
+    : t("freeTranslation.autoDetect");
   const isLayoutResizing = isPaneResizing || isPanelResizing;
   const panelStyle = isDesktopLayout
     ? {
@@ -467,6 +513,7 @@ export function FreeTranslationPanel({
     abortControllerRef.current = undefined;
     setCompletedSignature(undefined);
     setCopyStatus("idle");
+    setDetectedSourceLang(undefined);
     setErrorMessage(undefined);
     setReasoningExpanded(false);
     setReasoningSummaryDegraded(false);
@@ -646,6 +693,7 @@ export function FreeTranslationPanel({
     activeRequestIdRef.current = requestId;
     setCompletedSignature(undefined);
     setCopyStatus("idle");
+    setDetectedSourceLang(undefined);
     setErrorMessage(undefined);
     setReasoningExpanded(false);
     setReasoningSummaryDegraded(false);
@@ -659,6 +707,7 @@ export function FreeTranslationPanel({
     setUsage(undefined);
 
     let streamedTranslation = "";
+    let streamedDetectedSourceLang: TranslationLanguage | undefined;
     let streamedReasoningSummaryPreview = "";
     let streamedReasoningSummary = "";
     let streamedUsage: TokenUsage | undefined;
@@ -682,7 +731,7 @@ export function FreeTranslationPanel({
       return true;
     }
 
-    async function persistSuccessfulResult(historyRequestId = requestId) {
+    async function persistSuccessfulResult() {
       if (
         successfulResultPersisted ||
         !translationCompleted ||
@@ -706,6 +755,7 @@ export function FreeTranslationPanel({
           pdfFingerprint: entry?.fingerprint,
           pdfTitle: paperTitle,
           request: activeSnapshot,
+          detectedSourceLang: streamedDetectedSourceLang,
           reasoningSummary: streamedReasoningSummary,
           sourceText: inputText,
           translation: streamedTranslation,
@@ -713,14 +763,14 @@ export function FreeTranslationPanel({
           userId,
         });
 
-        if (activeRequestIdRef.current === historyRequestId) {
+        if (isPanelMountedRef.current && userIdRef.current === userId) {
           setHistoryRecords((current) => [
             record,
             ...current.filter((item) => item.id !== record.id),
           ].slice(0, 20));
         }
       } catch {
-        if (activeRequestIdRef.current === historyRequestId) {
+        if (isPanelMountedRef.current && userIdRef.current === userId) {
           setHistoryError(t("freeTranslation.historyError"));
         }
       }
@@ -742,6 +792,14 @@ export function FreeTranslationPanel({
               streamedTranslation += text;
               setStatus("streaming");
               setTranslation((current) => current + text);
+            },
+            onDetectedSourceLanguage: (detected) => {
+              if (activeRequestIdRef.current !== requestId) {
+                return;
+              }
+
+              streamedDetectedSourceLang = detected.language;
+              setDetectedSourceLang(detected.language);
             },
             onMeta: (metadata) => {
               if (activeRequestIdRef.current !== requestId) {
@@ -904,11 +962,8 @@ export function FreeTranslationPanel({
         const nextErrorMessage = getTranslationErrorMessage(error);
 
         if (translationCompleted && streamedTranslation.trim()) {
-          let historyRequestId = requestId;
-
           if (activeRequestIdRef.current === requestId) {
-            historyRequestId = requestId + 1;
-            activeRequestIdRef.current = historyRequestId;
+            activeRequestIdRef.current = requestId + 1;
             abortController.abort();
             abortControllerRef.current = undefined;
             setReasoningSummaryPhase("complete");
@@ -919,7 +974,7 @@ export function FreeTranslationPanel({
               setReasoningSummaryNotice(t("freeTranslation.reasoningSummaryUnavailable"));
             }
           }
-          await persistSuccessfulResult(historyRequestId);
+          await persistSuccessfulResult();
           return;
         }
 
@@ -1015,15 +1070,40 @@ export function FreeTranslationPanel({
   }, [startTranslation]);
 
   const handleSwapLanguages = useCallback(() => {
-    if (sourceLang === "auto" || isBusy) {
+    if (isBusy) {
+      return;
+    }
+
+    if (!swapPlan.enabled) {
+      if (swapUnavailableMessage) {
+        setErrorMessage(swapUnavailableMessage);
+      }
       return;
     }
 
     hasUserInteractionRef.current = true;
-    setSourceLang(targetLang);
-    setTargetLang(sourceLang);
-    setCopyStatus("idle");
-  }, [isBusy, sourceLang, targetLang]);
+    resetResult();
+    setInputText(swapPlan.next.sourceText);
+    setSourceLang(swapPlan.next.sourceLang);
+    setTargetLang(swapPlan.next.targetLang);
+    setTerms((current) => current.map((term) => ({
+      ...term,
+      source: term.target,
+      target: term.source,
+    })));
+    if (swapPlan.movesTranslation) {
+      setErrorMessage(t("freeTranslation.swapReady"));
+    }
+    window.requestAnimationFrame(() => {
+      inputRef.current?.focus({ preventScroll: true });
+    });
+  }, [
+    isBusy,
+    resetResult,
+    swapPlan,
+    swapUnavailableMessage,
+    t,
+  ]);
 
   const handleRestoreHistory = useCallback((record: FreeTranslationRecord) => {
     hasUserInteractionRef.current = true;
@@ -1042,6 +1122,7 @@ export function FreeTranslationPanel({
 
     setSourceLang(record.request.sourceLang);
     setTargetLang(record.request.targetLang);
+    setDetectedSourceLang(record.detectedSourceLang);
     setModel(record.request.model);
     setIncludePaperContext(canRestorePaperContext);
     setInputText(record.sourceText);
@@ -1581,6 +1662,7 @@ export function FreeTranslationPanel({
     hasUserInteractionRef.current = true;
     setSourceLang(nextSourceLang);
     setCopyStatus("idle");
+    setErrorMessage(undefined);
 
     if (nextSourceLang !== "auto" && nextSourceLang === targetLang) {
       setTargetLang(findAlternativeLanguage(nextSourceLang));
@@ -1591,6 +1673,7 @@ export function FreeTranslationPanel({
     hasUserInteractionRef.current = true;
     setTargetLang(nextTargetLang);
     setCopyStatus("idle");
+    setErrorMessage(undefined);
 
     if (sourceLang === nextTargetLang) {
       setSourceLang("auto");
@@ -1727,7 +1810,7 @@ export function FreeTranslationPanel({
                     )}
                     value={sourceLang}
                   >
-                    <option value="auto">{t("freeTranslation.autoDetect")}</option>
+                    <option value="auto">{autoSourceOptionLabel}</option>
                     {TRANSLATION_LANGUAGES.map((language) => (
                       <option key={language.code} value={language.code}>{language.label}</option>
                     ))}
@@ -1756,6 +1839,8 @@ export function FreeTranslationPanel({
                   hasUserInteractionRef.current = true;
                   setInputText(event.currentTarget.value);
                   setCopyStatus("idle");
+                  setDetectedSourceLang(undefined);
+                  setErrorMessage(undefined);
                 }}
                 onKeyDown={handleSourceKeyDown}
                 placeholder={t("freeTranslation.sourcePlaceholder")}
@@ -1804,11 +1889,14 @@ export function FreeTranslationPanel({
                 title={t("freeTranslation.resizePaneRatio")}
               />
               <button
-                aria-label={t("freeTranslation.swapLanguages")}
+                aria-label={swapPlan.enabled || !swapUnavailableMessage
+                  ? t("freeTranslation.swapLanguages")
+                  : `${t("freeTranslation.swapLanguages")}. ${swapUnavailableMessage}`}
                 className="free-translation-swap-button"
-                disabled={sourceLang === "auto" || isBusy}
+                data-swap-available={swapPlan.enabled ? "true" : "false"}
+                disabled={isBusy}
                 onClick={handleSwapLanguages}
-                title={t("freeTranslation.swapLanguages")}
+                title={swapButtonTitle}
                 type="button"
               >
                 <ArrowLeftRight aria-hidden="true" size={17} strokeWidth={2} />
@@ -2198,6 +2286,10 @@ function getFocusableElements(container: HTMLElement) {
     element.getAttribute("aria-hidden") !== "true" &&
     element.getClientRects().length > 0
   );
+}
+
+function getTranslationLanguageLabel(language: TranslationLanguage) {
+  return TRANSLATION_LANGUAGES.find((item) => item.code === language)?.label ?? language;
 }
 
 function findAlternativeLanguage(language: TranslationLanguage) {
