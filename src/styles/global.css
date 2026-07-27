@@ -5274,6 +5274,45 @@ button {
   font-weight: 760;
 }
 
+.free-translation-markdown eq {
+  display: inline-block;
+}
+
+.free-translation-markdown eqn {
+  display: block;
+  min-width: 0;
+}
+
+.free-translation-markdown > section {
+  min-width: 0;
+  margin: 0;
+}
+
+.free-translation-markdown section.eqno {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.free-translation-markdown section.eqno > eqn {
+  width: 100%;
+  margin-left: 3em;
+}
+
+.free-translation-markdown section.eqno > span {
+  width: 3em;
+  text-align: right;
+}
+
+.free-translation-markdown .contains-task-list,
+.free-translation-markdown .task-list-item {
+  list-style: none;
+}
+
+.free-translation-markdown .task-list-item-checkbox {
+  margin: 0 6px 0 0;
+}
+
 .free-translation-markdown .katex-display {
   max-width: 100%;
   overflow-x: auto;
