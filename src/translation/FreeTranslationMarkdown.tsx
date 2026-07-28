@@ -4,15 +4,23 @@ import footnote from "markdown-it-footnote";
 import taskLists from "markdown-it-task-lists";
 import texmath from "markdown-it-texmath";
 import { useMemo } from "react";
+import {
+  KATEX_BEGIN_END_RULE,
+  startsWithKatexDisplayEnvironment,
+} from "./latexMathEnvironments";
+import { markdownItLatexLists } from "./markdownItLatexLists";
+import { markdownItLatexText } from "./markdownItLatexText";
 
-// markdown-it-texmath 1.0.0 restricts \begin{...} names to lowercase
-// letters, excluding common KaTeX environments such as equation*, align*,
-// gather*, and CD. Keep the package's parser/rendering pipeline, but widen its
-// public beg_end rule before registering the plugin.
+// markdown-it-texmath 1.0.0 restricts \begin{...} names to lowercase.
+// Replace that rule with the KaTeX display-environment allowlist: widening it
+// to every environment makes structural LaTeX such as itemize reach KaTeX and
+// produce a "No such environment" error instead of a semantic list.
 const beginEndRule = texmath.rules.beg_end.block[0];
 if (beginEndRule) {
-  beginEndRule.rex =
-    /(\\(?:begin)\{([A-Za-z]+\*?)\}[\s\S]+?\\(?:end)\{\2\})/gmy;
+  beginEndRule.rex = new RegExp(
+    KATEX_BEGIN_END_RULE.source,
+    KATEX_BEGIN_END_RULE.flags,
+  );
 }
 
 const freeTranslationMarkdown = new MarkdownIt({
@@ -26,6 +34,8 @@ const freeTranslationMarkdown = new MarkdownIt({
     enabled: false,
     label: false,
   })
+  .use(markdownItLatexText)
+  .use(markdownItLatexLists)
   .use(texmath, {
     delimiters: ["dollars", "brackets", "beg_end"],
     engine: katex,
@@ -55,7 +65,7 @@ freeTranslationMarkdown.block.ruler.before(
 
     return line.startsWith("\\[")
       || line.startsWith("$$")
-      || /^\\begin\{[A-Za-z]+\*?\}/.test(line);
+      || startsWithKatexDisplayEnvironment(line);
   },
   { alt: ["paragraph"] },
 );

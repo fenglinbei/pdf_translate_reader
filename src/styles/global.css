@@ -5273,6 +5273,118 @@ button {
   padding-left: 22px;
 }
 
+.free-translation-markdown .free-translation-latex-list {
+  min-width: 0;
+  margin: 0;
+  gap: 6px;
+}
+
+.free-translation-markdown .free-translation-latex-list .free-translation-latex-list {
+  margin-top: 6px;
+}
+
+.free-translation-latex-list-item {
+  position: relative;
+  min-width: 0;
+}
+
+.free-translation-latex-list-item--custom-marker {
+  list-style: none;
+}
+
+.free-translation-latex-list-marker {
+  position: absolute;
+  inset-inline-end: calc(100% + 0.45em);
+  width: max-content;
+  max-width: 5.5em;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-weight: 680;
+  text-align: end;
+  white-space: nowrap;
+}
+
+.free-translation-latex-list-marker:empty {
+  display: none;
+}
+
+.free-translation-latex-list-content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.free-translation-latex-list-content > :first-child {
+  margin-top: 0;
+}
+
+.free-translation-latex-list-content > :last-child {
+  margin-bottom: 0;
+}
+
+.free-translation-markdown .free-translation-latex-list--description {
+  display: grid;
+  padding: 0;
+}
+
+.free-translation-latex-description-item {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.free-translation-latex-description-term {
+  color: var(--text);
+  font-weight: 760;
+}
+
+.free-translation-latex-description-term--empty {
+  display: none;
+}
+
+.free-translation-latex-description-term--empty + .free-translation-latex-list-content {
+  grid-column: 1 / -1;
+}
+
+.free-translation-latex-description-item dd {
+  margin: 0;
+}
+
+.free-translation-latex-text--underline {
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+}
+
+.free-translation-latex-text--small-caps {
+  font-variant-caps: small-caps;
+}
+
+.free-translation-latex-text--sans-serif {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.free-translation-latex-text--roman {
+  font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+}
+
+.free-translation-latex-text--medium {
+  font-weight: 400;
+}
+
+.free-translation-latex-text--upright {
+  font-style: normal;
+}
+
+.free-translation-latex-text--normal {
+  font-style: normal;
+  font-weight: 400;
+}
+
+.free-translation-latex-text--mbox {
+  white-space: nowrap;
+}
+
 .free-translation-markdown blockquote {
   padding-left: 12px;
   border-left: 3px solid rgba(31, 111, 159, 0.28);
