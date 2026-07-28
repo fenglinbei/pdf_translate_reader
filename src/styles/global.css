@@ -5183,6 +5183,21 @@ button {
   min-width: 0;
 }
 
+.free-translation-raw-output {
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: inherit;
+  background: transparent;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.92em;
+  line-height: inherit;
+  tab-size: 2;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .free-translation-markdown > :first-child {
   margin-top: 0;
 }

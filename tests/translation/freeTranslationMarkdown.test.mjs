@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { createServer } from "vite";
 
+let FreeTranslationResultContent;
 let renderFreeTranslationMarkdown;
 let vite;
 
@@ -12,9 +15,10 @@ before(async () => {
     logLevel: "silent",
     server: { middlewareMode: true },
   });
-  ({ renderFreeTranslationMarkdown } = await vite.ssrLoadModule(
-    "/src/translation/FreeTranslationMarkdown.tsx",
-  ));
+  ({
+    FreeTranslationResultContent,
+    renderFreeTranslationMarkdown,
+  } = await vite.ssrLoadModule("/src/translation/FreeTranslationMarkdown.tsx"));
 });
 
 after(async () => {
@@ -125,5 +129,42 @@ not rendered
     assert.doesNotMatch(markup, /class="katex"/);
     assert.match(markup, /Pending/);
     assert.match(markup, /begin\{equation\}/);
+  });
+
+  it("shows the original Markdown and LaTeX safely in unrendered mode", () => {
+    const source = String.raw`# Heading
+
+\[
+E = mc^2
+\]
+
+<script>alert("unsafe")</script>`;
+    const markup = renderToStaticMarkup(
+      React.createElement(FreeTranslationResultContent, {
+        rendered: false,
+        text: source,
+      }),
+    );
+
+    assert.match(markup, /class="free-translation-raw-output"/);
+    assert.match(markup, /# Heading/);
+    assert.match(markup, /\\\[/);
+    assert.match(markup, /\\\]/);
+    assert.match(markup, /&lt;script&gt;alert/);
+    assert.doesNotMatch(markup, /class="katex"/);
+    assert.doesNotMatch(markup, /<script>/);
+  });
+
+  it("uses the Markdown renderer when rendered mode is enabled", () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(FreeTranslationResultContent, {
+        rendered: true,
+        text: String.raw`\[E = mc^2\]`,
+      }),
+    );
+
+    assert.match(markup, /class="free-translation-markdown"/);
+    assert.match(markup, /class="katex-display"/);
+    assert.doesNotMatch(markup, /free-translation-raw-output/);
   });
 });

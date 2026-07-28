@@ -13,6 +13,7 @@ export type ReaderSession = {
   freeTranslationPanelHeight?: number;
   freeTranslationPanelMode?: FreeTranslationPanelMode;
   freeTranslationPanelWidth?: number;
+  freeTranslationResultRendered?: boolean;
   freeTranslationSourceRatio?: number;
   isLibraryPaneOpen?: boolean;
   isPinsPaneOpen?: boolean;
@@ -127,6 +128,9 @@ function normalizeReaderSession(input: unknown): ReaderSession | undefined {
     freeTranslationPanelHeight: getOptionalNumber(input.freeTranslationPanelHeight),
     freeTranslationPanelMode: getFreeTranslationPanelMode(input.freeTranslationPanelMode),
     freeTranslationPanelWidth: getOptionalNumber(input.freeTranslationPanelWidth),
+    freeTranslationResultRendered: getOptionalBoolean(
+      input.freeTranslationResultRendered,
+    ),
     freeTranslationSourceRatio: getOptionalNumber(input.freeTranslationSourceRatio),
     isLibraryPaneOpen: getOptionalBoolean(input.isLibraryPaneOpen),
     isPinsPaneOpen: getOptionalBoolean(input.isPinsPaneOpen),

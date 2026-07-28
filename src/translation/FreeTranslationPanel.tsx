@@ -1,5 +1,6 @@
 import {
   ArrowLeftRight,
+  Braces,
   ChevronRight,
   Copy,
   Languages,
@@ -51,7 +52,7 @@ import {
 } from "./defaults";
 import { getTranslationErrorMessage } from "./errors";
 import { FreeTranslationHistory } from "./FreeTranslationHistory";
-import { FreeTranslationMarkdown } from "./FreeTranslationMarkdown";
+import { FreeTranslationResultContent } from "./FreeTranslationMarkdown";
 import {
   FreeTranslationOptions,
   type FreeTranslationTermDraft,
@@ -202,6 +203,9 @@ export function FreeTranslationPanel({
   const [isMaximized, setIsMaximized] = useState(false);
   const [isPaneResizing, setIsPaneResizing] = useState(false);
   const [isPanelResizing, setIsPanelResizing] = useState(false);
+  const [isResultRendered, setIsResultRendered] = useState(
+    () => getReaderSession(userId)?.freeTranslationResultRendered ?? true,
+  );
   const [layoutAnnouncement, setLayoutAnnouncement] = useState("");
   const [model, setModel] = useState<TranslationModel>(settings.defaultModel);
   const [panelBounds, setPanelBounds] = useState(initialPanelLayout.bounds);
@@ -1061,6 +1065,15 @@ export function FreeTranslationPanel({
       setCopyStatus("error");
     }
   }, [canCopy, translation]);
+
+  const handleToggleResultRendering = useCallback(() => {
+    const nextRendered = !isResultRendered;
+
+    setIsResultRendered(nextRendered);
+    updateReaderSession(userId, {
+      freeTranslationResultRendered: nextRendered,
+    });
+  }, [isResultRendered, userId]);
 
   const handleSourceKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
@@ -1936,6 +1949,21 @@ export function FreeTranslationPanel({
                     </button>
                   ) : null}
                   <button
+                    aria-label={t("freeTranslation.renderResult")}
+                    aria-pressed={isResultRendered}
+                    className={`icon-button icon-button--small ${
+                      isResultRendered ? "icon-button--success" : ""
+                    }`}
+                    disabled={!translation}
+                    onClick={handleToggleResultRendering}
+                    title={isResultRendered
+                      ? t("freeTranslation.switchToSourceView")
+                      : t("freeTranslation.switchToRenderedView")}
+                    type="button"
+                  >
+                    <Braces aria-hidden="true" size={16} strokeWidth={2} />
+                  </button>
+                  <button
                     aria-label={t("common.copy")}
                     className="icon-button icon-button--small"
                     disabled={!canCopy}
@@ -1963,7 +1991,10 @@ export function FreeTranslationPanel({
                   />
                 ) : null}
                 {translation ? (
-                  <FreeTranslationMarkdown text={translation} />
+                  <FreeTranslationResultContent
+                    rendered={isResultRendered}
+                    text={translation}
+                  />
                 ) : status === "loading" || status === "streaming" ? (
                   <div className="free-translation-loading">
                     <LoaderCircle aria-hidden="true" size={17} strokeWidth={2} />

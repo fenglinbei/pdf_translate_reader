@@ -92,3 +92,17 @@ export function FreeTranslationMarkdown({ text }: { text: string }) {
     />
   );
 }
+
+export function FreeTranslationResultContent({
+  rendered,
+  text,
+}: {
+  rendered: boolean;
+  text: string;
+}) {
+  return rendered ? (
+    <FreeTranslationMarkdown text={text} />
+  ) : (
+    <pre className="free-translation-raw-output">{text}</pre>
+  );
+}
