@@ -17,19 +17,16 @@ import {
   detectTranslationSourceLanguage,
 } from "../translationModels/languageDetection.mjs";
 import {
-  createTranslationReasoningPreview,
-  createTranslationReasoningSummary,
+  createTranslationReasoningSanitizer,
 } from "../translationModels/reasoningSummary.mjs";
 
 const MAX_REQUEST_BYTES = 256 * 1024;
-const MAX_SUMMARY_TRANSLATION_CAPTURE_CHARS = 12_000;
 const SSE_HEARTBEAT_INTERVAL_MS = 10_000;
 const TRANSLATION_PROGRESS_PHASES = [
   "accepted",
   "connecting",
   "analyzing",
   "translating",
-  "finalizing_summary",
   "complete",
 ];
 
@@ -51,7 +48,8 @@ export async function handleTranslateStream(request, response) {
 
   const abortController = new AbortController();
   const model = normalizeTranslationModel(requestBody.model);
-  let previewAbort;
+  let completeThinking = () => {};
+  let reasoningSanitizer;
   let stopHeartbeat = () => {};
   const handleResponseClose = () => {
     if (!response.writableEnded) {
@@ -83,8 +81,9 @@ export async function handleTranslateStream(request, response) {
       response,
       usesDynamicReasoningSummary,
     );
-    let previewSequence = 0;
-    let previewUsage;
+    let sanitizerUsage;
+    let thinkingCompleted = false;
+    let thinkingStartedAt;
 
     if (usesDynamicReasoningSummary) {
       writeSseHeaders(response);
@@ -98,8 +97,64 @@ export async function handleTranslateStream(request, response) {
         reasoning: resolvedReasoning,
       });
       writeDetectedSourceLanguage(response, detectedSourceLanguage);
+      thinkingStartedAt = Date.now();
+      writeSse(response, "thinking_started", {
+        startedAt: thinkingStartedAt,
+      });
       emitProgress("accepted");
       emitProgress("connecting");
+
+      reasoningSanitizer = createTranslationReasoningSanitizer({
+        onPartAdded: (payload) => {
+          if (isResponseClosed(response, abortController.signal)) {
+            return;
+          }
+
+          emitProgress("analyzing");
+          writeSse(response, "thinking_summary_part_added", payload);
+        },
+        onTextDelta: (payload) => {
+          if (isResponseClosed(response, abortController.signal)) {
+            return;
+          }
+
+          writeSse(response, "thinking_summary_text_delta", payload);
+        },
+        onTextDone: (payload) => {
+          if (isResponseClosed(response, abortController.signal)) {
+            return;
+          }
+
+          writeSse(response, "thinking_summary_text_done", payload);
+        },
+        onUsage: (usage) => {
+          sanitizerUsage = combineUsage(
+            sanitizerUsage,
+            normalizeUsage(usage),
+          );
+        },
+        requestBody,
+        signal: abortController.signal,
+      });
+
+      completeThinking = (forceDegraded = false) => {
+        if (thinkingCompleted) {
+          return;
+        }
+
+        thinkingCompleted = true;
+        const sanitizerState = reasoningSanitizer.complete();
+
+        if (isResponseClosed(response, abortController.signal)) {
+          return;
+        }
+
+        writeSse(response, "thinking_completed", {
+          degraded: forceDegraded || sanitizerState.degraded,
+          durationMs: Math.max(0, Date.now() - thinkingStartedAt),
+          partCount: sanitizerState.partCount,
+        });
+      };
     }
 
     const upstreamStreamPromise = createTranslationChatStream({
@@ -108,37 +163,6 @@ export async function handleTranslateStream(request, response) {
       resolvedReasoning,
       signal: abortController.signal,
     });
-    let previewPromise = Promise.resolve({});
-
-    if (usesDynamicReasoningSummary) {
-      previewAbort = createLinkedAbortController(abortController.signal);
-      previewPromise = createTranslationReasoningPreview({
-        onDelta: (text) => {
-          if (
-            previewAbort.signal.aborted ||
-            isResponseClosed(response, abortController.signal)
-          ) {
-            return;
-          }
-
-          emitProgress("analyzing");
-          previewSequence += 1;
-          writeSse(response, "reasoning_summary_delta", {
-            revision: 1,
-            seq: previewSequence,
-            text,
-          });
-        },
-        requestBody,
-        signal: previewAbort.signal,
-      }).then((result) => {
-        if (result?.usage) {
-          previewUsage = normalizeUsage(result.usage);
-        }
-
-        return result;
-      }).catch(() => ({}));
-    }
 
     const upstreamStream = await upstreamStreamPromise;
 
@@ -162,8 +186,14 @@ export async function handleTranslateStream(request, response) {
       upstreamStream,
       response,
       {
-        onReasoningContent: () => emitProgress("analyzing"),
-        onTranslationContent: () => emitProgress("translating"),
+        onReasoningContent: (reasoningContent) => {
+          emitProgress("analyzing");
+          reasoningSanitizer?.push(reasoningContent);
+        },
+        onTranslationContent: () => {
+          completeThinking();
+          emitProgress("translating");
+        },
         requireStopFinishReason: usesDynamicReasoningSummary,
         signal: abortController.signal,
       },
@@ -174,46 +204,15 @@ export async function handleTranslateStream(request, response) {
     }
 
     if (usesDynamicReasoningSummary) {
+      completeThinking();
       writeSse(response, "translation_complete", {
         finishReason: "stop",
       });
-      previewAbort.abort();
-      await previewPromise;
-      emitProgress("finalizing_summary");
-    }
-
-    if (resolvedReasoning?.enabled && streamResult.translationText.trim()) {
-      writeSse(response, "reasoning_summary_status", {
-        status: "generating",
-      });
-      writeSse(response, "heartbeat", {});
-      const summary = await createTranslationReasoningSummary({
-        requestBody,
-        signal: abortController.signal,
-        translationText: streamResult.translationText,
-      });
-
-      if (isResponseClosed(response, abortController.signal)) {
-        return;
-      }
-
-      writeSse(response, "reasoning_summary", {
-        final: true,
-        revision: 2,
-        source: summary.source,
-        text: summary.text,
-      });
-
-      const summaryUsage = combineUsage(
-        previewUsage,
-        summary.usage ? normalizeUsage(summary.usage) : undefined,
-      );
-
-      if (summaryUsage) {
+      if (sanitizerUsage) {
         writeSse(
           response,
           "usage",
-          combineUsage(streamResult.usage, summaryUsage),
+          combineUsage(streamResult.usage, sanitizerUsage),
         );
       }
     }
@@ -235,6 +234,7 @@ export async function handleTranslateStream(request, response) {
     }
 
     if (response.headersSent) {
+      completeThinking(true);
       writeSse(response, "error", serializeError(error));
       response.end();
       return;
@@ -245,8 +245,7 @@ export async function handleTranslateStream(request, response) {
       error: serializedError,
     });
   } finally {
-    previewAbort?.abort();
-    previewAbort?.dispose();
+    reasoningSanitizer?.complete();
     stopHeartbeat();
     response.off("close", handleResponseClose);
   }
@@ -267,7 +266,6 @@ async function pipeOpenAiCompatibleStream(
   const streamState = {
     completionMarkerReceived: false,
     finishReason: undefined,
-    translationText: "",
     usage: undefined,
   };
   let buffer = "";
@@ -392,16 +390,11 @@ function processOpenAiCompatibleSseLine(
     typeof reasoningContent === "string" &&
     reasoningContent.length > 0
   ) {
-    onReasoningContent?.();
+    onReasoningContent?.(reasoningContent);
   }
 
   if (typeof content === "string" && content.length > 0) {
     onTranslationContent?.();
-    streamState.translationText = appendBoundedText(
-      streamState.translationText,
-      content,
-      MAX_SUMMARY_TRANSLATION_CAPTURE_CHARS,
-    );
     writeSse(response, "delta", { text: content });
   }
 
@@ -617,19 +610,6 @@ function combineUsage(primaryUsage, secondaryUsage) {
   return combined;
 }
 
-function appendBoundedText(current, text, maxCharacters) {
-  const next = `${current}${text}`;
-
-  if (next.length <= maxCharacters) {
-    return next;
-  }
-
-  const marker = "\n[…]\n";
-  const segmentLength = Math.floor((maxCharacters - marker.length) / 2);
-
-  return `${next.slice(0, segmentLength)}${marker}${next.slice(-segmentLength)}`;
-}
-
 function isResponseClosed(response, signal) {
   return signal.aborted || response.destroyed || response.writableEnded;
 }
@@ -654,25 +634,6 @@ function createProgressEmitter(response, enabled) {
 
     currentPhaseIndex = phaseIndex;
     writeSse(response, "progress", { phase });
-  };
-}
-
-function createLinkedAbortController(parentSignal) {
-  const controller = new AbortController();
-  const handleParentAbort = () => controller.abort(parentSignal?.reason);
-
-  if (parentSignal?.aborted) {
-    handleParentAbort();
-  } else {
-    parentSignal?.addEventListener("abort", handleParentAbort, { once: true });
-  }
-
-  return {
-    abort: () => controller.abort(),
-    dispose: () => {
-      parentSignal?.removeEventListener("abort", handleParentAbort);
-    },
-    signal: controller.signal,
   };
 }
 

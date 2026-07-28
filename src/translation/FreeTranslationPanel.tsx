@@ -82,8 +82,13 @@ import {
   type FreeTranslationPanelSize,
 } from "./freeTranslationPanelLayout";
 import {
+  completeTranslationThinkingTimeline,
+  createTranslationThinkingTimeline,
+  getTranslationThinkingText,
+  reduceTranslationThinkingTimeline,
   streamTranslation,
-  type TranslationProgressPhase,
+  type TranslationThinkingPart,
+  type TranslationThinkingTimeline,
 } from "./translationClient";
 import { getTranslationReasoningCapability } from "./models";
 import {
@@ -111,6 +116,11 @@ type FreeTranslationStatus =
   | "error";
 type CopyStatus = "idle" | "copied" | "error";
 type DraftStatus = "idle" | "saving" | "saved" | "error";
+type FreeTranslationThinkingStatus =
+  | "idle"
+  | "thinking"
+  | "complete"
+  | "stopped";
 type PanelResizeState = {
   pointerId: number;
   startBounds: FreeTranslationPanelBounds;
@@ -178,12 +188,16 @@ export function FreeTranslationPanel({
   const pendingPaneRatioRef = useRef(initialPanelLayout.sourceRatio);
   const pendingPanelBoundsRef = useRef(initialPanelLayout.bounds);
   const paperContextRef = useRef(paperContext);
+  const reasoningExpansionPreferenceRef = useRef<
+    "auto" | "collapsed" | "expanded"
+  >("auto");
   const preferredPanelSizeRef = useRef<FreeTranslationPanelSize>(
     initialPanelLayout.preferredSize,
   );
   const resultPaneRef = useRef<HTMLElement>(null);
   const restorePanelBoundsRef = useRef<FreeTranslationPanelBounds>();
   const sourcePaneRef = useRef<HTMLElement>(null);
+  const thinkingStartedAtRef = useRef<number>();
   const userIdRef = useRef(userId);
   const workbenchRef = useRef<HTMLDivElement>(null);
   const [completedSignature, setCompletedSignature] = useState<string>();
@@ -219,13 +233,14 @@ export function FreeTranslationPanel({
     () => getTranslationReasoningCapability(settings.defaultModel).defaultEnabled,
   );
   const [reasoningExpanded, setReasoningExpanded] = useState(false);
-  const [reasoningSummaryPhase, setReasoningSummaryPhase] =
-    useState<TranslationProgressPhase>("complete");
   const [reasoningSummaryDegraded, setReasoningSummaryDegraded] = useState(false);
-  const [reasoningSummaryPending, setReasoningSummaryPending] = useState(false);
-  const [reasoningSummaryPreview, setReasoningSummaryPreview] = useState("");
   const [reasoningSummary, setReasoningSummary] = useState("");
   const [reasoningSummaryNotice, setReasoningSummaryNotice] = useState<string>();
+  const [thinkingDurationMs, setThinkingDurationMs] = useState<number>();
+  const [thinkingStatus, setThinkingStatus] =
+    useState<FreeTranslationThinkingStatus>("idle");
+  const [thinkingTimeline, setThinkingTimeline] =
+    useState<TranslationThinkingTimeline>(createTranslationThinkingTimeline);
   const [sourceLang, setSourceLang] = useState<FreeTranslationSourceLanguage>("auto");
   const [sourcePaneRatio, setSourcePaneRatio] = useState(
     initialPanelLayout.sourceRatio,
@@ -521,11 +536,13 @@ export function FreeTranslationPanel({
     setErrorMessage(undefined);
     setReasoningExpanded(false);
     setReasoningSummaryDegraded(false);
-    setReasoningSummaryPhase("complete");
-    setReasoningSummaryPending(false);
-    setReasoningSummaryPreview("");
     setReasoningSummary("");
     setReasoningSummaryNotice(undefined);
+    setThinkingDurationMs(undefined);
+    setThinkingStatus("idle");
+    setThinkingTimeline(createTranslationThinkingTimeline());
+    reasoningExpansionPreferenceRef.current = "auto";
+    thinkingStartedAtRef.current = undefined;
     setStatus("idle");
     setTranslation("");
     setUsage(undefined);
@@ -699,32 +716,112 @@ export function FreeTranslationPanel({
     setCopyStatus("idle");
     setDetectedSourceLang(undefined);
     setErrorMessage(undefined);
-    setReasoningExpanded(false);
+    reasoningExpansionPreferenceRef.current = "auto";
+    thinkingStartedAtRef.current = effectiveReasoningEnabled ? now : undefined;
+    setReasoningExpanded(effectiveReasoningEnabled);
     setReasoningSummaryDegraded(false);
-    setReasoningSummaryPhase(effectiveReasoningEnabled ? "accepted" : "complete");
-    setReasoningSummaryPending(effectiveReasoningEnabled);
-    setReasoningSummaryPreview("");
     setReasoningSummary("");
     setReasoningSummaryNotice(undefined);
+    setThinkingDurationMs(undefined);
+    setThinkingStatus(effectiveReasoningEnabled ? "thinking" : "idle");
+    setThinkingTimeline(createTranslationThinkingTimeline());
     setStatus("loading");
     setTranslation("");
     setUsage(undefined);
 
     let streamedTranslation = "";
     let streamedDetectedSourceLang: TranslationLanguage | undefined;
-    let streamedReasoningSummaryPreview = "";
     let streamedReasoningSummary = "";
     let streamedUsage: TokenUsage | undefined;
+    let thinkingTimelineSnapshot = createTranslationThinkingTimeline();
+    let receivedThinkingProtocol = false;
     let latestReasoningSummaryRevision = 0;
     let latestReasoningSummarySeq = 0;
+    let legacyReasoningSummaryPreview = "";
+    let thinkingCompleted = !effectiveReasoningEnabled;
     let translationCompleted = false;
+    let translationStarted = false;
     let successfulResultPersisted = false;
+
+    function applyThinkingTimelineEvent(
+      event: Parameters<typeof reduceTranslationThinkingTimeline>[1],
+    ) {
+      const nextTimeline = reduceTranslationThinkingTimeline(
+        thinkingTimelineSnapshot,
+        event,
+      );
+
+      if (nextTimeline === thinkingTimelineSnapshot) {
+        return;
+      }
+
+      thinkingTimelineSnapshot = nextTimeline;
+      streamedReasoningSummary = getTranslationThinkingText(nextTimeline);
+      setThinkingTimeline(nextTimeline);
+      setReasoningSummary("");
+      setReasoningSummaryDegraded(false);
+      setReasoningSummaryNotice(undefined);
+    }
+
+    function completeThinking(
+      {
+        degraded = false,
+        durationMs,
+      }: {
+        degraded?: boolean;
+        durationMs?: number;
+      } = {},
+    ) {
+      if (!activeSnapshot.reasoningEnabled) {
+        return;
+      }
+
+      if (thinkingCompleted) {
+        if (durationMs !== undefined) {
+          setThinkingDurationMs(durationMs);
+        }
+        if (degraded) {
+          setReasoningSummaryDegraded(true);
+          setReasoningSummaryNotice(t("freeTranslation.reasoningProgressInterrupted"));
+        }
+        setThinkingStatus("complete");
+        if (reasoningExpansionPreferenceRef.current !== "expanded") {
+          setReasoningExpanded(false);
+        }
+        return;
+      }
+
+      thinkingCompleted = true;
+      const completedTimeline = completeTranslationThinkingTimeline(
+        thinkingTimelineSnapshot,
+      );
+
+      if (completedTimeline !== thinkingTimelineSnapshot) {
+        thinkingTimelineSnapshot = completedTimeline;
+        streamedReasoningSummary = getTranslationThinkingText(completedTimeline);
+        setThinkingTimeline(completedTimeline);
+      }
+
+      const elapsedMs = durationMs ??
+        Math.max(0, Date.now() - (thinkingStartedAtRef.current ?? now));
+
+      setThinkingDurationMs(elapsedMs);
+      setThinkingStatus("complete");
+      setReasoningSummaryDegraded(degraded);
+      setReasoningSummaryNotice(
+        degraded ? t("freeTranslation.reasoningProgressInterrupted") : undefined,
+      );
+      if (reasoningExpansionPreferenceRef.current !== "expanded") {
+        setReasoningExpanded(false);
+      }
+    }
 
     function markTranslationComplete() {
       if (!streamedTranslation.trim()) {
         return false;
       }
 
+      completeThinking();
       translationCompleted = true;
 
       if (activeRequestIdRef.current === requestId) {
@@ -793,6 +890,10 @@ export function FreeTranslationPanel({
                 return;
               }
 
+              if (!translationStarted) {
+                translationStarted = true;
+                completeThinking();
+              }
               streamedTranslation += text;
               setStatus("streaming");
               setTranslation((current) => current + text);
@@ -827,34 +928,37 @@ export function FreeTranslationPanel({
                   reasoningEffort: metadata.reasoning.effort,
                 };
 
-                if (
-                  metadata.reasoning.enabled &&
-                  latestReasoningSummaryRevision < 2
-                ) {
-                  setReasoningSummaryPending(true);
-                } else if (
-                  !metadata.reasoning.enabled &&
-                  !streamedReasoningSummaryPreview &&
-                  !streamedReasoningSummary
-                ) {
-                  setReasoningSummaryPhase("complete");
-                  setReasoningSummaryPending(false);
+                if (metadata.reasoning.enabled && thinkingCompleted) {
+                  thinkingCompleted = false;
+                  thinkingStartedAtRef.current = Date.now();
+                  setThinkingStatus("thinking");
+                  if (reasoningExpansionPreferenceRef.current === "auto") {
+                    setReasoningExpanded(true);
+                  }
+                } else if (!metadata.reasoning.enabled) {
+                  thinkingCompleted = true;
+                  thinkingStartedAtRef.current = undefined;
+                  setThinkingStatus("idle");
+                  setReasoningExpanded(false);
                 }
               }
             },
             onProgress: (phase) => {
-              if (activeRequestIdRef.current !== requestId) {
+              if (
+                activeRequestIdRef.current !== requestId ||
+                receivedThinkingProtocol
+              ) {
                 return;
               }
 
-              setReasoningSummaryPhase(phase);
               if (phase === "complete") {
-                setReasoningSummaryPending(false);
+                completeThinking();
               }
             },
             onReasoningSummary: (text, snapshot) => {
               if (
                 activeRequestIdRef.current !== requestId ||
+                receivedThinkingProtocol ||
                 !snapshot.final ||
                 snapshot.revision < latestReasoningSummaryRevision ||
                 (
@@ -868,16 +972,16 @@ export function FreeTranslationPanel({
               latestReasoningSummaryRevision = snapshot.revision;
               latestReasoningSummarySeq = Number.MAX_SAFE_INTEGER;
               streamedReasoningSummary = text;
-              streamedReasoningSummaryPreview = "";
+              legacyReasoningSummaryPreview = "";
               setReasoningSummaryDegraded(false);
               setReasoningSummaryNotice(undefined);
-              setReasoningSummaryPending(false);
-              setReasoningSummaryPreview("");
               setReasoningSummary(text);
+              completeThinking();
             },
             onReasoningSummaryDelta: (delta) => {
               if (
                 activeRequestIdRef.current !== requestId ||
+                receivedThinkingProtocol ||
                 delta.revision < latestReasoningSummaryRevision ||
                 (
                   delta.revision === latestReasoningSummaryRevision &&
@@ -888,28 +992,101 @@ export function FreeTranslationPanel({
               }
 
               if (delta.revision > latestReasoningSummaryRevision) {
-                streamedReasoningSummaryPreview = "";
+                legacyReasoningSummaryPreview = "";
                 latestReasoningSummarySeq = 0;
               }
 
               latestReasoningSummaryRevision = delta.revision;
               latestReasoningSummarySeq = delta.seq;
-              streamedReasoningSummaryPreview += delta.text;
+              legacyReasoningSummaryPreview += delta.text;
               setReasoningSummaryDegraded(false);
-              setReasoningSummary("");
-              setReasoningSummaryPending(true);
-              setReasoningSummaryPreview(streamedReasoningSummaryPreview);
+              setReasoningSummary(legacyReasoningSummaryPreview);
+              if (!thinkingCompleted) {
+                setThinkingStatus("thinking");
+              }
             },
             onReasoningSummaryStatus: () => {
               if (
                 activeRequestIdRef.current !== requestId ||
+                receivedThinkingProtocol ||
+                thinkingCompleted ||
                 latestReasoningSummaryRevision >= 2
               ) {
                 return;
               }
 
-              setReasoningSummaryPhase("finalizing_summary");
-              setReasoningSummaryPending(true);
+              setThinkingStatus("thinking");
+            },
+            onThinkingStarted: () => {
+              if (activeRequestIdRef.current !== requestId) {
+                return;
+              }
+
+              receivedThinkingProtocol = true;
+              thinkingCompleted = false;
+              thinkingStartedAtRef.current = Date.now();
+              setThinkingDurationMs(undefined);
+              setThinkingStatus("thinking");
+              setReasoningSummaryDegraded(false);
+              setReasoningSummaryNotice(undefined);
+              if (reasoningExpansionPreferenceRef.current === "auto") {
+                setReasoningExpanded(true);
+              }
+            },
+            onThinkingSummaryPartAdded: ({ partId, seq }) => {
+              if (
+                activeRequestIdRef.current !== requestId ||
+                thinkingCompleted
+              ) {
+                return;
+              }
+
+              receivedThinkingProtocol = true;
+              applyThinkingTimelineEvent({
+                kind: "part_added",
+                partId,
+                seq,
+              });
+            },
+            onThinkingSummaryTextDelta: ({ delta, partId, seq }) => {
+              if (
+                activeRequestIdRef.current !== requestId ||
+                thinkingCompleted
+              ) {
+                return;
+              }
+
+              receivedThinkingProtocol = true;
+              applyThinkingTimelineEvent({
+                delta,
+                kind: "text_delta",
+                partId,
+                seq,
+              });
+            },
+            onThinkingSummaryTextDone: ({ partId, seq, text }) => {
+              if (
+                activeRequestIdRef.current !== requestId ||
+                thinkingCompleted
+              ) {
+                return;
+              }
+
+              receivedThinkingProtocol = true;
+              applyThinkingTimelineEvent({
+                kind: "text_done",
+                partId,
+                seq,
+                text,
+              });
+            },
+            onThinkingCompleted: ({ degraded, durationMs }) => {
+              if (activeRequestIdRef.current !== requestId) {
+                return;
+              }
+
+              receivedThinkingProtocol = true;
+              completeThinking({ degraded, durationMs });
             },
             onTranslationComplete: (finishReason) => {
               if (
@@ -948,15 +1125,16 @@ export function FreeTranslationPanel({
           markTranslationComplete();
         }
 
-        setReasoningSummaryPhase("complete");
-        setReasoningSummaryPending(false);
         if (
           activeSnapshot.reasoningEnabled &&
+          !receivedThinkingProtocol &&
           !streamedReasoningSummary.trim() &&
+          legacyReasoningSummaryPreview.trim() &&
           activeRequestIdRef.current === requestId
         ) {
-          setReasoningSummaryDegraded(Boolean(streamedReasoningSummaryPreview));
-          setReasoningSummaryNotice(t("freeTranslation.reasoningSummaryUnavailable"));
+          streamedReasoningSummary = legacyReasoningSummaryPreview;
+          setReasoningSummaryDegraded(true);
+          setReasoningSummaryNotice(t("freeTranslation.reasoningProgressInterrupted"));
         }
         await persistSuccessfulResult();
         if (activeRequestIdRef.current === requestId) {
@@ -970,12 +1148,20 @@ export function FreeTranslationPanel({
             activeRequestIdRef.current = requestId + 1;
             abortController.abort();
             abortControllerRef.current = undefined;
-            setReasoningSummaryPhase("complete");
-            setReasoningSummaryPending(false);
+            completeThinking({
+              degraded: activeSnapshot.reasoningEnabled &&
+                !receivedThinkingProtocol,
+            });
             setStatus("success");
-            if (!streamedReasoningSummary.trim()) {
-              setReasoningSummaryDegraded(Boolean(streamedReasoningSummaryPreview));
-              setReasoningSummaryNotice(t("freeTranslation.reasoningSummaryUnavailable"));
+            if (
+              !streamedReasoningSummary.trim() &&
+              legacyReasoningSummaryPreview.trim()
+            ) {
+              streamedReasoningSummary = legacyReasoningSummaryPreview;
+              setReasoningSummaryDegraded(true);
+              setReasoningSummaryNotice(
+                t("freeTranslation.reasoningProgressInterrupted"),
+              );
             }
           }
           await persistSuccessfulResult();
@@ -999,11 +1185,11 @@ export function FreeTranslationPanel({
           abortController.abort();
           abortControllerRef.current = undefined;
           setReasoningSummaryDegraded(false);
-          setReasoningSummaryPhase("complete");
-          setReasoningSummaryPending(false);
-          setReasoningSummaryPreview("");
           setReasoningSummary("");
           setReasoningSummaryNotice(undefined);
+          setThinkingDurationMs(undefined);
+          setThinkingStatus("idle");
+          setThinkingTimeline(createTranslationThinkingTimeline());
           setErrorMessage(nextErrorMessage);
           setStatus("error");
         }
@@ -1046,10 +1232,21 @@ export function FreeTranslationPanel({
     setCompletedSignature(undefined);
     setErrorMessage(t("freeTranslation.stopped"));
     setReasoningSummaryDegraded(false);
-    setReasoningSummaryPhase("complete");
-    setReasoningSummaryPending(false);
-    setReasoningSummaryPreview("");
     setReasoningSummaryNotice(undefined);
+    setThinkingDurationMs(
+      thinkingStartedAtRef.current === undefined
+        ? undefined
+        : Math.max(0, Date.now() - thinkingStartedAtRef.current),
+    );
+    setThinkingStatus(
+      thinkingStartedAtRef.current === undefined ? "idle" : "stopped",
+    );
+    setThinkingTimeline((current) =>
+      completeTranslationThinkingTimeline(current)
+    );
+    if (reasoningExpansionPreferenceRef.current !== "expanded") {
+      setReasoningExpanded(false);
+    }
     setStatus("stopped");
   }, [isBusy, t]);
 
@@ -1144,11 +1341,15 @@ export function FreeTranslationPanel({
     setReasoningEffort(record.request.reasoningEffort);
     setReasoningExpanded(false);
     setReasoningSummaryDegraded(false);
-    setReasoningSummaryPhase("complete");
-    setReasoningSummaryPending(false);
-    setReasoningSummaryPreview("");
-    setReasoningSummary(record.reasoningSummary ?? "");
+    setReasoningSummary("");
     setReasoningSummaryNotice(undefined);
+    setThinkingDurationMs(undefined);
+    setThinkingStatus(record.reasoningSummary?.trim() ? "complete" : "idle");
+    setThinkingTimeline(
+      createRestoredThinkingTimeline(record.reasoningSummary),
+    );
+    reasoningExpansionPreferenceRef.current = "auto";
+    thinkingStartedAtRef.current = undefined;
     setTranslationStyle(normalizeTranslationStyle(record.request.translationStyle));
     setTranslation(record.translation);
     setUsage(record.usage);
@@ -1980,14 +2181,22 @@ export function FreeTranslationPanel({
                 aria-live={isBusy ? "off" : "polite"}
                 className={`free-translation-output free-translation-output--${status}`}
               >
-                {reasoningSummaryPending || reasoningSummaryPreview || reasoningSummary ? (
+                {thinkingStatus !== "idle" ||
+                    thinkingTimeline.parts.length > 0 ||
+                    reasoningSummary ? (
                   <FreeTranslationReasoningPanel
                     degraded={reasoningSummaryDegraded}
+                    durationMs={thinkingDurationMs}
                     expanded={reasoningExpanded}
-                    isGenerating={reasoningSummaryPending}
-                    onExpandedChange={setReasoningExpanded}
-                    phase={reasoningSummaryPhase}
-                    text={reasoningSummary || reasoningSummaryPreview}
+                    fallbackText={reasoningSummary}
+                    onExpandedChange={(expanded) => {
+                      reasoningExpansionPreferenceRef.current = expanded
+                        ? "expanded"
+                        : "collapsed";
+                      setReasoningExpanded(expanded);
+                    }}
+                    parts={thinkingTimeline.parts}
+                    status={thinkingStatus}
                   />
                 ) : null}
                 {translation ? (
@@ -2139,37 +2348,48 @@ export function FreeTranslationPanel({
 
 function FreeTranslationReasoningPanel({
   degraded,
+  durationMs,
   expanded,
-  isGenerating,
+  fallbackText,
   onExpandedChange,
-  phase,
-  text,
+  parts,
+  status,
 }: {
   degraded: boolean;
+  durationMs?: number;
   expanded: boolean;
-  isGenerating: boolean;
+  fallbackText: string;
   onExpandedChange: (expanded: boolean) => void;
-  phase: TranslationProgressPhase;
-  text: string;
+  parts: TranslationThinkingPart[];
+  status: FreeTranslationThinkingStatus;
 }) {
   const { t } = useI18n();
-  const phaseStatusId = useId();
-  const summaryId = useId();
-  const phaseLabel = degraded
-    ? t("freeTranslation.reasoningPhasePartial")
-    : getReasoningPhaseLabel(phase, t);
+  const statusId = useId();
+  const thinkingId = useId();
+  const isThinking = status === "thinking";
+  const displayedParts = parts.length > 0
+    ? parts
+    : fallbackText
+      ? [{
+        complete: !isThinking,
+        firstSeq: 1,
+        partId: "legacy",
+        text: fallbackText,
+      }]
+      : [];
+  const statusLabel = getReasoningStatusLabel(status, durationMs, t);
 
   return (
     <div
       className="free-translation-reasoning-panel"
-      data-generating={isGenerating ? "true" : "false"}
+      data-generating={isThinking ? "true" : "false"}
     >
       <button
-        aria-controls={summaryId}
-        aria-describedby={phaseStatusId}
+        aria-controls={thinkingId}
+        aria-describedby={statusId}
         aria-expanded={expanded}
         className="free-translation-reasoning-toggle"
-        disabled={!text && !isGenerating}
+        disabled={!isThinking && displayedParts.length === 0}
         onClick={() => onExpandedChange(!expanded)}
         type="button"
       >
@@ -2179,57 +2399,103 @@ function FreeTranslationReasoningPanel({
           size={14}
           strokeWidth={2.2}
         />
-        <span>{t("freeTranslation.reasoningPanel")}</span>
+        <span>{statusLabel}</span>
         <small
           aria-atomic="true"
           aria-live="polite"
-          id={phaseStatusId}
+          id={statusId}
           role="status"
         >
-          {phaseLabel}
+          {degraded ? t("freeTranslation.reasoningPhasePartial") : ""}
         </small>
       </button>
       <div
-        aria-busy={isGenerating}
+        aria-busy={isThinking}
         aria-live="off"
         className="free-translation-reasoning-text"
         hidden={!expanded}
-        id={summaryId}
+        id={thinkingId}
       >
-        {text || (
+        {displayedParts.length > 0 ? (
+          <div className="free-translation-reasoning-steps" role="list">
+            {displayedParts.map((part) => {
+              const complete = part.complete || !isThinking;
+
+              return (
+                <div
+                  className="free-translation-reasoning-step"
+                  data-complete={complete ? "true" : "false"}
+                  key={part.partId}
+                  role="listitem"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="free-translation-reasoning-step-icon"
+                  >
+                    {complete
+                      ? "✓"
+                      : <LoaderCircle size={12} strokeWidth={2.1} />}
+                  </span>
+                  <span>{part.text || t("freeTranslation.reasoningWaiting")}</span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
           <span className="free-translation-reasoning-placeholder">
-            {t("freeTranslation.reasoningWaiting")}
+            {isThinking
+              ? t("freeTranslation.reasoningWaiting")
+              : t("freeTranslation.reasoningNoDetails")}
           </span>
         )}
-        {isGenerating && text ? (
-          <span
-            aria-hidden="true"
-            className="free-translation-reasoning-cursor"
-          />
-        ) : null}
       </div>
     </div>
   );
 }
 
-function getReasoningPhaseLabel(
-  phase: TranslationProgressPhase,
+function getReasoningStatusLabel(
+  status: FreeTranslationThinkingStatus,
+  durationMs: number | undefined,
   t: ReturnType<typeof useI18n>["t"],
 ) {
-  switch (phase) {
-    case "accepted":
-      return t("freeTranslation.reasoningPhaseAccepted");
-    case "connecting":
-      return t("freeTranslation.reasoningPhaseConnecting");
-    case "analyzing":
-      return t("freeTranslation.reasoningPhaseAnalyzing");
-    case "translating":
-      return t("freeTranslation.reasoningPhaseTranslating");
-    case "finalizing_summary":
-      return t("freeTranslation.reasoningPhaseFinalizing");
+  switch (status) {
+    case "thinking":
+      return t("freeTranslation.reasoningThinking");
     case "complete":
+      if (durationMs !== undefined) {
+        return t("freeTranslation.reasoningDuration", {
+          seconds: Math.max(1, Math.ceil(durationMs / 1_000)),
+        });
+      }
       return t("freeTranslation.reasoningPhaseComplete");
+    case "stopped":
+      return t("freeTranslation.reasoningStopped");
+    case "idle":
+      return t("freeTranslation.reasoningPanel");
   }
+}
+
+function createRestoredThinkingTimeline(
+  text?: string,
+): TranslationThinkingTimeline {
+  const restoredParts = text
+    ?.split(/\n\s*\n/)
+    .map((part) => part.trim())
+    .filter(Boolean) ?? [];
+
+  if (restoredParts.length === 0) {
+    return createTranslationThinkingTimeline();
+  }
+
+  return {
+    lastSeq: restoredParts.length,
+    parts: restoredParts.map((part, index) => ({
+      complete: true,
+      firstSeq: index + 1,
+      partId: `history-${index + 1}`,
+      text: part,
+    })),
+  };
 }
 
 function applyDraft(

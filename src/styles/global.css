@@ -4944,6 +4944,39 @@ button {
   word-break: break-word;
 }
 
+.free-translation-reasoning-steps {
+  display: grid;
+  gap: 7px;
+}
+
+.free-translation-reasoning-step {
+  display: grid;
+  grid-template-columns: 15px minmax(0, 1fr);
+  align-items: start;
+  gap: 6px;
+}
+
+.free-translation-reasoning-step-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  min-height: 18px;
+  color: rgba(109, 40, 217, 0.82);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.free-translation-reasoning-step[data-complete="false"]
+  .free-translation-reasoning-step-icon
+  svg {
+  animation: mathpix-process-spin 1.1s linear infinite;
+}
+
+.free-translation-reasoning-step[data-complete="true"] {
+  color: color-mix(in srgb, var(--text-muted) 86%, transparent);
+}
+
 .free-translation-reasoning-placeholder {
   color: var(--text-muted);
   opacity: 0.78;
@@ -4980,6 +5013,10 @@ button {
 
   .free-translation-reasoning-cursor {
     animation: none;
+  }
+
+  .free-translation-reasoning-step-icon svg {
+    animation: none !important;
   }
 }
 
