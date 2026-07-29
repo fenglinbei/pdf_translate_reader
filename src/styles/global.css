@@ -4937,11 +4937,40 @@ button {
 .free-translation-reasoning-text {
   max-height: 200px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   color: var(--text-muted);
   font-size: 11.5px;
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.free-translation-reasoning-history-toggle {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  width: 100%;
+  margin: 0 0 7px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 5px;
+  color: rgba(109, 40, 217, 0.86);
+  background: color-mix(in srgb, var(--surface-strong) 92%, transparent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 760;
+  text-align: left;
+}
+
+.free-translation-reasoning-history-toggle:hover,
+.free-translation-reasoning-history-toggle:focus-visible {
+  background: color-mix(in srgb, rgba(139, 92, 246, 0.16) 68%, var(--surface-strong));
+}
+
+.free-translation-reasoning-history-toggle:focus-visible {
+  outline: 2px solid rgba(139, 92, 246, 0.24);
+  outline-offset: -2px;
 }
 
 .free-translation-reasoning-steps {

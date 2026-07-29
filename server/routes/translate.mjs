@@ -105,6 +105,7 @@ export async function handleTranslateStream(request, response) {
       emitProgress("connecting");
 
       reasoningSanitizer = createTranslationReasoningSanitizer({
+        reasoningEffort: resolvedReasoning.effort,
         onPartAdded: (payload) => {
           if (isResponseClosed(response, abortController.signal)) {
             return;

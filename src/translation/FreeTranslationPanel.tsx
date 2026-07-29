@@ -144,6 +144,38 @@ const PANEL_KEYBOARD_RESIZE_STEP = 16;
 const PANEL_KEYBOARD_RESIZE_LARGE_STEP = 64;
 const PANE_KEYBOARD_RESIZE_STEP = 2;
 const PANE_KEYBOARD_RESIZE_LARGE_STEP = 10;
+const FREE_TRANSLATION_REASONING_RECENT_PARTS = 5;
+const FREE_TRANSLATION_REASONING_BOTTOM_THRESHOLD_PX = 24;
+
+export function getFreeTranslationReasoningWindow(
+  parts: TranslationThinkingPart[],
+  includeEarlier: boolean,
+) {
+  const olderCount = Math.max(
+    0,
+    parts.length - FREE_TRANSLATION_REASONING_RECENT_PARTS,
+  );
+
+  return {
+    olderCount,
+    visibleParts: includeEarlier && olderCount > 0
+      ? parts
+      : parts.slice(olderCount),
+  };
+}
+
+export function isFreeTranslationReasoningAtBottom({
+  clientHeight,
+  scrollHeight,
+  scrollTop,
+}: {
+  clientHeight: number;
+  scrollHeight: number;
+  scrollTop: number;
+}) {
+  return scrollHeight - clientHeight - scrollTop <=
+    FREE_TRANSLATION_REASONING_BOTTOM_THRESHOLD_PX;
+}
 
 export function FreeTranslationPanel({
   entry,
@@ -198,6 +230,7 @@ export function FreeTranslationPanel({
   const restorePanelBoundsRef = useRef<FreeTranslationPanelBounds>();
   const sourcePaneRef = useRef<HTMLElement>(null);
   const thinkingStartedAtRef = useRef<number>();
+  const thinkingTimelineVersionRef = useRef(0);
   const userIdRef = useRef(userId);
   const workbenchRef = useRef<HTMLDivElement>(null);
   const [completedSignature, setCompletedSignature] = useState<string>();
@@ -528,6 +561,7 @@ export function FreeTranslationPanel({
 
   const resetResult = useCallback(() => {
     activeRequestIdRef.current += 1;
+    thinkingTimelineVersionRef.current += 1;
     abortControllerRef.current?.abort();
     abortControllerRef.current = undefined;
     setCompletedSignature(undefined);
@@ -712,6 +746,7 @@ export function FreeTranslationPanel({
 
     abortControllerRef.current = abortController;
     activeRequestIdRef.current = requestId;
+    thinkingTimelineVersionRef.current += 1;
     setCompletedSignature(undefined);
     setCopyStatus("idle");
     setDetectedSourceLang(undefined);
@@ -1345,6 +1380,7 @@ export function FreeTranslationPanel({
     setReasoningSummaryNotice(undefined);
     setThinkingDurationMs(undefined);
     setThinkingStatus(record.reasoningSummary?.trim() ? "complete" : "idle");
+    thinkingTimelineVersionRef.current += 1;
     setThinkingTimeline(
       createRestoredThinkingTimeline(record.reasoningSummary),
     );
@@ -2189,6 +2225,7 @@ export function FreeTranslationPanel({
                     durationMs={thinkingDurationMs}
                     expanded={reasoningExpanded}
                     fallbackText={reasoningSummary}
+                    key={`reasoning-${thinkingTimelineVersionRef.current}`}
                     onExpandedChange={(expanded) => {
                       reasoningExpansionPreferenceRef.current = expanded
                         ? "expanded"
@@ -2364,20 +2401,78 @@ function FreeTranslationReasoningPanel({
   status: FreeTranslationThinkingStatus;
 }) {
   const { t } = useI18n();
+  const reasoningTextRef = useRef<HTMLDivElement>(null);
+  const shouldFollowLatestRef = useRef(true);
+  const [showEarlierParts, setShowEarlierParts] = useState(false);
   const statusId = useId();
   const thinkingId = useId();
   const isThinking = status === "thinking";
-  const displayedParts = parts.length > 0
-    ? parts
-    : fallbackText
-      ? [{
+  const fallbackParts = useMemo(
+    () => fallbackText
+      .split(/\n\s*\n/)
+      .map((text) => text.trim())
+      .filter(Boolean)
+      .map((text, index) => ({
         complete: !isThinking,
-        firstSeq: 1,
-        partId: "legacy",
-        text: fallbackText,
-      }]
-      : [];
-  const statusLabel = getReasoningStatusLabel(status, durationMs, t);
+        firstSeq: index + 1,
+        partId: `legacy-${index + 1}`,
+        text,
+      })),
+    [fallbackText, isThinking],
+  );
+  const allParts = parts.length > 0 ? parts : fallbackParts;
+  const {
+    olderCount,
+    visibleParts,
+  } = getFreeTranslationReasoningWindow(allParts, showEarlierParts);
+  const latestVisiblePart = visibleParts[visibleParts.length - 1];
+  const statusLabel = getReasoningStatusLabel(
+    status,
+    durationMs,
+    allParts.length,
+    t,
+  );
+
+  useEffect(() => {
+    if (!expanded || !shouldFollowLatestRef.current) {
+      return undefined;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      const reasoningText = reasoningTextRef.current;
+
+      if (reasoningText && shouldFollowLatestRef.current) {
+        reasoningText.scrollTop = reasoningText.scrollHeight;
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [
+    expanded,
+    latestVisiblePart?.complete,
+    latestVisiblePart?.partId,
+    latestVisiblePart?.text,
+    showEarlierParts,
+    visibleParts.length,
+  ]);
+
+  function handleEarlierPartsToggle() {
+    const nextShowEarlierParts = !showEarlierParts;
+
+    shouldFollowLatestRef.current = !nextShowEarlierParts;
+    setShowEarlierParts(nextShowEarlierParts);
+    window.requestAnimationFrame(() => {
+      const reasoningText = reasoningTextRef.current;
+
+      if (!reasoningText) {
+        return;
+      }
+
+      reasoningText.scrollTop = nextShowEarlierParts
+        ? 0
+        : reasoningText.scrollHeight;
+    });
+  }
 
   return (
     <div
@@ -2389,7 +2484,7 @@ function FreeTranslationReasoningPanel({
         aria-describedby={statusId}
         aria-expanded={expanded}
         className="free-translation-reasoning-toggle"
-        disabled={!isThinking && displayedParts.length === 0}
+        disabled={!isThinking && allParts.length === 0}
         onClick={() => onExpandedChange(!expanded)}
         type="button"
       >
@@ -2415,32 +2510,63 @@ function FreeTranslationReasoningPanel({
         className="free-translation-reasoning-text"
         hidden={!expanded}
         id={thinkingId}
-      >
-        {displayedParts.length > 0 ? (
-          <div className="free-translation-reasoning-steps" role="list">
-            {displayedParts.map((part) => {
-              const complete = part.complete || !isThinking;
+        onScroll={() => {
+          const reasoningText = reasoningTextRef.current;
 
-              return (
-                <div
-                  className="free-translation-reasoning-step"
-                  data-complete={complete ? "true" : "false"}
-                  key={part.partId}
-                  role="listitem"
-                >
-                  <span
-                    aria-hidden="true"
-                    className="free-translation-reasoning-step-icon"
+          if (reasoningText) {
+            shouldFollowLatestRef.current =
+              isFreeTranslationReasoningAtBottom(reasoningText);
+          }
+        }}
+        ref={reasoningTextRef}
+      >
+        {allParts.length > 0 ? (
+          <>
+            {olderCount > 0 ? (
+              <button
+                aria-controls={`${thinkingId}-steps`}
+                aria-expanded={showEarlierParts}
+                className="free-translation-reasoning-history-toggle"
+                onClick={handleEarlierPartsToggle}
+                type="button"
+              >
+                {t(
+                  showEarlierParts
+                    ? "freeTranslation.reasoningHideEarlier"
+                    : "freeTranslation.reasoningShowEarlier",
+                  { count: olderCount },
+                )}
+              </button>
+            ) : null}
+            <div
+              className="free-translation-reasoning-steps"
+              id={`${thinkingId}-steps`}
+              role="list"
+            >
+              {visibleParts.map((part) => {
+                const complete = part.complete || !isThinking;
+
+                return (
+                  <div
+                    className="free-translation-reasoning-step"
+                    data-complete={complete ? "true" : "false"}
+                    key={part.partId}
+                    role="listitem"
                   >
-                    {complete
-                      ? "✓"
-                      : <LoaderCircle size={12} strokeWidth={2.1} />}
-                  </span>
-                  <span>{part.text || t("freeTranslation.reasoningWaiting")}</span>
-                </div>
-              );
-            })}
-          </div>
+                    <span
+                      aria-hidden="true"
+                      className="free-translation-reasoning-step-icon"
+                    >
+                      {complete
+                        ? "✓"
+                        : <LoaderCircle size={12} strokeWidth={2.1} />}
+                    </span>
+                    <span>{part.text || t("freeTranslation.reasoningWaiting")}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         ) : (
           <span className="free-translation-reasoning-placeholder">
             {isThinking
@@ -2453,9 +2579,10 @@ function FreeTranslationReasoningPanel({
   );
 }
 
-function getReasoningStatusLabel(
+export function getReasoningStatusLabel(
   status: FreeTranslationThinkingStatus,
   durationMs: number | undefined,
+  stageCount: number,
   t: ReturnType<typeof useI18n>["t"],
 ) {
   switch (status) {
@@ -2463,11 +2590,20 @@ function getReasoningStatusLabel(
       return t("freeTranslation.reasoningThinking");
     case "complete":
       if (durationMs !== undefined) {
-        return t("freeTranslation.reasoningDuration", {
+        const values = {
+          count: stageCount,
           seconds: Math.max(1, Math.ceil(durationMs / 1_000)),
-        });
+        };
+
+        return stageCount > 0
+          ? t("freeTranslation.reasoningDurationWithStages", values)
+          : t("freeTranslation.reasoningDuration", values);
       }
-      return t("freeTranslation.reasoningPhaseComplete");
+      return stageCount > 0
+        ? t("freeTranslation.reasoningPhaseCompleteWithStages", {
+          count: stageCount,
+        })
+        : t("freeTranslation.reasoningPhaseComplete");
     case "stopped":
       return t("freeTranslation.reasoningStopped");
     case "idle":

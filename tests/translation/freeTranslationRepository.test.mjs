@@ -138,6 +138,20 @@ test("free-translation history stores only the reasoning summary, never its trac
   assert.equal("thinking" in record, false);
 });
 
+test("free-translation history preserves long adaptive reasoning timelines up to 6000 characters", () => {
+  const reasoningSummary = "阶段".repeat(3_250);
+  const record = repository.createFreeTranslationRecord({
+    reasoningSummary,
+    request: createRequestSnapshot("kimi-k3"),
+    sourceText: "Source",
+    translation: "译文",
+    userId: "user-long-reasoning",
+  });
+
+  assert.equal(record.reasoningSummary.length, 6_000);
+  assert.equal(record.reasoningSummary, reasoningSummary.slice(0, 6_000));
+});
+
 test("free-translation history preserves only supported detected source languages", () => {
   const detectedRecord = repository.createFreeTranslationRecord({
     detectedSourceLang: "en",

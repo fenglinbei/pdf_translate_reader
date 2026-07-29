@@ -406,12 +406,74 @@ describe("translation model client", () => {
     assert.doesNotMatch(response.output, /event: done/);
   });
 
+  it("uses the resolved reasoning effort for adaptive progress cadence", async () => {
+    process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
+    const mainStream = createControlledSseResponse();
+    const sanitizerStream = createControlledSseResponse();
+    const sanitizerStarted = createDeferred();
+    let translationCall;
+    globalThis.fetch = async (url, init) => {
+      const call = captureFetchCall(url, init);
+
+      if (isReasoningSanitizerCall(call)) {
+        sanitizerStarted.resolve(call);
+        return sanitizerStream.response;
+      }
+
+      translationCall = call;
+      return mainStream.response;
+    };
+    const request = createTranslationRequest({
+      ...createRequestBody("deepseek-v4-flash"),
+      reasoningEffort: "low",
+      reasoningEnabled: true,
+      requestKind: "free",
+      sourceLang: "auto",
+      summaryLocale: "zh-CN",
+    });
+    const response = createTranslationResponse();
+    const routePromise = handleTranslateStream(request, response);
+
+    mainStream.writeOpenAiChunk({
+      choices: [{
+        delta: {
+          reasoning_content: "先处理一般内容。再处理普通内容。",
+        },
+        finish_reason: null,
+      }],
+    });
+    const sanitizerCall = await sanitizerStarted.promise;
+
+    assert.equal(translationCall.body.reasoning_effort, "high");
+    assert.equal(
+      JSON.parse(sanitizerCall.body.messages[1].content)
+        .privateReasoningCandidate.units.length,
+      2,
+    );
+    writeSuccessfulSanitizerResult(
+      sanitizerStream,
+      "正在梳理句间关系。",
+    );
+    await waitForSseEvent(response, "thinking_summary_text_done", 1);
+    mainStream.writeOpenAiChunk({
+      choices: [{ delta: { content: "译文" }, finish_reason: null }],
+    });
+    mainStream.writeOpenAiChunk({
+      choices: [{ delta: {}, finish_reason: "stop" }],
+    });
+    mainStream.writeDone();
+    mainStream.close();
+    await routePromise;
+
+    assert.match(response.output, /event: done/);
+  });
+
   it("streams multiple sanitized reasoning parts from real reasoning with single-flight merging", async () => {
     process.env.DEEPSEEK_API_BASE_URL = "https://deepseek-summary.example/v1";
     process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
     process.env.KIMI_API_KEY = "test-kimi-key";
-    const firstRaw = `RAW_FIRST_PRIVATE_SENTINEL_${"A".repeat(160)}`;
-    const secondRaw = `RAW_SECOND_PRIVATE_SENTINEL_${"B".repeat(380)}`;
+    const firstRaw = `RAW_FIRST_PRIVATE_SENTINEL_${"A".repeat(160)}。`;
+    const secondRaw = `RAW_SECOND_PRIVATE_SENTINEL_${"B".repeat(380)}。`;
     const requests = [];
     const mainStream = createControlledSseResponse();
     const sanitizerStreams = [
@@ -505,11 +567,11 @@ describe("translation model client", () => {
     assert.equal(requests.length, 3);
     assert.equal(firstSanitizerCall.body.model, "deepseek-v4-flash");
     assert.equal(firstSanitizerCall.body.stream, true);
-    assert.ok(firstSanitizerCall.body.max_tokens <= 100);
+    assert.ok(firstSanitizerCall.body.max_tokens <= 160);
     assert.deepEqual(firstSanitizerCall.body.thinking, { type: "disabled" });
     assert.match(
       firstSanitizerCall.body.messages[0].content,
-      /private translation-reasoning window/i,
+      /private translation-reasoning candidate/i,
     );
     assert.match(JSON.stringify(firstSanitizerCall.body), /RAW_FIRST_PRIVATE/);
     assert.match(JSON.stringify(secondSanitizerCall.body), /RAW_SECOND_PRIVATE/);
@@ -568,7 +630,61 @@ describe("translation model client", () => {
     assert.doesNotMatch(response.output, /event: error/);
   });
 
-  it("caps the public thinking history at six persisted-safe parts", async () => {
+  it("bounds and compacts queued semantic candidates while Flash is in flight", async () => {
+    process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
+    const requests = [];
+    const sanitizerStreams = [];
+    globalThis.fetch = async (url, init) => {
+      const stream = createControlledSseResponse();
+      requests.push(captureFetchCall(url, init));
+      sanitizerStreams.push(stream);
+      return stream.response;
+    };
+    const sanitizer = createTranslationReasoningSanitizer({
+      reasoningEffort: "max",
+      requestBody: {
+        sourceLang: "auto",
+        summaryLocale: "zh-CN",
+        targetLang: "zh-CN",
+      },
+    });
+
+    sanitizer.push("正在理解语义 RAW_BACKLOG_0。");
+    await waitForCondition(
+      () => requests.length === 1,
+      "first backlog sanitizer request",
+    );
+
+    for (let index = 1; index <= 10; index += 1) {
+      sanitizer.push(
+        index % 2 === 0
+          ? `正在理解语义 RAW_BACKLOG_${index}。`
+          : `正在核对术语 RAW_BACKLOG_${index}。`,
+      );
+    }
+
+    assert.equal(sanitizer.snapshot().queuedCandidateCount, 4);
+    assert.ok(sanitizer.snapshot().compactedCandidateCount >= 6);
+    writeSuccessfulSanitizerResult(
+      sanitizerStreams[0],
+      "正在理解整体含义。",
+    );
+    await waitForCondition(
+      () => requests.length === 2,
+      "compacted backlog sanitizer request",
+    );
+    const compactedCandidate = JSON.parse(
+      requests[1].body.messages[1].content,
+    ).privateReasoningCandidate;
+
+    assert.equal(compactedCandidate.compacted, true);
+    assert.equal(compactedCandidate.reason, "backlog-merge");
+    assert.match(JSON.stringify(compactedCandidate.units), /RAW_BACKLOG_1/);
+    assert.match(JSON.stringify(compactedCandidate.units), /RAW_BACKLOG_7/);
+    sanitizer.complete();
+  });
+
+  it("caps max-effort public thinking at 24 persisted-safe parts", async () => {
     process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
     const requests = [];
     const sanitizerStreams = [];
@@ -581,6 +697,7 @@ describe("translation model client", () => {
       return stream.response;
     };
     const sanitizer = createTranslationReasoningSanitizer({
+      reasoningEffort: "max",
       onTextDone: ({ text }) => completedParts.push(text),
       requestBody: {
         sourceLang: "auto",
@@ -589,9 +706,12 @@ describe("translation model client", () => {
       },
     });
 
-    for (let index = 0; index < 6; index += 1) {
+    for (let index = 0; index < 24; index += 1) {
+      const privatePhase = index % 2 === 0
+        ? "正在理解语义"
+        : "正在核对术语";
       sanitizer.push(
-        `RAW_PERSISTENCE_WINDOW_${index}_${"R".repeat(360)}`,
+        `${privatePhase} RAW_PERSISTENCE_WINDOW_${index}_${"R".repeat(120)}。`,
       );
       await waitForCondition(
         () => sanitizerStreams.length === index + 1,
@@ -599,7 +719,9 @@ describe("translation model client", () => {
       );
       writeSuccessfulSanitizerResult(
         sanitizerStreams[index],
-        `正在处理第${index + 1}阶段${"安".repeat(200)}`,
+        `${String.fromCodePoint(0x4e00 + index).repeat(30)}。`,
+        undefined,
+        { change: "major" },
       );
       await waitForCondition(
         () => completedParts.length === index + 1,
@@ -608,21 +730,23 @@ describe("translation model client", () => {
       await new Promise((resolve) => setImmediate(resolve));
     }
 
-    sanitizer.push(`RAW_SEVENTH_WINDOW_${"S".repeat(360)}`);
+    sanitizer.push(
+      `正在理解语义 RAW_TWENTY_FIFTH_WINDOW_${"S".repeat(120)}。`,
+    );
     await new Promise((resolve) => setImmediate(resolve));
     await new Promise((resolve) => setImmediate(resolve));
 
-    assert.equal(requests.length, 6);
-    assert.equal(sanitizer.snapshot().partCount, 6);
-    assert.equal(completedParts.length, 6);
+    assert.equal(requests.length, 24);
+    assert.equal(sanitizer.snapshot().partCount, 24);
+    assert.equal(completedParts.length, 24);
     assert.ok(
-      completedParts.join("\n\n").length <= 1_200,
-      "persisted public thinking history must fit the storage limit",
+      completedParts.join("\n\n").length <= 6_000,
+      "persisted public thinking history must fit the expanded storage limit",
     );
     sanitizer.complete();
   });
 
-  it("caps failed sanitizer attempts without affecting the main translation budget", async () => {
+  it("opens the sanitizer circuit after three consecutive failures", async () => {
     process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
     let requests = 0;
     globalThis.fetch = async () => {
@@ -633,6 +757,7 @@ describe("translation model client", () => {
       );
     };
     const sanitizer = createTranslationReasoningSanitizer({
+      reasoningEffort: "max",
       requestBody: {
         sourceLang: "auto",
         summaryLocale: "zh-CN",
@@ -640,8 +765,13 @@ describe("translation model client", () => {
       },
     });
 
-    for (let index = 0; index < 8; index += 1) {
-      sanitizer.push(`RAW_FAILED_WINDOW_${index}_${"T".repeat(360)}`);
+    for (let index = 0; index < 3; index += 1) {
+      const privatePhase = index % 2 === 0
+        ? "正在理解语义"
+        : "正在核对术语";
+      sanitizer.push(
+        `${privatePhase} RAW_FAILED_WINDOW_${index}_${"T".repeat(120)}。`,
+      );
       await waitForCondition(
         () => requests === index + 1,
         `failed sanitizer request ${index + 1}`,
@@ -649,12 +779,59 @@ describe("translation model client", () => {
       await new Promise((resolve) => setImmediate(resolve));
     }
 
-    sanitizer.push(`RAW_NINTH_FAILED_WINDOW_${"U".repeat(360)}`);
+    sanitizer.push(
+      `正在核对术语 RAW_FOURTH_FAILED_WINDOW_${"U".repeat(120)}。`,
+    );
     await new Promise((resolve) => setImmediate(resolve));
     await new Promise((resolve) => setImmediate(resolve));
 
-    assert.equal(requests, 8);
+    assert.equal(requests, 3);
+    assert.equal(sanitizer.snapshot().circuitOpen, true);
     assert.equal(sanitizer.snapshot().degraded, true);
+    assert.equal(sanitizer.snapshot().partCount, 0);
+    sanitizer.complete();
+  });
+
+  it("requires both stop and DONE for a structured sanitizer result", async () => {
+    process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
+    const sanitizerStream = createControlledSseResponse();
+    const sanitizerStarted = createDeferred();
+    globalThis.fetch = async () => {
+      sanitizerStarted.resolve();
+      return sanitizerStream.response;
+    };
+    const sanitizer = createTranslationReasoningSanitizer({
+      reasoningEffort: "max",
+      requestBody: {
+        sourceLang: "auto",
+        summaryLocale: "zh-CN",
+        targetLang: "zh-CN",
+      },
+    });
+
+    sanitizer.push("正在理解语义 RAW_INCOMPLETE_SANITIZER。");
+    await sanitizerStarted.promise;
+    sanitizerStream.writeOpenAiChunk({
+      choices: [{
+        delta: {
+          content: JSON.stringify({
+            change: "material",
+            phase: "comprehension",
+            text: "正在理解整体语义。",
+          }),
+        },
+        finish_reason: null,
+      }],
+    });
+    sanitizerStream.writeOpenAiChunk({
+      choices: [{ delta: {}, finish_reason: "stop" }],
+    });
+    sanitizerStream.close();
+    await waitForCondition(
+      () => sanitizer.snapshot().degraded,
+      "incomplete structured sanitizer result",
+    );
+
     assert.equal(sanitizer.snapshot().partCount, 0);
     sanitizer.complete();
   });
@@ -669,6 +846,7 @@ describe("translation model client", () => {
       return stream.response;
     };
     const sanitizer = createTranslationReasoningSanitizer({
+      reasoningEffort: "max",
       onTextDone: ({ text }) => completedParts.push(text),
       requestBody: {
         sourceLang: "auto",
@@ -678,7 +856,9 @@ describe("translation model client", () => {
     });
     const repeatedUpdate = "正在核对术语与句法关系。";
 
-    sanitizer.push(`RAW_FIRST_DUPLICATE_WINDOW_${"V".repeat(360)}`);
+    sanitizer.push(
+      `正在理解语义 RAW_FIRST_DUPLICATE_WINDOW_${"V".repeat(120)}。`,
+    );
     await waitForCondition(
       () => sanitizerStreams.length === 1,
       "first duplicate sanitizer request",
@@ -690,7 +870,9 @@ describe("translation model client", () => {
     );
     await new Promise((resolve) => setImmediate(resolve));
 
-    sanitizer.push(`RAW_SECOND_DUPLICATE_WINDOW_${"W".repeat(360)}`);
+    sanitizer.push(
+      `正在核对术语 RAW_SECOND_DUPLICATE_WINDOW_${"W".repeat(120)}。`,
+    );
     await waitForCondition(
       () => sanitizerStreams.length === 2,
       "second duplicate sanitizer request",
@@ -699,7 +881,9 @@ describe("translation model client", () => {
     await new Promise((resolve) => setImmediate(resolve));
     await new Promise((resolve) => setImmediate(resolve));
 
-    sanitizer.push(`RAW_THIRD_DUPLICATE_WINDOW_${"X".repeat(360)}`);
+    sanitizer.push(
+      `正在理解语义 RAW_THIRD_DUPLICATE_WINDOW_${"X".repeat(120)}。`,
+    );
     await waitForCondition(
       () => sanitizerStreams.length === 3,
       "near-duplicate sanitizer request",
@@ -720,7 +904,7 @@ describe("translation model client", () => {
   it("aborts an in-flight sanitizer before the first translation delta", async () => {
     process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
     process.env.KIMI_API_KEY = "test-kimi-key";
-    const rawReasoning = `RAW_ABORT_PRIVATE_${"C".repeat(180)}`;
+    const rawReasoning = `RAW_ABORT_PRIVATE_${"C".repeat(180)}。`;
     const mainStream = createControlledSseResponse();
     const sanitizerStarted = createDeferred();
     let sanitizerSignal;
@@ -783,7 +967,7 @@ describe("translation model client", () => {
   it("marks a failed sanitizer as degraded without blocking translation", async () => {
     process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
     process.env.KIMI_API_KEY = "test-kimi-key";
-    const rawReasoning = `RAW_FAILED_PRIVATE_${"D".repeat(180)}`;
+    const rawReasoning = `RAW_FAILED_PRIVATE_${"D".repeat(180)}。`;
     const mainStream = createControlledSseResponse();
     const sanitizerFailed = createDeferred();
     globalThis.fetch = async (url, init) => {
@@ -835,7 +1019,7 @@ describe("translation model client", () => {
   it("rejects a sanitizer response that copies raw reasoning", async () => {
     process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
     process.env.KIMI_API_KEY = "test-kimi-key";
-    const rawReasoning = `RAW_ECHO_PRIVATE_SENTINEL_${"E".repeat(160)}`;
+    const rawReasoning = `RAW_ECHO_PRIVATE_SENTINEL_${"E".repeat(160)}。`;
     const mainStream = createControlledSseResponse();
     const sanitizerStream = createControlledSseResponse();
     const sanitizerStarted = createDeferred();
@@ -948,6 +1132,7 @@ describe("translation model client", () => {
       return sanitizerStream.response;
     };
     const sanitizer = createTranslationReasoningSanitizer({
+      reasoningEffort: "max",
       onTextDone: ({ text }) => completedParts.push(text),
       requestBody: {
         sourceLang: "auto",
@@ -1440,7 +1625,7 @@ function createRequestBody(model) {
 function createReasoningFreeTranslationRequest(model) {
   return createTranslationRequest({
     ...createRequestBody(model),
-    reasoningEffort: "low",
+    reasoningEffort: "max",
     reasoningEnabled: true,
     requestKind: "free",
     sourceLang: "auto",
@@ -1461,7 +1646,7 @@ function isReasoningSanitizerCall(call) {
   return call?.body?.model === "deepseek-v4-flash" &&
     call.body.stream === true &&
     typeof call.body.messages?.[0]?.content === "string" &&
-    /private translation-reasoning window/i
+    /private translation-reasoning candidate/i
       .test(call.body.messages[0].content);
 }
 
@@ -1543,9 +1728,19 @@ function writeSuccessfulSanitizerResult(
     prompt_tokens: 4,
     total_tokens: 6,
   },
+  progress = {},
 ) {
   stream.writeOpenAiChunk({
-    choices: [{ delta: { content: text }, finish_reason: null }],
+    choices: [{
+      delta: {
+        content: JSON.stringify({
+          change: progress.change ?? "material",
+          phase: progress.phase ?? "comprehension",
+          text,
+        }),
+      },
+      finish_reason: null,
+    }],
   });
   stream.writeOpenAiChunk({
     choices: [{ delta: {}, finish_reason: "stop" }],
