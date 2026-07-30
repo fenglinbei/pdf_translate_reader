@@ -4,7 +4,7 @@ import { useI18n } from "../i18n/I18nProvider";
 
 type PdfImportDropzoneProps = {
   isImporting: boolean;
-  onImport: (file: File) => void;
+  onImport: (file: File) => unknown;
   variant?: "full" | "compact";
 };
 
@@ -24,7 +24,7 @@ export function PdfImportDropzone({
       const pdfFile = Array.from(files).find(isSupportedImportFile);
 
       if (pdfFile) {
-        onImport(pdfFile);
+        void Promise.resolve(onImport(pdfFile)).catch(() => undefined);
       }
     },
     [onImport],

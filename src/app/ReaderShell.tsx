@@ -10,6 +10,7 @@ import {
   Download,
   Hand,
   Languages,
+  LibraryBig,
   LoaderCircle,
   LogOut,
   MessageSquareText,
@@ -58,6 +59,7 @@ import { downloadBlob, replaceFileExtension } from "../importExport/download";
 import type { DocumentArchiveDocument } from "../importExport/archiveTypes";
 import { PdfImportDropzone } from "../pdf/PdfImportDropzone";
 import { PdfLibrary } from "../pdf/PdfLibrary";
+import { LibraryWorkspaceContainer } from "../library/LibraryWorkspaceContainer";
 import { createPdfFingerprint } from "../pdf/pdfFingerprint";
 import { PdfViewer, type PinLocateRequest } from "../pdf/PdfViewer";
 import { PaperQaPanel } from "../qa/PaperQaPanel";
@@ -87,6 +89,7 @@ import {
 import type {
   AppSettings,
   CloudPdfLibraryEntry,
+  LibraryDocument,
   MobileInteractionMode,
   MathpixDocumentRecord,
   MathpixParsedPage,
@@ -473,6 +476,7 @@ export function ReaderShell() {
   const [isFreeTranslationOpen, setIsFreeTranslationOpen] = useState(false);
   const [freeTranslationSeed, setFreeTranslationSeed] = useState<{ id: number; text: string }>();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isLibraryWorkbenchOpen, setIsLibraryWorkbenchOpen] = useState(false);
   const [isLibraryPaneOpen, setIsLibraryPaneOpen] = useState(true);
   const [isPinsPaneOpen, setIsPinsPaneOpen] = useState(true);
   const [isNarrowViewport, setIsNarrowViewport] = useState(false);
@@ -522,8 +526,13 @@ export function ReaderShell() {
   const activeCloudDocumentIdRef = useRef<string>();
   const activeReaderSessionUserIdRef = useRef<string>();
   const activeFingerprintRef = useRef<string>();
+  const activeHydrationRequestIdRef = useRef(0);
   const autoRestoreUserIdRef = useRef<string>();
+  const documentActivationRequestIdRef = useRef(0);
+  const importOperationIdRef = useRef(0);
+  const libraryWorkbenchTriggerRef = useRef<HTMLButtonElement>(null);
   const locateRequestIdRef = useRef(0);
+  const readerWorkspaceRef = useRef<HTMLElement>(null);
   const deletingPdfFingerprintsRef = useRef(new Set<string>());
   const mathpixAbortControllerRef = useRef<AbortController>();
   const mathpixAutoStartedFingerprintRef = useRef<string>();
@@ -590,6 +599,27 @@ export function ReaderShell() {
     openFreeTranslation(sourceText);
     setSentenceSelection(undefined);
   }, [openFreeTranslation]);
+
+  const closeLibraryWorkbench = useCallback(() => {
+    setIsLibraryWorkbenchOpen(false);
+    window.requestAnimationFrame(() => {
+      libraryWorkbenchTriggerRef.current?.focus();
+    });
+  }, []);
+
+  useEffect(() => {
+    const workspace = readerWorkspaceRef.current;
+
+    if (!workspace) {
+      return;
+    }
+
+    if (isLibraryWorkbenchOpen) {
+      workspace.setAttribute("inert", "");
+    } else {
+      workspace.removeAttribute("inert");
+    }
+  }, [isLibraryWorkbenchOpen]);
 
   useEffect(() => {
     activeFingerprintRef.current = activeFingerprint;
@@ -738,6 +768,9 @@ export function ReaderShell() {
       activeReaderSessionUserIdRef.current !== readerSessionUserId
     ) {
       autoRestoreUserIdRef.current = undefined;
+      documentActivationRequestIdRef.current += 1;
+      activeFingerprintRef.current = undefined;
+      activeHydrationRequestIdRef.current = 0;
       setCurrentEntry(undefined);
       setSentenceSelection(undefined);
       replacePinnedTranslationCards([]);
@@ -879,6 +912,35 @@ export function ReaderShell() {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [mobilePanel]);
+
+  useEffect(() => {
+    if (!isLibraryWorkbenchOpen) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key === "Escape"
+        && !isSettingsOpen
+        && !isFreeTranslationOpen
+        && !mobilePanel
+      ) {
+        closeLibraryWorkbench();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [
+    isFreeTranslationOpen,
+    isLibraryWorkbenchOpen,
+    isSettingsOpen,
+    mobilePanel,
+    closeLibraryWorkbench,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1024,7 +1086,6 @@ export function ReaderShell() {
     currentEntry?.fileName,
     currentEntry?.fileSize,
     currentEntry?.fingerprint,
-    currentEntry?.pdfMetadata?.title,
     replacePinnedTranslationCards,
   ]);
 
@@ -1348,12 +1409,17 @@ export function ReaderShell() {
 
   const handleImport = useCallback(
     async (file: File) => {
+      importOperationIdRef.current += 1;
+      const importOperationId = importOperationIdRef.current;
+      documentActivationRequestIdRef.current += 1;
+      const activationRequestId = documentActivationRequestIdRef.current;
       setIsImporting(true);
       setStatusMessage(undefined);
       setDamagedLibraryFingerprint(undefined);
 
       try {
         let entry: PdfLibraryEntry;
+        let cloudImportSucceeded = true;
 
         if (isDocumentArchiveFile(file)) {
           const archive = await parseDocumentArchive(file);
@@ -1372,7 +1438,9 @@ export function ReaderShell() {
 
           if (entry.cloudDocumentId) {
             await hydrateCloudDocumentState(entry.cloudDocumentId, entry.fingerprint).catch(() => {
-              setStatusMessage("Could not sync cloud document state.");
+              if (activationRequestId === documentActivationRequestIdRef.current) {
+                setStatusMessage("Could not sync cloud document state.");
+              }
             });
           }
 
@@ -1390,38 +1458,66 @@ export function ReaderShell() {
             ...identity,
           });
 
-          void importPdfToCloud(file, identity)
-            .then(async (cloudEntry) => {
-              if (cloudEntry.cloudDocumentId) {
-                await hydrateCloudDocumentState(cloudEntry.cloudDocumentId, cloudEntry.fingerprint).catch(() => {
-                  setStatusMessage("Could not sync cloud document state.");
-                });
-              }
+          // Open the local copy immediately, but keep this callback pending until
+          // cloud import settles so the full-page library can refresh its Inbox
+          // without racing the background upload.
+          if (activationRequestId === documentActivationRequestIdRef.current) {
+            activeFingerprintRef.current = entry.fingerprint;
+            activeHydrationRequestIdRef.current = activationRequestId;
+            setCurrentEntry(entry);
+          }
 
-              setCurrentEntry((current) =>
-                current?.fingerprint === cloudEntry.fingerprint
-                  ? { ...current, ...cloudEntry }
-                  : current,
+          try {
+            const cloudEntry = await importPdfToCloud(file, identity);
+
+            if (cloudEntry.cloudDocumentId) {
+              await hydrateCloudDocumentState(
+                cloudEntry.cloudDocumentId,
+                cloudEntry.fingerprint,
+              ).catch(() => {
+                if (activationRequestId === documentActivationRequestIdRef.current) {
+                  setStatusMessage("Could not sync cloud document state.");
+                }
+              });
+            }
+
+            entry = { ...entry, ...cloudEntry };
+            await refreshLibrary();
+          } catch (error) {
+            cloudImportSucceeded = false;
+            if (activationRequestId === documentActivationRequestIdRef.current) {
+              setStatusMessage(
+                getStorageErrorMessage(
+                  error,
+                  "PDF opened locally, but cloud upload failed.",
+                ),
               );
-              await refreshLibrary();
-            })
-            .catch((error) => {
-              setStatusMessage(getStorageErrorMessage(error, "PDF opened locally, but cloud upload failed."));
-            });
+            }
+          }
         }
 
-        setCurrentEntry(entry);
-        setSentenceSelection(undefined);
-        setMobilePanel(null);
-        replacePinnedTranslationCards([]);
-        setPins([]);
+        if (activationRequestId === documentActivationRequestIdRef.current) {
+          activeFingerprintRef.current = entry.fingerprint;
+          activeHydrationRequestIdRef.current = activationRequestId;
+          setCurrentEntry(entry);
+          setSentenceSelection(undefined);
+          setMobilePanel(null);
+          replacePinnedTranslationCards([]);
+          setPins([]);
+        }
         void refreshLibrary().catch(() => {
           setStatusMessage("Could not refresh the PDF library.");
         });
+        return cloudImportSucceeded;
       } catch (error) {
-        setStatusMessage(getStorageErrorMessage(error, "Could not import this PDF."));
+        if (activationRequestId === documentActivationRequestIdRef.current) {
+          setStatusMessage(getStorageErrorMessage(error, "Could not import this PDF."));
+        }
+        return false;
       } finally {
-        setIsImporting(false);
+        if (importOperationId === importOperationIdRef.current) {
+          setIsImporting(false);
+        }
       }
     },
     [refreshLibrary, replacePinnedTranslationCards],
@@ -1429,12 +1525,20 @@ export function ReaderShell() {
 
   const handleOpenHistory = useCallback(
     async (entry: CloudPdfLibraryEntry) => {
+      documentActivationRequestIdRef.current += 1;
+      const activationRequestId = documentActivationRequestIdRef.current;
       setStatusMessage(undefined);
       setDamagedLibraryFingerprint(undefined);
 
       try {
         const openedEntry = await openCloudPdfDocument(entry.cloudDocumentId);
 
+        if (activationRequestId !== documentActivationRequestIdRef.current) {
+          return false;
+        }
+
+        activeFingerprintRef.current = openedEntry.fingerprint;
+        activeHydrationRequestIdRef.current = activationRequestId;
         setCurrentEntry(openedEntry);
         setSentenceSelection(undefined);
         setMobilePanel(null);
@@ -1447,6 +1551,13 @@ export function ReaderShell() {
         if (openedEntry.cloudDocumentId) {
           void hydrateCloudDocumentState(openedEntry.cloudDocumentId, openedEntry.fingerprint)
             .then((state) => {
+              if (
+                activeFingerprintRef.current !== openedEntry.fingerprint
+                || activeHydrationRequestIdRef.current !== activationRequestId
+              ) {
+                return;
+              }
+
               setCurrentEntry((current) =>
                 current?.fingerprint === openedEntry.fingerprint
                   ? { ...current, cloudDocumentId: openedEntry.cloudDocumentId }
@@ -1466,16 +1577,27 @@ export function ReaderShell() {
               replacePinnedTranslationCards(state.pinnedTranslationCards);
             })
             .catch(() => {
-              setStatusMessage("Could not sync cloud document state.");
+              if (
+                activeFingerprintRef.current === openedEntry.fingerprint
+                && activeHydrationRequestIdRef.current === activationRequestId
+              ) {
+                setStatusMessage("Could not sync cloud document state.");
+              }
             });
         }
+        return true;
       } catch (error) {
+        if (activationRequestId !== documentActivationRequestIdRef.current) {
+          return false;
+        }
+
         setDamagedLibraryFingerprint(entry.fingerprint);
         setStatusMessage(
           error instanceof Error
             ? `${error.message} Try opening it again or remove the cloud PDF record.`
             : "Could not open this PDF. Try opening it again or remove the cloud PDF record.",
         );
+        return false;
       }
     },
     [refreshLibrary, replacePinnedTranslationCards],
@@ -2064,10 +2186,19 @@ export function ReaderShell() {
           setStatusMessage(undefined);
         }
 
-        if (activeFingerprint === fingerprint || currentEntry?.cloudDocumentId === cloudDocumentId) {
+        if (
+          (fingerprint && activeFingerprintRef.current === fingerprint)
+          || (
+            cloudDocumentId
+            && activeCloudDocumentIdRef.current === cloudDocumentId
+          )
+        ) {
           for (const card of pinnedTranslationCardsRef.current) {
             clearPinnedTranslationCardSaveTimer(card.key);
           }
+          documentActivationRequestIdRef.current += 1;
+          activeFingerprintRef.current = undefined;
+          activeHydrationRequestIdRef.current = 0;
           setCurrentEntry(undefined);
           setSentenceSelection(undefined);
           replacePinnedTranslationCards([]);
@@ -2083,7 +2214,6 @@ export function ReaderShell() {
       }
     },
     [
-      activeFingerprint,
       currentEntry,
       damagedLibraryFingerprint,
       clearPinnedTranslationCardSaveTimer,
@@ -2111,6 +2241,31 @@ export function ReaderShell() {
       setStatusMessage("Could not remove the broken PDF history record.");
     });
   }, [damagedLibraryFingerprint, handleDeletePdfData]);
+
+  const handleLibraryWorkbenchChanged = useCallback(
+    async (updatedDocument?: LibraryDocument) => {
+      await refreshLibrary();
+
+      if (!updatedDocument) {
+        return;
+      }
+
+      setCurrentEntry((current) =>
+        current?.cloudDocumentId === updatedDocument.cloudDocumentId
+          ? {
+              ...current,
+              archivedAt: updatedDocument.archivedAt,
+              bibliographicMetadata: updatedDocument.bibliographicMetadata,
+              libraryUpdatedAt: updatedDocument.libraryUpdatedAt,
+              pdfMetadata: updatedDocument.pdfMetadata,
+              readingStatus: updatedDocument.readingStatus,
+              starredAt: updatedDocument.starredAt,
+            }
+          : current,
+      );
+    },
+    [refreshLibrary],
+  );
 
   const handleLocatePin = useCallback((pin: TranslationPin) => {
     locateRequestIdRef.current += 1;
@@ -2742,6 +2897,34 @@ export function ReaderShell() {
           <span className="brand-text">{t("app.name")}</span>
         </div>
         <div className="topbar-actions">
+          <button
+            aria-label={
+              isLibraryWorkbenchOpen
+                ? t("library.closeWorkbench")
+                : t("library.openWorkbench")
+            }
+            aria-pressed={isLibraryWorkbenchOpen}
+            className={`icon-button library-workbench-trigger ${
+              isLibraryWorkbenchOpen ? "library-workbench-trigger--active" : ""
+            }`}
+            ref={libraryWorkbenchTriggerRef}
+            onClick={() => {
+              setMobilePanel(null);
+              if (isLibraryWorkbenchOpen) {
+                closeLibraryWorkbench();
+              } else {
+                setIsLibraryWorkbenchOpen(true);
+              }
+            }}
+            title={
+              isLibraryWorkbenchOpen
+                ? t("library.closeWorkbench")
+                : t("library.openWorkbench")
+            }
+            type="button"
+          >
+            <LibraryBig aria-hidden="true" size={17} strokeWidth={2} />
+          </button>
           {currentEntry ? null : renderSidebarToggleButtons()}
           {currentEntry ? null : (
             <button
@@ -2856,7 +3039,12 @@ export function ReaderShell() {
         />
       ) : null}
 
-      <main className={`reader-workspace ${isPaneResizing ? "reader-workspace--resizing" : ""}`} style={workspaceStyle}>
+      <main
+        aria-hidden={isLibraryWorkbenchOpen}
+        className={`reader-workspace ${isPaneResizing ? "reader-workspace--resizing" : ""}`}
+        ref={readerWorkspaceRef}
+        style={workspaceStyle}
+      >
         <aside
           className={`library-pane ${isLibraryPaneOpen ? "" : "pane--closed"}`}
           aria-hidden={!isLibraryPaneOpen}
@@ -3019,7 +3207,17 @@ export function ReaderShell() {
               )}
         </aside>
       </main>
-      {!isNarrowViewport && !isLibraryPaneOpen && (
+      {isLibraryWorkbenchOpen ? (
+        <LibraryWorkspaceContainer
+          activeDocumentId={currentEntry?.cloudDocumentId}
+          isImporting={isImporting}
+          onClose={closeLibraryWorkbench}
+          onImport={handleImport}
+          onLibraryChanged={handleLibraryWorkbenchChanged}
+          onOpenDocument={handleOpenHistory}
+        />
+      ) : null}
+      {!isLibraryWorkbenchOpen && !isNarrowViewport && !isLibraryPaneOpen && (
         <button
           aria-label={t("reader.openLibraryPane")}
           className="pane-reopen-tab pane-reopen-tab--library"
@@ -3030,7 +3228,7 @@ export function ReaderShell() {
           <PanelLeftOpen aria-hidden="true" size={16} strokeWidth={2} />
         </button>
       )}
-      {!isNarrowViewport && !isPinsPaneOpen && (
+      {!isLibraryWorkbenchOpen && !isNarrowViewport && !isPinsPaneOpen && (
         <button
           aria-label={rightPaneTab === "ask" ? t("reader.openAskPane") : t("reader.openAnnotationsPane")}
           className="pane-reopen-tab pane-reopen-tab--pins"
@@ -3045,7 +3243,7 @@ export function ReaderShell() {
           )}
         </button>
       )}
-      {currentEntry ? renderMobileReaderSideDock() : null}
+      {!isLibraryWorkbenchOpen && currentEntry ? renderMobileReaderSideDock() : null}
       {mobilePanel ? (
         <div
           className="mobile-panel-backdrop"

@@ -446,18 +446,176 @@ create table if not exists public.user_documents (
   last_scroll_top double precision,
   last_zoom double precision,
   open_count integer not null default 1 check (open_count >= 0),
+  title text,
+  authors text[] not null default '{}'::text[],
+  publication_year integer,
+  publication_venue text,
+  doi text,
+  arxiv_id text,
+  abstract text,
+  reading_status text not null default 'inbox'
+    check (reading_status in ('inbox', 'to-read', 'reading', 'finished')),
+  starred_at timestamptz,
+  archived_at timestamptz,
+  library_updated_at timestamptz not null default now(),
+  library_fts tsvector,
   deleted_at timestamptz
 );
 
 alter table public.user_documents
-  add column if not exists last_zoom double precision;
+  add column if not exists last_zoom double precision,
+  add column if not exists title text,
+  add column if not exists authors text[] not null default '{}'::text[],
+  add column if not exists publication_year integer,
+  add column if not exists publication_venue text,
+  add column if not exists doi text,
+  add column if not exists arxiv_id text,
+  add column if not exists abstract text,
+  add column if not exists reading_status text not null default 'inbox',
+  add column if not exists starred_at timestamptz,
+  add column if not exists archived_at timestamptz,
+  add column if not exists library_updated_at timestamptz not null default now(),
+  add column if not exists library_fts tsvector;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.user_documents'::regclass
+      and conname = 'user_documents_reading_status_check'
+  ) then
+    alter table public.user_documents
+      add constraint user_documents_reading_status_check
+      check (reading_status in ('inbox', 'to-read', 'reading', 'finished'));
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.user_documents'::regclass
+      and conname = 'user_documents_publication_year_check'
+  ) then
+    alter table public.user_documents
+      add constraint user_documents_publication_year_check
+      check (publication_year is null or publication_year between 1 and 3000);
+  end if;
+end;
+$$;
+
+create or replace function public.update_user_document_library_fields()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  new.title := nullif(btrim(new.title), '');
+  new.publication_venue := nullif(btrim(new.publication_venue), '');
+  new.doi := nullif(btrim(new.doi), '');
+  new.arxiv_id := nullif(btrim(new.arxiv_id), '');
+  new.abstract := nullif(btrim(new.abstract), '');
+  new.authors := coalesce(new.authors, '{}'::text[]);
+  new.library_updated_at := now();
+  new.library_fts :=
+    setweight(
+      to_tsvector(
+        'simple'::regconfig,
+        coalesce(new.title, '') || ' ' ||
+        coalesce(new.pdf_metadata->>'title', '') || ' ' ||
+        coalesce(new.display_file_name, '')
+      ),
+      'A'
+    ) ||
+    setweight(
+      to_tsvector(
+        'simple'::regconfig,
+        coalesce(array_to_string(new.authors, ' '), '') || ' ' ||
+        coalesce(new.pdf_metadata->>'author', '')
+      ),
+      'B'
+    ) ||
+    setweight(
+      to_tsvector(
+        'simple'::regconfig,
+        coalesce(new.publication_venue, '') || ' ' ||
+        coalesce(new.doi, '') || ' ' ||
+        coalesce(new.arxiv_id, '')
+      ),
+      'B'
+    ) ||
+    setweight(
+      to_tsvector('simple'::regconfig, coalesce(new.abstract, '')),
+      'C'
+    );
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_user_documents_library_fields
+  on public.user_documents;
+
+create trigger trg_user_documents_library_fields
+before insert or update of
+  display_file_name,
+  pdf_metadata,
+  title,
+  authors,
+  publication_year,
+  publication_venue,
+  doi,
+  arxiv_id,
+  abstract,
+  reading_status,
+  starred_at,
+  archived_at
+on public.user_documents
+for each row
+execute function public.update_user_document_library_fields();
+
+update public.user_documents
+set
+  title = coalesce(
+    nullif(title, ''),
+    nullif(pdf_metadata->>'title', ''),
+    nullif(regexp_replace(display_file_name, '[.]pdf$', '', 'i'), '')
+  ),
+  authors = case
+    when cardinality(authors) > 0 then authors
+    when nullif(pdf_metadata->>'author', '') is not null
+      then array[pdf_metadata->>'author']
+    else '{}'::text[]
+  end
+where library_fts is null;
 
 create unique index if not exists user_documents_active_user_content_sha256_key
   on public.user_documents (user_id, content_sha256)
   where deleted_at is null;
 
+create unique index if not exists user_documents_id_user_key
+  on public.user_documents (id, user_id);
+
 create index if not exists user_documents_user_opened_idx
   on public.user_documents (user_id, last_opened_at desc)
+  where deleted_at is null;
+
+create index if not exists user_documents_library_updated_idx
+  on public.user_documents (user_id, library_updated_at desc)
+  where deleted_at is null;
+
+create index if not exists user_documents_library_status_idx
+  on public.user_documents (user_id, reading_status, library_updated_at desc)
+  where deleted_at is null;
+
+create index if not exists user_documents_library_starred_idx
+  on public.user_documents (user_id, starred_at desc)
+  where deleted_at is null and starred_at is not null;
+
+create index if not exists user_documents_library_archived_idx
+  on public.user_documents (user_id, archived_at desc)
+  where deleted_at is null and archived_at is not null;
+
+create index if not exists user_documents_library_fts_idx
+  on public.user_documents using gin (library_fts)
   where deleted_at is null;
 
 alter table public.user_documents enable row level security;
@@ -486,6 +644,975 @@ create policy "Users can delete their documents"
   on public.user_documents
   for delete
   using (auth.uid() = user_id);
+
+create table if not exists public.user_collections (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  parent_id uuid references public.user_collections(id) on delete set null,
+  name text not null check (btrim(name) <> ''),
+  description text,
+  color text,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint user_collections_parent_not_self check (parent_id is null or parent_id <> id)
+);
+
+create unique index if not exists user_collections_user_parent_name_key
+  on public.user_collections (
+    user_id,
+    coalesce(parent_id, '00000000-0000-0000-0000-000000000000'::uuid),
+    lower(name)
+  );
+
+create index if not exists user_collections_user_sort_idx
+  on public.user_collections (user_id, parent_id, sort_order, lower(name));
+
+create or replace function public.validate_user_collection_parent()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.parent_id is null then
+    return new;
+  end if;
+
+  if not exists (
+    select 1
+    from public.user_collections parent_collection
+    where parent_collection.id = new.parent_id
+      and parent_collection.user_id = new.user_id
+  ) then
+    raise exception 'Collection parent must belong to the same user.';
+  end if;
+
+  if exists (
+    with recursive ancestors as (
+      select parent_collection.id, parent_collection.parent_id
+      from public.user_collections parent_collection
+      where parent_collection.id = new.parent_id
+        and parent_collection.user_id = new.user_id
+
+      union all
+
+      select parent_collection.id, parent_collection.parent_id
+      from public.user_collections parent_collection
+      join ancestors
+        on parent_collection.id = ancestors.parent_id
+      where parent_collection.user_id = new.user_id
+    )
+    select 1
+    from ancestors
+    where ancestors.id = new.id
+  ) then
+    raise exception 'Collection hierarchy cannot contain a cycle.';
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke execute
+  on function public.validate_user_collection_parent()
+  from authenticated, anon, public;
+
+drop trigger if exists trg_user_collections_validate_parent
+  on public.user_collections;
+create trigger trg_user_collections_validate_parent
+before insert or update of parent_id, user_id
+on public.user_collections
+for each row
+execute function public.validate_user_collection_parent();
+
+alter table public.user_collections enable row level security;
+
+drop policy if exists "Users can manage their collections" on public.user_collections;
+create policy "Users can manage their collections"
+  on public.user_collections
+  for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create table if not exists public.user_tags (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null check (btrim(name) <> ''),
+  color text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists user_tags_user_name_key
+  on public.user_tags (user_id, lower(name));
+
+create index if not exists user_tags_user_name_idx
+  on public.user_tags (user_id, lower(name));
+
+alter table public.user_tags enable row level security;
+
+drop policy if exists "Users can manage their tags" on public.user_tags;
+create policy "Users can manage their tags"
+  on public.user_tags
+  for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create table if not exists public.user_document_collections (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  user_document_id uuid not null references public.user_documents(id) on delete cascade,
+  collection_id uuid not null references public.user_collections(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (user_document_id, collection_id)
+);
+
+create index if not exists user_document_collections_user_collection_idx
+  on public.user_document_collections (user_id, collection_id, user_document_id);
+
+alter table public.user_document_collections enable row level security;
+
+drop policy if exists "Users can manage their document collections"
+  on public.user_document_collections;
+create policy "Users can manage their document collections"
+  on public.user_document_collections
+  for all
+  using (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from public.user_documents documents
+      where documents.id = user_document_id
+        and documents.user_id = auth.uid()
+    )
+    and exists (
+      select 1
+      from public.user_collections collections
+      where collections.id = collection_id
+        and collections.user_id = auth.uid()
+    )
+  );
+
+create table if not exists public.user_document_tags (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  user_document_id uuid not null references public.user_documents(id) on delete cascade,
+  tag_id uuid not null references public.user_tags(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (user_document_id, tag_id)
+);
+
+create index if not exists user_document_tags_user_tag_idx
+  on public.user_document_tags (user_id, tag_id, user_document_id);
+
+alter table public.user_document_tags enable row level security;
+
+drop policy if exists "Users can manage their document tags"
+  on public.user_document_tags;
+create policy "Users can manage their document tags"
+  on public.user_document_tags
+  for all
+  using (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from public.user_documents documents
+      where documents.id = user_document_id
+        and documents.user_id = auth.uid()
+    )
+    and exists (
+      select 1
+      from public.user_tags tags
+      where tags.id = tag_id
+        and tags.user_id = auth.uid()
+    )
+  );
+
+create or replace function public.touch_library_updated_at()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_user_collections_touch_updated_at
+  on public.user_collections;
+create trigger trg_user_collections_touch_updated_at
+before update on public.user_collections
+for each row
+execute function public.touch_library_updated_at();
+
+drop trigger if exists trg_user_tags_touch_updated_at
+  on public.user_tags;
+create trigger trg_user_tags_touch_updated_at
+before update on public.user_tags
+for each row
+execute function public.touch_library_updated_at();
+
+create or replace function public.touch_user_document_library_from_relation()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if tg_op in ('DELETE', 'UPDATE') then
+    update public.user_documents
+    set library_updated_at = now()
+    where id = old.user_document_id
+      and user_id = old.user_id;
+  end if;
+
+  if tg_op in ('INSERT', 'UPDATE') then
+    update public.user_documents
+    set library_updated_at = now()
+    where id = new.user_document_id
+      and user_id = new.user_id;
+  end if;
+
+  return null;
+end;
+$$;
+
+revoke execute
+  on function public.touch_user_document_library_from_relation()
+  from authenticated, anon, public;
+
+drop trigger if exists trg_user_document_collections_touch_document
+  on public.user_document_collections;
+create trigger trg_user_document_collections_touch_document
+after insert or update or delete
+on public.user_document_collections
+for each row
+execute function public.touch_user_document_library_from_relation();
+
+drop trigger if exists trg_user_document_tags_touch_document
+  on public.user_document_tags;
+create trigger trg_user_document_tags_touch_document
+after insert or update or delete
+on public.user_document_tags
+for each row
+execute function public.touch_user_document_library_from_relation();
+
+create or replace function public.set_user_document_organization(
+  p_document_id uuid,
+  p_collection_ids uuid[] default null,
+  p_tag_ids uuid[] default null
+)
+returns void
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  current_user_id uuid := auth.uid();
+  requested_count integer;
+  visible_count integer;
+begin
+  if current_user_id is null then
+    raise exception 'Authentication is required.'
+      using errcode = '42501';
+  end if;
+
+  if not exists (
+    select 1
+    from public.user_documents documents
+    where documents.id = p_document_id
+      and documents.user_id = current_user_id
+      and documents.deleted_at is null
+  ) then
+    raise exception 'Document not found.'
+      using errcode = 'P0002';
+  end if;
+
+  if p_collection_ids is not null then
+    select count(*)
+    into requested_count
+    from (
+      select distinct requested.id
+      from unnest(p_collection_ids) as requested(id)
+      where requested.id is not null
+    ) requested_collections;
+
+    if requested_count <> cardinality(p_collection_ids) then
+      raise exception 'Collection IDs must be unique and non-null.'
+        using errcode = '22023';
+    end if;
+
+    select count(*)
+    into visible_count
+    from public.user_collections collections
+    where collections.user_id = current_user_id
+      and collections.id = any(p_collection_ids);
+
+    if visible_count <> requested_count then
+      raise exception 'One or more collections do not exist.'
+        using errcode = '22023';
+    end if;
+  end if;
+
+  if p_tag_ids is not null then
+    select count(*)
+    into requested_count
+    from (
+      select distinct requested.id
+      from unnest(p_tag_ids) as requested(id)
+      where requested.id is not null
+    ) requested_tags;
+
+    if requested_count <> cardinality(p_tag_ids) then
+      raise exception 'Tag IDs must be unique and non-null.'
+        using errcode = '22023';
+    end if;
+
+    select count(*)
+    into visible_count
+    from public.user_tags tags
+    where tags.user_id = current_user_id
+      and tags.id = any(p_tag_ids);
+
+    if visible_count <> requested_count then
+      raise exception 'One or more tags do not exist.'
+        using errcode = '22023';
+    end if;
+  end if;
+
+  if p_collection_ids is not null then
+    delete from public.user_document_collections document_collections
+    where document_collections.user_id = current_user_id
+      and document_collections.user_document_id = p_document_id;
+
+    insert into public.user_document_collections (
+      user_id,
+      user_document_id,
+      collection_id
+    )
+    select
+      current_user_id,
+      p_document_id,
+      requested.id
+    from (
+      select distinct requested_collection.collection_id as id
+      from unnest(p_collection_ids)
+        as requested_collection(collection_id)
+    ) requested;
+  end if;
+
+  if p_tag_ids is not null then
+    delete from public.user_document_tags document_tags
+    where document_tags.user_id = current_user_id
+      and document_tags.user_document_id = p_document_id;
+
+    insert into public.user_document_tags (
+      user_id,
+      user_document_id,
+      tag_id
+    )
+    select
+      current_user_id,
+      p_document_id,
+      requested.id
+    from (
+      select distinct requested_tag.tag_id as id
+      from unnest(p_tag_ids)
+        as requested_tag(tag_id)
+    ) requested;
+  end if;
+end;
+$$;
+
+revoke execute
+  on function public.set_user_document_organization(uuid, uuid[], uuid[])
+  from anon, public;
+grant execute
+  on function public.set_user_document_organization(uuid, uuid[], uuid[])
+  to authenticated;
+
+create or replace function public.save_user_library_document(
+  p_document_id uuid,
+  p_title text,
+  p_authors text[],
+  p_publication_year integer,
+  p_publication_venue text,
+  p_doi text,
+  p_arxiv_id text,
+  p_abstract text,
+  p_reading_status text,
+  p_collection_ids uuid[],
+  p_tag_ids uuid[]
+)
+returns void
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  current_user_id uuid := auth.uid();
+  normalized_authors text[];
+begin
+  if current_user_id is null then
+    raise exception 'Authentication is required.'
+      using errcode = '42501';
+  end if;
+
+  if p_publication_year is not null
+    and p_publication_year not between 1 and 3000
+  then
+    raise exception 'Publication year must be between 1 and 3000.'
+      using errcode = '22023';
+  end if;
+
+  if p_reading_status is not null
+    and p_reading_status not in ('inbox', 'to-read', 'reading', 'finished')
+  then
+    raise exception 'Invalid reading status.'
+      using errcode = '22023';
+  end if;
+
+  select coalesce(
+    array_agg(btrim(author) order by ordinal)
+      filter (where btrim(author) <> ''),
+    '{}'::text[]
+  )
+  into normalized_authors
+  from unnest(coalesce(p_authors, '{}'::text[]))
+    with ordinality as requested_authors(author, ordinal);
+
+  perform public.set_user_document_organization(
+    p_document_id,
+    p_collection_ids,
+    p_tag_ids
+  );
+
+  update public.user_documents documents
+  set
+    title = p_title,
+    authors = normalized_authors,
+    publication_year = p_publication_year,
+    publication_venue = p_publication_venue,
+    doi = p_doi,
+    arxiv_id = p_arxiv_id,
+    abstract = p_abstract,
+    reading_status = coalesce(p_reading_status, documents.reading_status)
+  where documents.id = p_document_id
+    and documents.user_id = current_user_id
+    and documents.deleted_at is null;
+
+  if not found then
+    raise exception 'Document not found.'
+      using errcode = 'P0002';
+  end if;
+end;
+$$;
+
+revoke execute
+  on function public.save_user_library_document(
+    uuid,
+    text,
+    text[],
+    integer,
+    text,
+    text,
+    text,
+    text,
+    text,
+    uuid[],
+    uuid[]
+  )
+  from anon, public;
+grant execute
+  on function public.save_user_library_document(
+    uuid,
+    text,
+    text[],
+    integer,
+    text,
+    text,
+    text,
+    text,
+    text,
+    uuid[],
+    uuid[]
+  )
+  to authenticated;
+
+create or replace function public.batch_update_user_library_documents(
+  p_document_ids uuid[],
+  p_reading_status text default null,
+  p_starred boolean default null,
+  p_archived boolean default null,
+  p_add_collection_ids uuid[] default null,
+  p_remove_collection_ids uuid[] default null,
+  p_add_tag_ids uuid[] default null,
+  p_remove_tag_ids uuid[] default null
+)
+returns void
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  current_user_id uuid := auth.uid();
+  requested_count integer;
+  visible_count integer;
+begin
+  if current_user_id is null then
+    raise exception 'Authentication is required.'
+      using errcode = '42501';
+  end if;
+
+  select count(*)
+  into requested_count
+  from (
+    select distinct requested.id
+    from unnest(coalesce(p_document_ids, '{}'::uuid[])) as requested(id)
+    where requested.id is not null
+  ) requested_documents;
+
+  if requested_count = 0
+    or requested_count <> cardinality(coalesce(p_document_ids, '{}'::uuid[]))
+  then
+    raise exception 'Document IDs must be non-empty, unique, and non-null.'
+      using errcode = '22023';
+  end if;
+
+  select count(*)
+  into visible_count
+  from public.user_documents documents
+  where documents.user_id = current_user_id
+    and documents.deleted_at is null
+    and documents.id = any(p_document_ids);
+
+  if visible_count <> requested_count then
+    raise exception 'One or more documents do not exist.'
+      using errcode = 'P0002';
+  end if;
+
+  if p_reading_status is not null
+    and p_reading_status not in ('inbox', 'to-read', 'reading', 'finished')
+  then
+    raise exception 'Invalid reading status.'
+      using errcode = '22023';
+  end if;
+
+  if p_add_collection_ids is not null then
+    select count(*)
+    into requested_count
+    from (
+      select distinct requested.id
+      from unnest(p_add_collection_ids) as requested(id)
+      where requested.id is not null
+    ) requested_collections;
+
+    if requested_count <> cardinality(p_add_collection_ids) then
+      raise exception 'Collection IDs must be unique and non-null.'
+        using errcode = '22023';
+    end if;
+
+    select count(*)
+    into visible_count
+    from public.user_collections collections
+    where collections.user_id = current_user_id
+      and collections.id = any(p_add_collection_ids);
+
+    if visible_count <> requested_count then
+      raise exception 'One or more collections do not exist.'
+        using errcode = '22023';
+    end if;
+  end if;
+
+  if p_add_tag_ids is not null then
+    select count(*)
+    into requested_count
+    from (
+      select distinct requested.id
+      from unnest(p_add_tag_ids) as requested(id)
+      where requested.id is not null
+    ) requested_tags;
+
+    if requested_count <> cardinality(p_add_tag_ids) then
+      raise exception 'Tag IDs must be unique and non-null.'
+        using errcode = '22023';
+    end if;
+
+    select count(*)
+    into visible_count
+    from public.user_tags tags
+    where tags.user_id = current_user_id
+      and tags.id = any(p_add_tag_ids);
+
+    if visible_count <> requested_count then
+      raise exception 'One or more tags do not exist.'
+        using errcode = '22023';
+    end if;
+  end if;
+
+  if p_reading_status is not null
+    or p_starred is not null
+    or p_archived is not null
+  then
+    update public.user_documents documents
+    set
+      reading_status = coalesce(p_reading_status, documents.reading_status),
+      starred_at = case
+        when p_starred is null then documents.starred_at
+        when p_starred then now()
+        else null
+      end,
+      archived_at = case
+        when p_archived is null then documents.archived_at
+        when p_archived then now()
+        else null
+      end
+    where documents.user_id = current_user_id
+      and documents.deleted_at is null
+      and documents.id = any(p_document_ids);
+  end if;
+
+  if coalesce(cardinality(p_remove_collection_ids), 0) > 0 then
+    delete from public.user_document_collections document_collections
+    where document_collections.user_id = current_user_id
+      and document_collections.user_document_id = any(p_document_ids)
+      and document_collections.collection_id = any(p_remove_collection_ids);
+  end if;
+
+  if coalesce(cardinality(p_remove_tag_ids), 0) > 0 then
+    delete from public.user_document_tags document_tags
+    where document_tags.user_id = current_user_id
+      and document_tags.user_document_id = any(p_document_ids)
+      and document_tags.tag_id = any(p_remove_tag_ids);
+  end if;
+
+  if coalesce(cardinality(p_add_collection_ids), 0) > 0 then
+    insert into public.user_document_collections (
+      user_id,
+      user_document_id,
+      collection_id
+    )
+    select
+      current_user_id,
+      requested_document.id,
+      requested_collection.id
+    from (
+      select distinct requested.id
+      from unnest(p_document_ids) as requested(id)
+    ) requested_document
+    cross join (
+      select distinct requested.id
+      from unnest(p_add_collection_ids) as requested(id)
+    ) requested_collection
+    on conflict (user_document_id, collection_id) do nothing;
+  end if;
+
+  if coalesce(cardinality(p_add_tag_ids), 0) > 0 then
+    insert into public.user_document_tags (
+      user_id,
+      user_document_id,
+      tag_id
+    )
+    select
+      current_user_id,
+      requested_document.id,
+      requested_tag.id
+    from (
+      select distinct requested.id
+      from unnest(p_document_ids) as requested(id)
+    ) requested_document
+    cross join (
+      select distinct requested.id
+      from unnest(p_add_tag_ids) as requested(id)
+    ) requested_tag
+    on conflict (user_document_id, tag_id) do nothing;
+  end if;
+end;
+$$;
+
+revoke execute
+  on function public.batch_update_user_library_documents(
+    uuid[],
+    text,
+    boolean,
+    boolean,
+    uuid[],
+    uuid[],
+    uuid[],
+    uuid[]
+  )
+  from anon, public;
+grant execute
+  on function public.batch_update_user_library_documents(
+    uuid[],
+    text,
+    boolean,
+    boolean,
+    uuid[],
+    uuid[],
+    uuid[],
+    uuid[]
+  )
+  to authenticated;
+
+drop function if exists public.search_user_library_documents(
+  text,
+  text[],
+  boolean,
+  boolean,
+  uuid[],
+  uuid[],
+  boolean,
+  integer,
+  integer,
+  text,
+  integer,
+  integer
+);
+
+create function public.search_user_library_documents(
+  p_query text default null,
+  p_reading_statuses text[] default null,
+  p_starred boolean default null,
+  p_archived boolean default false,
+  p_collection_ids uuid[] default null,
+  p_tag_ids uuid[] default null,
+  p_uncategorized boolean default false,
+  p_year_from integer default null,
+  p_year_to integer default null,
+  p_sort text default 'updated-desc',
+  p_limit integer default 50,
+  p_offset integer default 0
+)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  with normalized as (
+    select
+      nullif(btrim(coalesce(p_query, '')), '') as query_text,
+      greatest(1, least(coalesce(p_limit, 50), 100)) as result_limit,
+      greatest(coalesce(p_offset, 0), 0) as result_offset
+  ),
+  filtered as (
+    select documents.*
+    from public.user_documents documents
+    cross join normalized
+    where documents.user_id = auth.uid()
+      and documents.deleted_at is null
+      and (
+        coalesce(cardinality(p_reading_statuses), 0) = 0
+        or documents.reading_status = any(p_reading_statuses)
+      )
+      and (
+        p_starred is null
+        or (p_starred and documents.starred_at is not null)
+        or (not p_starred and documents.starred_at is null)
+      )
+      and (
+        p_archived is null
+        or (p_archived and documents.archived_at is not null)
+        or (not p_archived and documents.archived_at is null)
+      )
+      and (
+        coalesce(cardinality(p_collection_ids), 0) = 0
+        or exists (
+          select 1
+          from public.user_document_collections document_collections
+          where document_collections.user_document_id = documents.id
+            and document_collections.collection_id = any(p_collection_ids)
+        )
+      )
+      and (
+        coalesce(cardinality(p_tag_ids), 0) = 0
+        or exists (
+          select 1
+          from public.user_document_tags document_tags
+          where document_tags.user_document_id = documents.id
+            and document_tags.tag_id = any(p_tag_ids)
+        )
+      )
+      and (
+        not coalesce(p_uncategorized, false)
+        or not exists (
+          select 1
+          from public.user_document_collections uncategorized_collections
+          where uncategorized_collections.user_document_id = documents.id
+        )
+      )
+      and (p_year_from is null or documents.publication_year >= p_year_from)
+      and (p_year_to is null or documents.publication_year <= p_year_to)
+      and (
+        normalized.query_text is null
+        or documents.library_fts @@ websearch_to_tsquery(
+          'simple'::regconfig,
+          normalized.query_text
+        )
+        or lower(
+          concat_ws(
+            ' ',
+            documents.title,
+            documents.pdf_metadata->>'title',
+            documents.display_file_name,
+            array_to_string(documents.authors, ' '),
+            documents.pdf_metadata->>'author',
+            documents.publication_year::text,
+            documents.publication_venue,
+            documents.doi,
+            documents.arxiv_id,
+            documents.abstract
+          )
+        ) like '%' || lower(normalized.query_text) || '%'
+        or exists (
+          select 1
+          from public.user_document_tags searched_document_tags
+          join public.user_tags searched_tags
+            on searched_tags.id = searched_document_tags.tag_id
+          where searched_document_tags.user_document_id = documents.id
+            and searched_tags.name ilike '%' || normalized.query_text || '%'
+        )
+        or exists (
+          select 1
+          from public.user_document_collections searched_document_collections
+          join public.user_collections searched_collections
+            on searched_collections.id = searched_document_collections.collection_id
+          where searched_document_collections.user_document_id = documents.id
+            and searched_collections.name ilike '%' || normalized.query_text || '%'
+        )
+      )
+  ),
+  ranked as (
+    select
+      filtered.*,
+      row_number() over (
+        order by
+          case when p_sort = 'title-asc'
+            then lower(coalesce(nullif(filtered.title, ''), filtered.display_file_name))
+          end asc nulls last,
+          case when p_sort = 'title-desc'
+            then lower(coalesce(nullif(filtered.title, ''), filtered.display_file_name))
+          end desc nulls last,
+          case when p_sort = 'imported-desc' then filtered.imported_at end desc nulls last,
+          case when p_sort = 'opened-desc' then filtered.last_opened_at end desc nulls last,
+          case when p_sort = 'updated-desc' then filtered.library_updated_at end desc nulls last,
+          filtered.library_updated_at desc,
+          filtered.id
+      ) as library_page_order
+    from filtered
+  ),
+  paged as (
+    select ranked.*
+    from ranked
+    cross join normalized
+    where ranked.library_page_order > normalized.result_offset
+      and ranked.library_page_order <= (
+        normalized.result_offset + normalized.result_limit
+      )
+  ),
+  enriched as (
+    select
+      paged.*,
+      coalesce(
+        (
+          select jsonb_agg(
+            jsonb_build_object(
+              'id', collections.id,
+              'name', collections.name,
+              'description', collections.description,
+              'color', collections.color,
+              'parent_id', collections.parent_id,
+              'sort_order', collections.sort_order,
+              'created_at', collections.created_at,
+              'updated_at', collections.updated_at
+            )
+            order by collections.sort_order, lower(collections.name), collections.id
+          )
+          from public.user_document_collections document_collections
+          join public.user_collections collections
+            on collections.id = document_collections.collection_id
+          where document_collections.user_document_id = paged.id
+        ),
+        '[]'::jsonb
+      ) as collections,
+      coalesce(
+        (
+          select jsonb_agg(
+            jsonb_build_object(
+              'id', tags.id,
+              'name', tags.name,
+              'color', tags.color,
+              'created_at', tags.created_at,
+              'updated_at', tags.updated_at
+            )
+            order by lower(tags.name), tags.id
+          )
+          from public.user_document_tags document_tags
+          join public.user_tags tags
+            on tags.id = document_tags.tag_id
+          where document_tags.user_document_id = paged.id
+        ),
+        '[]'::jsonb
+      ) as tags
+    from paged
+  )
+  select jsonb_build_object(
+    'items',
+    coalesce(
+      (
+        select jsonb_agg(
+          to_jsonb(enriched)
+            - 'user_id'
+            - 'library_fts'
+            - 'library_page_order'
+          order by enriched.library_page_order
+        )
+        from enriched
+      ),
+      '[]'::jsonb
+    ),
+    'total', (select count(*) from filtered),
+    'limit', normalized.result_limit,
+    'offset', normalized.result_offset
+  )
+  from normalized;
+$$;
+
+revoke execute
+  on function public.search_user_library_documents(
+    text,
+    text[],
+    boolean,
+    boolean,
+    uuid[],
+    uuid[],
+    boolean,
+    integer,
+    integer,
+    text,
+    integer,
+    integer
+  )
+  from anon, public;
+grant execute
+  on function public.search_user_library_documents(
+    text,
+    text[],
+    boolean,
+    boolean,
+    uuid[],
+    uuid[],
+    boolean,
+    integer,
+    integer,
+    text,
+    integer,
+    integer
+  )
+  to authenticated;
 
 drop policy if exists "Users can read their PDFs" on storage.objects;
 create policy "Users can read their PDFs"

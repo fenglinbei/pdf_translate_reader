@@ -58,6 +58,18 @@ export type PdfMetadata = {
   author?: string;
 };
 
+export type LibraryReadingStatus = "inbox" | "to-read" | "reading" | "finished";
+
+export type BibliographicMetadata = {
+  title?: string;
+  authors: string[];
+  publicationYear?: number;
+  publicationVenue?: string;
+  doi?: string;
+  arxivId?: string;
+  abstract?: string;
+};
+
 export type PdfLibraryEntry = {
   cloudDocumentId?: string;
   contentSha256?: string;
@@ -73,6 +85,11 @@ export type PdfLibraryEntry = {
   lastScrollTop?: number;
   lastZoom?: number;
   pdfMetadata?: PdfMetadata;
+  bibliographicMetadata?: BibliographicMetadata;
+  readingStatus?: LibraryReadingStatus;
+  starredAt?: number;
+  archivedAt?: number;
+  libraryUpdatedAt?: number;
   storagePath?: string;
   deletedAt?: number;
 };
@@ -82,6 +99,120 @@ export type CloudPdfLibraryEntry = Omit<PdfLibraryEntry, "blob"> & {
   contentSha256: string;
   localCached?: boolean;
   storagePath: string;
+};
+
+export type LibraryCollection = {
+  id: string;
+  name: string;
+  description?: string;
+  color?: string;
+  parentId?: string;
+  sortOrder: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type LibraryTag = {
+  id: string;
+  name: string;
+  color?: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type LibraryDocument = Omit<
+  CloudPdfLibraryEntry,
+  "bibliographicMetadata" | "readingStatus" | "libraryUpdatedAt"
+> & {
+  bibliographicMetadata: BibliographicMetadata;
+  readingStatus: LibraryReadingStatus;
+  libraryUpdatedAt: number;
+  collections: LibraryCollection[];
+  tags: LibraryTag[];
+};
+
+export type LibraryDocumentSort =
+  | "title-asc"
+  | "title-desc"
+  | "imported-desc"
+  | "opened-desc"
+  | "updated-desc";
+
+export type LibraryDocumentQuery = {
+  query?: string;
+  readingStatuses?: LibraryReadingStatus[];
+  starred?: boolean;
+  archiveMode?: "active" | "archived" | "all";
+  collectionIds?: string[];
+  tagIds?: string[];
+  uncategorized?: boolean;
+  yearFrom?: number;
+  yearTo?: number;
+  sort?: LibraryDocumentSort;
+  limit?: number;
+  offset?: number;
+};
+
+export type LibraryDocumentPage = {
+  items: LibraryDocument[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type LibraryDocumentMetadataPatch = {
+  title?: string | null;
+  authors?: string[];
+  publicationYear?: number | null;
+  publicationVenue?: string | null;
+  doi?: string | null;
+  arxivId?: string | null;
+  abstract?: string | null;
+  readingStatus?: LibraryReadingStatus;
+  starred?: boolean;
+  archived?: boolean;
+};
+
+export type LibraryDocumentBatchUpdate = {
+  documentIds: string[];
+  readingStatus?: LibraryReadingStatus;
+  starred?: boolean;
+  archived?: boolean;
+  addCollectionIds?: string[];
+  removeCollectionIds?: string[];
+  addTagIds?: string[];
+  removeTagIds?: string[];
+};
+
+export type LibraryDocumentOrganizationUpdate = {
+  collectionIds?: string[];
+  tagIds?: string[];
+};
+
+export type LibraryCollectionCreateInput = {
+  name: string;
+  description?: string;
+  color?: string;
+  parentId?: string;
+  sortOrder?: number;
+};
+
+export type LibraryCollectionUpdateInput = {
+  name?: string;
+  description?: string | null;
+  color?: string | null;
+  parentId?: string | null;
+  sortOrder?: number;
+};
+
+export type LibraryTagCreateInput = {
+  name: string;
+  color?: string;
+};
+
+export type LibraryTagUpdateInput = {
+  name?: string;
+  color?: string | null;
 };
 
 export type SelectionRegion = {
