@@ -30,6 +30,56 @@ describe("literature library schema", () => {
     }
   });
 
+  it("keeps lightweight deletion non-destructive for papers and collection children", () => {
+    assert.match(
+      schema,
+      /parent_id uuid references public\.user_collections\(id\) on delete set null/,
+    );
+    assert.match(
+      schema,
+      /collection_id uuid not null references public\.user_collections\(id\) on delete cascade/,
+    );
+    assert.match(
+      schema,
+      /tag_id uuid not null references public\.user_tags\(id\) on delete cascade/,
+    );
+    assert.match(
+      schema,
+      /create table if not exists public\.user_document_collections \([\s\S]+?user_document_id uuid not null references public\.user_documents\(id\) on delete cascade[\s\S]+?collection_id uuid not null references public\.user_collections\(id\) on delete cascade/,
+    );
+    assert.match(
+      schema,
+      /create table if not exists public\.user_document_tags \([\s\S]+?user_document_id uuid not null references public\.user_documents\(id\) on delete cascade[\s\S]+?tag_id uuid not null references public\.user_tags\(id\) on delete cascade/,
+    );
+  });
+
+  it("updates and deletes collections and tags without treating a missing row as success", () => {
+    assert.match(
+      cloudRepository,
+      /updateLibraryCollection\([\s\S]+?\.from\("user_collections"\)[\s\S]+?\.update\(values\)[\s\S]+?\.single\(\)/,
+    );
+    assert.match(
+      cloudRepository,
+      /deleteLibraryCollection\([\s\S]+?\.from\("user_collections"\)[\s\S]+?\.delete\(\)[\s\S]+?\.eq\("id", collectionId\)[\s\S]+?\.select\("id"\)[\s\S]+?\.single\(\)/,
+    );
+    assert.match(
+      cloudRepository,
+      /deletedId !== collectionId[\s\S]+?throw new Error/,
+    );
+    assert.match(
+      cloudRepository,
+      /updateLibraryTag\([\s\S]+?\.from\("user_tags"\)[\s\S]+?\.update\(values\)[\s\S]+?\.single\(\)/,
+    );
+    assert.match(
+      cloudRepository,
+      /deleteLibraryTag\([\s\S]+?\.from\("user_tags"\)[\s\S]+?\.delete\(\)[\s\S]+?\.eq\("id", tagId\)[\s\S]+?\.select\("id"\)[\s\S]+?\.single\(\)/,
+    );
+    assert.match(
+      cloudRepository,
+      /deletedId !== tagId[\s\S]+?throw new Error/,
+    );
+  });
+
   it("keeps organization and batch mutations atomic in authenticated RPCs", () => {
     for (const rpc of [
       "set_user_document_organization",

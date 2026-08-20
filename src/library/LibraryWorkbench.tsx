@@ -8,11 +8,14 @@ import {
   FolderPlus,
   Inbox,
   LoaderCircle,
+  MoreHorizontal,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
   Star,
   Tag,
+  Trash2,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -21,6 +24,7 @@ import { PdfImportDropzone } from "../pdf/PdfImportDropzone";
 import type {
   LibraryCollection,
   LibraryCollectionCreateInput,
+  LibraryCollectionUpdateInput,
   LibraryDocument,
   LibraryDocumentBatchUpdate,
   LibraryDocumentMetadataPatch,
@@ -28,6 +32,7 @@ import type {
   LibraryReadingStatus,
   LibraryTag,
   LibraryTagCreateInput,
+  LibraryTagUpdateInput,
 } from "../types/domain";
 import "./libraryWorkbench.css";
 
@@ -67,6 +72,8 @@ type LibraryWorkbenchProps = {
   onClose: () => void;
   onCreateCollection: (input: LibraryCollectionCreateInput) => Promise<void>;
   onCreateTag: (input: LibraryTagCreateInput) => Promise<void>;
+  onDeleteCollection: (collection: LibraryCollection) => Promise<void>;
+  onDeleteTag: (tag: LibraryTag) => Promise<void>;
   onImport: (file: File) => Promise<void> | void;
   onLoadMore: () => Promise<void> | void;
   onOpenDocument: (document: LibraryDocument) => Promise<void> | void;
@@ -77,6 +84,11 @@ type LibraryWorkbenchProps = {
     input: LibraryDocumentSaveInput,
   ) => Promise<void>;
   onScopeChange: (scope: LibraryWorkbenchScope) => void;
+  onUpdateCollection: (
+    collectionId: string,
+    input: LibraryCollectionUpdateInput,
+  ) => Promise<void>;
+  onUpdateTag: (tagId: string, input: LibraryTagUpdateInput) => Promise<void>;
   query: LibraryDocumentQuery;
   scope: LibraryWorkbenchScope;
   tags: LibraryTag[];
@@ -95,6 +107,22 @@ type MetadataDraft = {
   tagIds: string[];
   title: string;
 };
+
+type CollectionEditorState = {
+  collectionId?: string;
+  mode: "create" | "edit";
+  name: string;
+  parentId: string;
+};
+
+type TagEditorState = {
+  color: string;
+  mode: "create" | "edit";
+  name: string;
+  tagId?: string;
+};
+
+const DEFAULT_TAG_COLOR = "#7891bb";
 
 const STATUS_VALUES: LibraryReadingStatus[] = [
   "inbox",
@@ -124,6 +152,8 @@ export function LibraryWorkbench({
   onClose,
   onCreateCollection,
   onCreateTag,
+  onDeleteCollection,
+  onDeleteTag,
   onImport,
   onLoadMore,
   onOpenDocument,
@@ -131,6 +161,8 @@ export function LibraryWorkbench({
   onRefresh,
   onSaveDocument,
   onScopeChange,
+  onUpdateCollection,
+  onUpdateTag,
   query,
   scope,
   tags,
@@ -144,10 +176,8 @@ export function LibraryWorkbench({
   const [searchValue, setSearchValue] = useState(query.query ?? "");
   const [isEditing, setIsEditing] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isAddingCollection, setIsAddingCollection] = useState(false);
-  const [isAddingTag, setIsAddingTag] = useState(false);
-  const [newCollectionName, setNewCollectionName] = useState("");
-  const [newTagName, setNewTagName] = useState("");
+  const [collectionEditor, setCollectionEditor] = useState<CollectionEditorState>();
+  const [tagEditor, setTagEditor] = useState<TagEditorState>();
   const [mutationError, setMutationError] = useState<string>();
   const [isMutating, setIsMutating] = useState(false);
   const [shouldFocusInspector, setShouldFocusInspector] = useState(false);
@@ -273,35 +303,121 @@ export function LibraryWorkbench({
     });
   };
 
-  const handleCreateCollection = () => {
-    const name = newCollectionName.trim();
+  const openCollectionEditor = (parentId = "") => {
+    setTagEditor(undefined);
+    setCollectionEditor({ mode: "create", name: "", parentId });
+  };
 
-    if (!name) {
-      return;
-    }
-
-    void runMutation(async () => {
-      await onCreateCollection({
-        name,
-        parentId: scope.type === "collection" ? scope.id : undefined,
-      });
-      setNewCollectionName("");
-      setIsAddingCollection(false);
+  const openCollectionForEditing = (collection: LibraryCollection) => {
+    setTagEditor(undefined);
+    setCollectionEditor({
+      collectionId: collection.id,
+      mode: "edit",
+      name: collection.name,
+      parentId: collection.parentId ?? "",
     });
   };
 
-  const handleCreateTag = () => {
-    const name = newTagName.trim();
+  const handleSaveCollection = () => {
+    const name = collectionEditor?.name.trim() ?? "";
 
-    if (!name) {
+    if (!collectionEditor || !name) {
       return;
     }
 
     void runMutation(async () => {
-      await onCreateTag({ name });
-      setNewTagName("");
-      setIsAddingTag(false);
+      if (collectionEditor.mode === "edit" && collectionEditor.collectionId) {
+        await onUpdateCollection(collectionEditor.collectionId, {
+          name,
+          parentId: collectionEditor.parentId || null,
+        });
+      } else {
+        await onCreateCollection({
+          name,
+          parentId: collectionEditor.parentId || undefined,
+        });
+      }
+      setCollectionEditor(undefined);
     });
+  };
+
+  const handleDeleteCollection = (collection: LibraryCollection) => {
+    const topLevelNames = new Set(
+      collections
+        .filter((candidate) => !candidate.parentId && candidate.id !== collection.id)
+        .map((candidate) => normalizeOrganizationName(candidate.name)),
+    );
+    const conflictingChildren = collections.filter(
+      (candidate) =>
+        candidate.parentId === collection.id
+        && topLevelNames.has(normalizeOrganizationName(candidate.name)),
+    );
+
+    if (conflictingChildren.length > 0) {
+      setMutationError(
+        t("library.deleteCollectionConflict", {
+          names: conflictingChildren.map((candidate) => candidate.name).join(", "),
+        }),
+      );
+      return false;
+    }
+
+    if (!window.confirm(t("library.deleteCollectionConfirm", { name: collection.name }))) {
+      return false;
+    }
+
+    void runMutation(async () => {
+      await onDeleteCollection(collection);
+      setCollectionEditor((current) =>
+        current?.collectionId === collection.id || current?.parentId === collection.id
+          ? undefined
+          : current
+      );
+    });
+    return true;
+  };
+
+  const openTagEditor = (tag?: LibraryTag) => {
+    setCollectionEditor(undefined);
+    setTagEditor(
+      tag
+        ? {
+            color: tag.color ?? DEFAULT_TAG_COLOR,
+            mode: "edit",
+            name: tag.name,
+            tagId: tag.id,
+          }
+        : { color: DEFAULT_TAG_COLOR, mode: "create", name: "" },
+    );
+  };
+
+  const handleSaveTag = () => {
+    const name = tagEditor?.name.trim() ?? "";
+
+    if (!tagEditor || !name) {
+      return;
+    }
+
+    void runMutation(async () => {
+      if (tagEditor.mode === "edit" && tagEditor.tagId) {
+        await onUpdateTag(tagEditor.tagId, { color: tagEditor.color, name });
+      } else {
+        await onCreateTag({ color: tagEditor.color, name });
+      }
+      setTagEditor(undefined);
+    });
+  };
+
+  const handleDeleteTag = (tag: LibraryTag) => {
+    if (!window.confirm(t("library.deleteTagConfirm", { name: tag.name }))) {
+      return false;
+    }
+
+    void runMutation(async () => {
+      await onDeleteTag(tag);
+      setTagEditor((current) => current?.tagId === tag.id ? undefined : current);
+    });
+    return true;
   };
 
   const closeInspector = () => {
@@ -439,38 +555,37 @@ export function LibraryWorkbench({
               <span>{t("library.collections")}</span>
               <button
                 aria-label={t("library.newCollection")}
-                onClick={() => setIsAddingCollection(true)}
+                onClick={() => openCollectionEditor()}
                 title={t("library.newCollection")}
                 type="button"
               >
                 <Plus aria-hidden="true" size={14} />
               </button>
             </div>
-            {isAddingCollection ? (
-              <InlineCreateForm
-                ariaLabel={t("library.newCollection")}
-                cancelLabel={t("common.cancel")}
+            {collectionEditor ? (
+              <CollectionEditor
+                collections={collections}
                 disabled={isMutating}
-                onCancel={() => {
-                  setIsAddingCollection(false);
-                  setNewCollectionName("");
-                }}
-                onChange={setNewCollectionName}
-                onSubmit={handleCreateCollection}
-                placeholder={t("library.collectionNamePlaceholder")}
-                submitLabel={t("common.confirm")}
-                value={newCollectionName}
+                editor={collectionEditor}
+                onCancel={() => setCollectionEditor(undefined)}
+                onChange={setCollectionEditor}
+                onSubmit={handleSaveCollection}
+                t={t}
               />
             ) : null}
             <div className="library-workbench__collection-tree">
-              {renderCollectionTree(
-                collectionChildren,
-                undefined,
-                scope,
-                onScopeChange,
-                setIsSidebarOpen,
-              )}
-              {collections.length === 0 && !isAddingCollection ? (
+              <CollectionTree
+                disabled={isMutating}
+                grouped={collectionChildren}
+                onCreateChild={(collection) => openCollectionEditor(collection.id)}
+                onDelete={handleDeleteCollection}
+                onEdit={openCollectionForEditing}
+                onScopeChange={onScopeChange}
+                scope={scope}
+                setIsSidebarOpen={setIsSidebarOpen}
+                t={t}
+              />
+              {collections.length === 0 && !collectionEditor ? (
                 <p className="library-workbench__sidebar-empty">
                   {t("library.noCollections")}
                 </p>
@@ -483,56 +598,110 @@ export function LibraryWorkbench({
               <span>{t("library.tags")}</span>
               <button
                 aria-label={t("library.newTag")}
-                onClick={() => setIsAddingTag(true)}
+                onClick={() => openTagEditor()}
                 title={t("library.newTag")}
                 type="button"
               >
                 <Plus aria-hidden="true" size={14} />
               </button>
             </div>
-            {isAddingTag ? (
-              <InlineCreateForm
-                ariaLabel={t("library.newTag")}
-                cancelLabel={t("common.cancel")}
+            {tagEditor ? (
+              <TagEditor
                 disabled={isMutating}
-                onCancel={() => {
-                  setIsAddingTag(false);
-                  setNewTagName("");
-                }}
-                onChange={setNewTagName}
-                onSubmit={handleCreateTag}
-                placeholder={t("library.tagNamePlaceholder")}
-                submitLabel={t("common.confirm")}
-                value={newTagName}
+                editor={tagEditor}
+                onCancel={() => setTagEditor(undefined)}
+                onChange={setTagEditor}
+                onSubmit={handleSaveTag}
+                t={t}
               />
             ) : null}
             <div className="library-workbench__tag-list">
               {tags.map((tag) => (
-                <button
-                  className={
-                    scope.type === "tag" && scope.id === tag.id
-                      ? "library-workbench__sidebar-item library-workbench__sidebar-item--active"
-                      : "library-workbench__sidebar-item"
-                  }
-                  key={tag.id}
-                  onClick={() =>
-                    selectScope({ type: "tag", id: tag.id }, onScopeChange, setIsSidebarOpen)
-                  }
-                  type="button"
-                >
-                  <span
-                    aria-hidden="true"
-                    className="library-workbench__tag-dot"
-                    style={{ backgroundColor: tag.color || undefined }}
-                  />
-                  <span>{tag.name}</span>
-                </button>
+                <div className="library-workbench__sidebar-row" key={tag.id}>
+                  <button
+                    className={
+                      scope.type === "tag" && scope.id === tag.id
+                        ? "library-workbench__sidebar-item library-workbench__sidebar-item--active"
+                        : "library-workbench__sidebar-item"
+                    }
+                    onClick={() =>
+                      selectScope({ type: "tag", id: tag.id }, onScopeChange, setIsSidebarOpen)
+                    }
+                    type="button"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="library-workbench__tag-dot"
+                      style={{ backgroundColor: tag.color || undefined }}
+                    />
+                    <span>{tag.name}</span>
+                  </button>
+                  <EntityActionsMenu
+                    disabled={isMutating}
+                    label={t("library.moreActionsFor", { name: tag.name })}
+                  >
+                    <button
+                      disabled={isMutating}
+                      onClick={(event) => {
+                        closeParentMenu(event.currentTarget);
+                        openTagEditor(tag);
+                      }}
+                      role="menuitem"
+                      type="button"
+                    >
+                      <Pencil aria-hidden="true" size={13} />
+                      {t("library.editTag")}
+                    </button>
+                    <button
+                      className="library-workbench__menu-danger"
+                      disabled={isMutating}
+                      onClick={(event) => {
+                        if (handleDeleteTag(tag)) {
+                          closeParentMenu(event.currentTarget, true);
+                        }
+                      }}
+                      role="menuitem"
+                      type="button"
+                    >
+                      <Trash2 aria-hidden="true" size={13} />
+                      {t("library.deleteTag")}
+                    </button>
+                  </EntityActionsMenu>
+                </div>
               ))}
-              {tags.length === 0 && !isAddingTag ? (
+              {tags.length === 0 && !tagEditor ? (
                 <p className="library-workbench__sidebar-empty">{t("library.noTags")}</p>
               ) : null}
             </div>
           </div>
+
+          {mutationError || error ? (
+            <div
+              className="library-workbench__notice library-workbench__notice--error library-workbench__sidebar-notice"
+              role="alert"
+            >
+              <span>{mutationError ?? error}</span>
+              {mutationError ? (
+                <button
+                  aria-label={t("common.close")}
+                  onClick={() => setMutationError(undefined)}
+                  type="button"
+                >
+                  <X aria-hidden="true" size={14} />
+                </button>
+              ) : (
+                <button
+                  aria-label={t("library.retry")}
+                  onClick={() => {
+                    void Promise.resolve(onRefresh()).catch(() => undefined);
+                  }}
+                  type="button"
+                >
+                  <RefreshCw aria-hidden="true" size={14} />
+                </button>
+              )}
+            </div>
+          ) : null}
         </aside>
 
         {isSidebarOpen ? (
@@ -746,10 +915,17 @@ export function LibraryWorkbench({
             </div>
           ) : null}
 
-          {mutationError ? (
-            <div className="library-workbench__notice library-workbench__notice--error">
+          {mutationError && !isSidebarOpen ? (
+            <div
+              className="library-workbench__notice library-workbench__notice--error"
+              role="alert"
+            >
               <span>{mutationError}</span>
-              <button onClick={() => setMutationError(undefined)} type="button">
+              <button
+                aria-label={t("common.close")}
+                onClick={() => setMutationError(undefined)}
+                type="button"
+              >
                 <X aria-hidden="true" size={14} />
               </button>
             </div>
@@ -1009,61 +1185,259 @@ function LibrarySidebarButton({
   );
 }
 
-function InlineCreateForm({
-  ariaLabel,
-  cancelLabel,
+function CollectionEditor({
+  collections,
   disabled,
   onCancel,
   onChange,
   onSubmit,
-  placeholder,
-  submitLabel,
-  value,
+  editor,
+  t,
 }: {
-  ariaLabel: string;
-  cancelLabel: string;
+  collections: LibraryCollection[];
   disabled: boolean;
   onCancel: () => void;
-  onChange: (value: string) => void;
+  onChange: (editor: CollectionEditorState) => void;
   onSubmit: () => void;
-  placeholder: string;
-  submitLabel: string;
-  value: string;
+  editor: CollectionEditorState;
+  t: ReturnType<typeof useI18n>["t"];
 }) {
+  const unavailableParentIds = editor.collectionId
+    ? getCollectionAndDescendantIds(editor.collectionId, collections)
+    : new Set<string>();
+  const parentOptions = flattenCollections(collections).filter(
+    ({ collection }) => !unavailableParentIds.has(collection.id),
+  );
+
   return (
     <form
-      aria-label={ariaLabel}
-      className="library-workbench__inline-create"
+      aria-label={
+        editor.mode === "edit"
+          ? t("library.editCollection")
+          : t("library.newCollection")
+      }
+      className="library-workbench__organization-editor"
       onSubmit={(event) => {
         event.preventDefault();
         onSubmit();
       }}
     >
-      <input
-        autoFocus
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        value={value}
-      />
-      <button
-        aria-label={submitLabel}
-        disabled={disabled || !value.trim()}
-        title={submitLabel}
-        type="submit"
-      >
-        <Check aria-hidden="true" size={13} />
-      </button>
-      <button
-        aria-label={cancelLabel}
-        disabled={disabled}
-        onClick={onCancel}
-        title={cancelLabel}
-        type="button"
-      >
-        <X aria-hidden="true" size={13} />
-      </button>
+      <div className="library-workbench__organization-editor-heading">
+        <strong>
+          {editor.mode === "edit"
+            ? t("library.editCollection")
+            : t("library.newCollection")}
+        </strong>
+        <button
+          aria-label={t("common.cancel")}
+          disabled={disabled}
+          onClick={onCancel}
+          title={t("common.cancel")}
+          type="button"
+        >
+          <X aria-hidden="true" size={13} />
+        </button>
+      </div>
+      <label>
+        <span>{t("library.collectionName")}</span>
+        <input
+          autoFocus
+          disabled={disabled}
+          onChange={(event) => onChange({ ...editor, name: event.target.value })}
+          placeholder={t("library.collectionNamePlaceholder")}
+          value={editor.name}
+        />
+      </label>
+      <label>
+        <span>{t("library.collectionLocation")}</span>
+        <select
+          disabled={disabled}
+          onChange={(event) => onChange({ ...editor, parentId: event.target.value })}
+          value={editor.parentId}
+        >
+          <option value="">{t("library.topLevelCollection")}</option>
+          {parentOptions.map(({ collection, path }) => (
+            <option key={collection.id} value={collection.id}>
+              {path}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p>{t("library.collectionLocationHint")}</p>
+      <div className="library-workbench__organization-editor-actions">
+        <button disabled={disabled} onClick={onCancel} type="button">
+          {t("common.cancel")}
+        </button>
+        <button disabled={disabled || !editor.name.trim()} type="submit">
+          {editor.mode === "edit" ? t("common.save") : t("common.confirm")}
+        </button>
+      </div>
     </form>
+  );
+}
+
+function TagEditor({
+  disabled,
+  editor,
+  onCancel,
+  onChange,
+  onSubmit,
+  t,
+}: {
+  disabled: boolean;
+  editor: TagEditorState;
+  onCancel: () => void;
+  onChange: (editor: TagEditorState) => void;
+  onSubmit: () => void;
+  t: ReturnType<typeof useI18n>["t"];
+}) {
+  return (
+    <form
+      aria-label={editor.mode === "edit" ? t("library.editTag") : t("library.newTag")}
+      className="library-workbench__organization-editor"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+    >
+      <div className="library-workbench__organization-editor-heading">
+        <strong>
+          {editor.mode === "edit" ? t("library.editTag") : t("library.newTag")}
+        </strong>
+        <button
+          aria-label={t("common.cancel")}
+          disabled={disabled}
+          onClick={onCancel}
+          title={t("common.cancel")}
+          type="button"
+        >
+          <X aria-hidden="true" size={13} />
+        </button>
+      </div>
+      <label>
+        <span>{t("library.tagName")}</span>
+        <input
+          autoFocus
+          disabled={disabled}
+          onChange={(event) => onChange({ ...editor, name: event.target.value })}
+          placeholder={t("library.tagNamePlaceholder")}
+          value={editor.name}
+        />
+      </label>
+      <label className="library-workbench__color-field">
+        <span>{t("library.tagColor")}</span>
+        <input
+          aria-label={t("library.tagColor")}
+          disabled={disabled}
+          onChange={(event) => onChange({ ...editor, color: event.target.value })}
+          type="color"
+          value={editor.color}
+        />
+        <span>{editor.color}</span>
+      </label>
+      <div className="library-workbench__organization-editor-actions">
+        <button disabled={disabled} onClick={onCancel} type="button">
+          {t("common.cancel")}
+        </button>
+        <button disabled={disabled || !editor.name.trim()} type="submit">
+          {editor.mode === "edit" ? t("common.save") : t("common.confirm")}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function EntityActionsMenu({
+  children,
+  disabled,
+  label,
+}: {
+  children: React.ReactNode;
+  disabled: boolean;
+  label: string;
+}) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+
+  return (
+    <details
+      className="library-workbench__entity-menu"
+      onBlur={(event) => {
+        const details = event.currentTarget;
+        if (!details.contains(event.relatedTarget)) {
+          details.open = false;
+        }
+      }}
+      onKeyDown={(event) => {
+        const details = detailsRef.current;
+        if (event.key === "Escape" && details?.open) {
+          event.preventDefault();
+          details.open = false;
+          details.querySelector("summary")?.focus();
+          return;
+        }
+
+        if (
+          details
+          && ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)
+        ) {
+          event.preventDefault();
+          details.open = true;
+          const menuItems = Array.from(
+            details.querySelectorAll<HTMLButtonElement>(
+              '[role="menuitem"]:not(:disabled)',
+            ),
+          );
+          if (menuItems.length === 0) {
+            return;
+          }
+
+          const currentIndex = menuItems.indexOf(
+            document.activeElement as HTMLButtonElement,
+          );
+          let nextIndex = 0;
+          if (event.key === "End") {
+            nextIndex = menuItems.length - 1;
+          } else if (event.key === "ArrowUp") {
+            nextIndex = currentIndex <= 0 ? menuItems.length - 1 : currentIndex - 1;
+          } else if (event.key === "ArrowDown" && currentIndex >= 0) {
+            nextIndex = (currentIndex + 1) % menuItems.length;
+          }
+          menuItems[nextIndex]?.focus();
+        }
+      }}
+      onToggle={(event) => {
+        const details = event.currentTarget;
+        if (details.open) {
+          const summary = details.querySelector("summary");
+          window.requestAnimationFrame(() => {
+            if (details.open && document.activeElement === summary) {
+              details
+                .querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')
+                ?.focus();
+            }
+          });
+        }
+      }}
+      ref={detailsRef}
+    >
+      <summary
+        aria-disabled={disabled}
+        aria-label={label}
+        aria-haspopup="menu"
+        onClick={(event) => {
+          if (disabled) {
+            event.preventDefault();
+          }
+        }}
+        tabIndex={disabled ? -1 : 0}
+        title={label}
+      >
+        <MoreHorizontal aria-hidden="true" size={15} />
+      </summary>
+      <div aria-label={label} className="library-workbench__entity-menu-popover" role="menu">
+        {children}
+      </div>
+    </details>
   );
 }
 
@@ -1465,47 +1839,118 @@ export function libraryScopeToQuery(
   }
 }
 
-function renderCollectionTree(
-  grouped: Map<string, LibraryCollection[]>,
-  parentId: string | undefined,
-  scope: LibraryWorkbenchScope,
-  onScopeChange: (scope: LibraryWorkbenchScope) => void,
-  setIsSidebarOpen: (value: boolean) => void,
+function CollectionTree({
   depth = 0,
-): React.ReactNode {
+  disabled,
+  grouped,
+  onCreateChild,
+  onDelete,
+  onEdit,
+  onScopeChange,
+  parentId,
+  scope,
+  setIsSidebarOpen,
+  t,
+}: {
+  depth?: number;
+  disabled: boolean;
+  grouped: Map<string, LibraryCollection[]>;
+  onCreateChild: (collection: LibraryCollection) => void;
+  onDelete: (collection: LibraryCollection) => boolean;
+  onEdit: (collection: LibraryCollection) => void;
+  onScopeChange: (scope: LibraryWorkbenchScope) => void;
+  parentId?: string;
+  scope: LibraryWorkbenchScope;
+  setIsSidebarOpen: (value: boolean) => void;
+  t: ReturnType<typeof useI18n>["t"];
+}) {
   const key = parentId ?? "";
 
-  return (grouped.get(key) ?? []).map((collection) => (
-    <div key={collection.id}>
-      <button
-        className={
-          scope.type === "collection" && scope.id === collection.id
-            ? "library-workbench__sidebar-item library-workbench__sidebar-item--active"
-            : "library-workbench__sidebar-item"
-        }
-        onClick={() =>
-          selectScope(
-            { type: "collection", id: collection.id },
-            onScopeChange,
-            setIsSidebarOpen,
-          )
-        }
-        style={{ paddingInlineStart: `${12 + depth * 14}px` }}
-        type="button"
-      >
-        <Folder aria-hidden="true" size={15} />
-        <span>{collection.name}</span>
-      </button>
-      {renderCollectionTree(
-        grouped,
-        collection.id,
-        scope,
-        onScopeChange,
-        setIsSidebarOpen,
-        depth + 1,
-      )}
-    </div>
-  ));
+  return (
+    <>
+      {(grouped.get(key) ?? []).map((collection) => (
+        <div key={collection.id}>
+          <div className="library-workbench__sidebar-row">
+            <button
+              className={
+                scope.type === "collection" && scope.id === collection.id
+                  ? "library-workbench__sidebar-item library-workbench__sidebar-item--active"
+                  : "library-workbench__sidebar-item"
+              }
+              onClick={() =>
+                selectScope(
+                  { type: "collection", id: collection.id },
+                  onScopeChange,
+                  setIsSidebarOpen,
+                )
+              }
+              style={{ paddingInlineStart: `${12 + depth * 14}px` }}
+              type="button"
+            >
+              <Folder aria-hidden="true" size={15} />
+              <span>{collection.name}</span>
+            </button>
+            <EntityActionsMenu
+              disabled={disabled}
+              label={t("library.moreActionsFor", { name: collection.name })}
+            >
+              <button
+                disabled={disabled}
+                onClick={(event) => {
+                  closeParentMenu(event.currentTarget);
+                  onCreateChild(collection);
+                }}
+                role="menuitem"
+                type="button"
+              >
+                <FolderPlus aria-hidden="true" size={13} />
+                {t("library.newSubcollection")}
+              </button>
+              <button
+                disabled={disabled}
+                onClick={(event) => {
+                  closeParentMenu(event.currentTarget);
+                  onEdit(collection);
+                }}
+                role="menuitem"
+                type="button"
+              >
+                <Pencil aria-hidden="true" size={13} />
+                {t("library.editCollection")}
+              </button>
+              <button
+                className="library-workbench__menu-danger"
+                disabled={disabled}
+                onClick={(event) => {
+                  if (onDelete(collection)) {
+                    closeParentMenu(event.currentTarget, true);
+                  }
+                }}
+                role="menuitem"
+                type="button"
+              >
+                <Trash2 aria-hidden="true" size={13} />
+                {t("library.deleteCollection")}
+              </button>
+            </EntityActionsMenu>
+          </div>
+          <CollectionTree
+            depth={depth + 1}
+            disabled={disabled}
+            grouped={grouped}
+            onCreateChild={onCreateChild}
+            onDelete={onDelete}
+            onEdit={onEdit}
+            onScopeChange={onScopeChange}
+            parentId={collection.id}
+            scope={scope}
+            setIsSidebarOpen={setIsSidebarOpen}
+            t={t}
+          />
+        </div>
+      ))}
+    </>
+  );
 }
 
 function groupCollections(collections: LibraryCollection[]) {
@@ -1527,6 +1972,77 @@ function groupCollections(collections: LibraryCollection[]) {
   }
 
   return grouped;
+}
+
+function flattenCollections(collections: LibraryCollection[]) {
+  const grouped = groupCollections(collections);
+  const flattened: Array<{
+    collection: LibraryCollection;
+    depth: number;
+    path: string;
+  }> = [];
+  const visited = new Set<string>();
+
+  const visit = (
+    parentId: string | undefined,
+    depth: number,
+    parentPath: string[],
+  ) => {
+    for (const collection of grouped.get(parentId ?? "") ?? []) {
+      if (visited.has(collection.id)) {
+        continue;
+      }
+      visited.add(collection.id);
+      const path = [...parentPath, collection.name];
+      flattened.push({ collection, depth, path: path.join(" / ") });
+      visit(collection.id, depth + 1, path);
+    }
+  };
+
+  visit(undefined, 0, []);
+  for (const collection of collections) {
+    if (!visited.has(collection.id)) {
+      visited.add(collection.id);
+      flattened.push({ collection, depth: 0, path: collection.name });
+      visit(collection.id, 1, [collection.name]);
+    }
+  }
+
+  return flattened;
+}
+
+function getCollectionAndDescendantIds(
+  collectionId: string,
+  collections: LibraryCollection[],
+) {
+  const grouped = groupCollections(collections);
+  const unavailable = new Set<string>();
+  const pending = [collectionId];
+
+  while (pending.length > 0) {
+    const currentId = pending.pop();
+    if (!currentId || unavailable.has(currentId)) {
+      continue;
+    }
+    unavailable.add(currentId);
+    for (const child of grouped.get(currentId) ?? []) {
+      pending.push(child.id);
+    }
+  }
+
+  return unavailable;
+}
+
+function closeParentMenu(target: HTMLElement, restoreFocus = false) {
+  const details = target.closest("details");
+  details?.removeAttribute("open");
+  if (restoreFocus) {
+    details?.querySelector("summary")?.focus();
+  }
+}
+
+function normalizeOrganizationName(name: string) {
+  return name.trim().toLowerCase();
 }
 
 function selectScope(

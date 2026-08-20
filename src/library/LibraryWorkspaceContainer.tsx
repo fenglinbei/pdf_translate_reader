@@ -3,19 +3,25 @@ import {
   batchUpdateLibraryDocuments,
   createLibraryCollection,
   createLibraryTag,
+  deleteLibraryCollection,
+  deleteLibraryTag,
   listLibraryCollections,
   listLibraryDocuments,
   listLibraryTags,
   saveLibraryDocument,
+  updateLibraryCollection,
+  updateLibraryTag,
 } from "../cloud/pdfCloudRepository";
 import type {
   LibraryCollection,
   LibraryCollectionCreateInput,
+  LibraryCollectionUpdateInput,
   LibraryDocument,
   LibraryDocumentBatchUpdate,
   LibraryDocumentQuery,
   LibraryTag,
   LibraryTagCreateInput,
+  LibraryTagUpdateInput,
 } from "../types/domain";
 import { useI18n } from "../i18n/I18nProvider";
 import {
@@ -61,10 +67,15 @@ export function LibraryWorkspaceContainer({
   const [error, setError] = useState<string>();
   const requestIdRef = useRef(0);
   const queryRef = useRef(query);
+  const scopeRef = useRef(scope);
 
   useEffect(() => {
     queryRef.current = query;
   }, [query]);
+
+  useEffect(() => {
+    scopeRef.current = scope;
+  }, [scope]);
 
   const loadDocuments = useCallback(
     async (nextQuery: LibraryDocumentQuery, append = false) => {
@@ -119,6 +130,24 @@ export function LibraryWorkspaceContainer({
     setTags(nextTags);
   }, []);
 
+  const settleWorkspaceRefresh = useCallback(
+    async (operations: Promise<unknown>[]) => {
+      const results = await Promise.allSettled(operations);
+      const rejected = results.find(
+        (result): result is PromiseRejectedResult => result.status === "rejected",
+      );
+
+      if (rejected) {
+        setError(
+          rejected.reason instanceof Error
+            ? rejected.reason.message
+            : t("library.loadFailed"),
+        );
+      }
+    },
+    [t],
+  );
+
   const refreshWorkspace = useCallback(async () => {
     const currentQuery = { ...queryRef.current, offset: 0 };
     setQuery(currentQuery);
@@ -152,13 +181,13 @@ export function LibraryWorkspaceContainer({
       setQuery(currentQuery);
       queryRef.current = currentQuery;
 
-      await Promise.all([
+      await settleWorkspaceRefresh([
         loadDocuments(currentQuery),
         refreshOrganization ? loadOrganization() : Promise.resolve(),
-        Promise.resolve(onLibraryChanged?.(updatedDocument)),
+        Promise.resolve().then(() => onLibraryChanged?.(updatedDocument)),
       ]);
     },
-    [loadDocuments, loadOrganization, onLibraryChanged],
+    [loadDocuments, loadOrganization, onLibraryChanged, settleWorkspaceRefresh],
   );
 
   const handleQueryChange = useCallback(
@@ -179,6 +208,7 @@ export function LibraryWorkspaceContainer({
     (nextScope: LibraryWorkbenchScope) => {
       const nextQuery = libraryScopeToQuery(nextScope, queryRef.current);
       setScope(nextScope);
+      scopeRef.current = nextScope;
       setQuery(nextQuery);
       queryRef.current = nextQuery;
       void loadDocuments(nextQuery).catch(() => undefined);
@@ -248,6 +278,94 @@ export function LibraryWorkspaceContainer({
     [refreshAfterMutation],
   );
 
+  const handleUpdateCollection = useCallback(
+    async (collectionId: string, input: LibraryCollectionUpdateInput) => {
+      await updateLibraryCollection(collectionId, input);
+      await refreshAfterMutation(undefined, true);
+    },
+    [refreshAfterMutation],
+  );
+
+  const handleDeleteCollection = useCallback(
+    async (collection: LibraryCollection) => {
+      await deleteLibraryCollection(collection.id);
+
+      const currentScope = scopeRef.current;
+      if (currentScope.type === "collection" && currentScope.id === collection.id) {
+        const parentExists = Boolean(
+          collection.parentId
+          && collections.some((candidate) => candidate.id === collection.parentId),
+        );
+        const nextScope: LibraryWorkbenchScope = parentExists && collection.parentId
+          ? { type: "collection", id: collection.parentId }
+          : DEFAULT_SCOPE;
+        const nextQuery = libraryScopeToQuery(nextScope, queryRef.current);
+
+        setScope(nextScope);
+        scopeRef.current = nextScope;
+        setQuery(nextQuery);
+        queryRef.current = nextQuery;
+
+        await settleWorkspaceRefresh([
+          loadDocuments(nextQuery),
+          loadOrganization(),
+          Promise.resolve().then(() => onLibraryChanged?.()),
+        ]);
+        return;
+      }
+
+      await refreshAfterMutation(undefined, true);
+    },
+    [
+      collections,
+      loadDocuments,
+      loadOrganization,
+      onLibraryChanged,
+      refreshAfterMutation,
+      settleWorkspaceRefresh,
+    ],
+  );
+
+  const handleUpdateTag = useCallback(
+    async (tagId: string, input: LibraryTagUpdateInput) => {
+      await updateLibraryTag(tagId, input);
+      await refreshAfterMutation(undefined, true);
+    },
+    [refreshAfterMutation],
+  );
+
+  const handleDeleteTag = useCallback(
+    async (tag: LibraryTag) => {
+      await deleteLibraryTag(tag.id);
+
+      const currentScope = scopeRef.current;
+      if (currentScope.type === "tag" && currentScope.id === tag.id) {
+        const nextQuery = libraryScopeToQuery(DEFAULT_SCOPE, queryRef.current);
+
+        setScope(DEFAULT_SCOPE);
+        scopeRef.current = DEFAULT_SCOPE;
+        setQuery(nextQuery);
+        queryRef.current = nextQuery;
+
+        await settleWorkspaceRefresh([
+          loadDocuments(nextQuery),
+          loadOrganization(),
+          Promise.resolve().then(() => onLibraryChanged?.()),
+        ]);
+        return;
+      }
+
+      await refreshAfterMutation(undefined, true);
+    },
+    [
+      loadDocuments,
+      loadOrganization,
+      onLibraryChanged,
+      refreshAfterMutation,
+      settleWorkspaceRefresh,
+    ],
+  );
+
   const handleImport = useCallback(
     async (file: File) => {
       try {
@@ -296,6 +414,8 @@ export function LibraryWorkspaceContainer({
       onClose={onClose}
       onCreateCollection={handleCreateCollection}
       onCreateTag={handleCreateTag}
+      onDeleteCollection={handleDeleteCollection}
+      onDeleteTag={handleDeleteTag}
       onImport={handleImport}
       onLoadMore={handleLoadMore}
       onOpenDocument={handleOpenDocument}
@@ -303,6 +423,8 @@ export function LibraryWorkspaceContainer({
       onRefresh={refreshWorkspace}
       onSaveDocument={handleSaveDocument}
       onScopeChange={handleScopeChange}
+      onUpdateCollection={handleUpdateCollection}
+      onUpdateTag={handleUpdateTag}
       query={query}
       scope={scope}
       tags={tags}

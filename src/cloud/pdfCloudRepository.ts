@@ -325,16 +325,28 @@ export async function updateLibraryCollection(
   return mapLibraryCollection(data as unknown as LibraryCollectionRow);
 }
 
-export async function deleteLibraryCollection(collectionId: string) {
+export async function deleteLibraryCollection(
+  collectionId: string,
+): Promise<string> {
   const client = requireSupabaseClient();
-  const { error } = await client
+  const { data, error } = await client
     .from("user_collections")
     .delete()
-    .eq("id", collectionId);
+    .eq("id", collectionId)
+    .select("id")
+    .single();
 
   if (error) {
     throw error;
   }
+
+  const deletedId = (data as { id?: unknown } | null)?.id;
+
+  if (deletedId !== collectionId) {
+    throw new Error("Library collection delete returned an unexpected id.");
+  }
+
+  return deletedId;
 }
 
 export async function listLibraryTags(): Promise<LibraryTag[]> {
@@ -407,16 +419,26 @@ export async function updateLibraryTag(
   return mapLibraryTag(data as unknown as LibraryTagRow);
 }
 
-export async function deleteLibraryTag(tagId: string) {
+export async function deleteLibraryTag(tagId: string): Promise<string> {
   const client = requireSupabaseClient();
-  const { error } = await client
+  const { data, error } = await client
     .from("user_tags")
     .delete()
-    .eq("id", tagId);
+    .eq("id", tagId)
+    .select("id")
+    .single();
 
   if (error) {
     throw error;
   }
+
+  const deletedId = (data as { id?: unknown } | null)?.id;
+
+  if (deletedId !== tagId) {
+    throw new Error("Library tag delete returned an unexpected id.");
+  }
+
+  return deletedId;
 }
 
 export async function setDocumentCollections(
