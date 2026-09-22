@@ -1,6 +1,6 @@
 # 模型支持升级（2026-09-22）
 
-当前交付：统一模型目录、翻译与论文问答适配已实现，并通过本地回归、构建及开发环境实调用。基础合成样例与首轮公开中英文论文评测均已完成，后者的[报告与默认建议](public-paper-model-evaluation-2026-09-22.md)待确认。尚未部署生产；模型样例不等于完整产品流程验收。
+当前交付：统一模型目录、翻译与论文问答适配已实现，并于 2026-09-22 部署生产。通过本地回归、生产构建、七个型号的生产凭据实调用、双域名资源校验与登录页浏览器检查，详见[发布记录](model-support-production-2026-09-22.md)。首轮公开中英文论文评测已完成，[QA 默认建议](public-paper-model-evaluation-2026-09-22.md)仍待确认；登录后的完整论文流程尚未验收。
 
 ## 已确认的范围与默认策略
 
@@ -32,7 +32,7 @@
 
 ## 参数与运行配置
 
-Qwen 使用 `ALIYUN_API_KEY` 与 `ALIYUN_API_BASE_URL`；兼容别名是 `DASHSCOPE_API_KEY` 与 `QWEN_API_BASE_URL`。Base URL 必须取自同一地域/业务空间的控制台，不设置跨地域兜底。本地已按确认地址配置北京业务空间；实际地址和密钥不进入仓库。健康检查仅返回是否已配置。
+Qwen 使用 `ALIYUN_API_KEY` 与 `ALIYUN_API_BASE_URL`；兼容别名是 `DASHSCOPE_API_KEY` 与 `QWEN_API_BASE_URL`。Base URL 必须取自同一地域/业务空间的控制台，不设置跨地域兜底。本地和生产已按确认地址配置北京业务空间；实际地址和密钥不进入仓库。健康检查仅返回是否已配置。
 
 其他厂商沿用 `DEEPSEEK_API_KEY`、`GLM_API_KEY`、`KIMI_API_KEY` 及原有 Base URL 配置。阿里云 Key 仅用于 Qwen，其他型号继续使用各自官方 API，避免平台间 ID 与参数差异。
 
@@ -79,11 +79,11 @@ node scripts/evaluate-model-support.mjs --run --include-optional --output=/tmp/m
 node scripts/evaluate-model-support.mjs --run --include-optional --only-router --output=/tmp/model-router-evaluation.json
 ```
 
-## 后续冻结与发布
+## 后续冻结与验收
 
 1. 首轮公开论文已完成 56 次调用，覆盖总结、公式解释、引用、证据不足和连续追问；已建议 DeepSeek Flash，等待确认 QA 默认值。后续继续补充跨学科与更多长文样例。
 2. 确认旧型号退场及保存偏好的迁移规则；历史记录不改写模型身份。
-3. 发布时把同一地域/业务空间的 Qwen 环境配置写入服务器，执行部署后健康检查和登录态端到端验证。当前仅开发环境实调用通过，不代表服务器已配置或升级。
+3. 生产发布与部署后检查已完成；仍需登录后的真实论文检索、回答引用定位、追问及数据库保存验收。生产侧合成调用使用部署代码和运行进程凭据，未经过该完整链路。
 
 生成模型升级不改 embedding 模型或维度；不需要因此重建向量索引。数据库模型字段是文本，本次无需模型枚举迁移。
 

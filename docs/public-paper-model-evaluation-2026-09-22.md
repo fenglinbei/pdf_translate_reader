@@ -51,4 +51,4 @@ node scripts/evaluate-paper-models.mjs --run --include-optional \
 
 需要 Python 3、Poppler 的 `pdftotext` / `pdftohtml`、项目 Node 依赖及已配置的四家 API 凭据。`--run` 才会产生计费请求。
 
-待确认：QA 默认是否采纳 DeepSeek Flash。确认前目录仍保留原默认；旧型号退场规则和生产发布是另两项尚未冻结的工作。
+待确认：QA 默认是否采纳 DeepSeek Flash，以及旧型号退场规则。确认前目录仍保留原默认。模型升级已于 2026-09-22 完成[生产发布及部署检查](model-support-production-2026-09-22.md)，登录后的完整论文流程仍待验收。

@@ -1,0 +1,354 @@
+{
+  "schemaVersion": 1,
+  "deployment": {
+    "codeSha": "685cb0fa30b373cc805f6a1e18bd97e01d2e6e9d",
+    "previousCodeSha": "67073c42e65d1f5d89c869119d5bdf0ef5c8dc75",
+    "sourceBranch": "codex/model-support-upgrade",
+    "activeSince": "2026-09-22T06:49:15Z",
+    "serviceActive": true,
+    "restartCount": 0,
+    "nginxActive": true,
+    "nginxSyntaxPassed": true,
+    "remoteCustomizationsPreserved": true,
+    "temporarySwapRemoved": true,
+    "rollbackRestoreDrillExecuted": false,
+    "completeBackupVerified": true,
+    "rollbackProcedurePrepared": true
+  },
+  "artifactChecks": {
+    "checkedAt": "2026-09-22T06:51:57.847Z",
+    "codeSha": "685cb0fa30b373cc805f6a1e18bd97e01d2e6e9d",
+    "envPreserved": true,
+    "envMode": "600",
+    "nginxPreserved": true,
+    "unitPreserved": true,
+    "secretMatches": 0,
+    "artifactRecords": [
+      {
+        "path": "/index.html",
+        "sha256": "f63389452bb0d3a96755a6db76fccf87ccb107f521d7897475ca1b71b03b54dc",
+        "bytes": 425,
+        "matchesBuild": true
+      },
+      {
+        "path": "/assets/index-BeDNBvla.js",
+        "sha256": "c1aca0f23586e8e0635860f28922854e184d3a77c783600ee89464f6ac8fd8f7",
+        "bytes": 1909238,
+        "matchesBuild": true
+      },
+      {
+        "path": "/assets/index-DydFe-UC.css",
+        "sha256": "d8cc980aca7ed34470274170daed169d86d8d98fb467267bba74bf47e36c226a",
+        "bytes": 145878,
+        "matchesBuild": true
+      }
+    ]
+  },
+  "httpChecks": [
+    {
+      "host": "pdf-translate-reader.xyz",
+      "path": "/index.html",
+      "status": 200,
+      "sha256": "f63389452bb0d3a96755a6db76fccf87ccb107f521d7897475ca1b71b03b54dc",
+      "matchesPublished": true
+    },
+    {
+      "host": "pdf-translate-reader.xyz",
+      "path": "/assets/index-BeDNBvla.js",
+      "status": 200,
+      "sha256": "c1aca0f23586e8e0635860f28922854e184d3a77c783600ee89464f6ac8fd8f7",
+      "matchesPublished": true
+    },
+    {
+      "host": "pdf-translate-reader.xyz",
+      "path": "/assets/index-DydFe-UC.css",
+      "status": 200,
+      "sha256": "d8cc980aca7ed34470274170daed169d86d8d98fb467267bba74bf47e36c226a",
+      "matchesPublished": true
+    },
+    {
+      "host": "pdf-translate-reader.xyz",
+      "path": "/api/health",
+      "status": 200,
+      "health": {
+        "status": "ok",
+        "service": "pdf-translate-reader-api",
+        "deepseek": {
+          "apiKeyConfigured": true
+        },
+        "translation": {
+          "deepseek": {
+            "apiKeyConfigured": true
+          },
+          "glm": {
+            "apiKeyConfigured": true
+          },
+          "kimi": {
+            "apiKeyConfigured": true
+          },
+          "qwen": {
+            "apiKeyConfigured": true,
+            "apiBaseUrlConfigured": true
+          }
+        },
+        "embedding": {
+          "configured": true,
+          "dimensions": 1024,
+          "model": "voyage-4-large",
+          "provider": "voyage"
+        },
+        "supabase": {
+          "configured": true,
+          "serviceRoleConfigured": true
+        }
+      }
+    },
+    {
+      "host": "pdf-translate-reader.xyz",
+      "path": "/api/translate/stream",
+      "withoutSessionStatus": 401
+    },
+    {
+      "host": "pdf.fenglin.pro",
+      "path": "/index.html",
+      "status": 200,
+      "sha256": "f63389452bb0d3a96755a6db76fccf87ccb107f521d7897475ca1b71b03b54dc",
+      "matchesPublished": true
+    },
+    {
+      "host": "pdf.fenglin.pro",
+      "path": "/assets/index-BeDNBvla.js",
+      "status": 200,
+      "sha256": "c1aca0f23586e8e0635860f28922854e184d3a77c783600ee89464f6ac8fd8f7",
+      "matchesPublished": true
+    },
+    {
+      "host": "pdf.fenglin.pro",
+      "path": "/assets/index-DydFe-UC.css",
+      "status": 200,
+      "sha256": "d8cc980aca7ed34470274170daed169d86d8d98fb467267bba74bf47e36c226a",
+      "matchesPublished": true
+    },
+    {
+      "host": "pdf.fenglin.pro",
+      "path": "/api/health",
+      "status": 200,
+      "health": {
+        "status": "ok",
+        "service": "pdf-translate-reader-api",
+        "deepseek": {
+          "apiKeyConfigured": true
+        },
+        "translation": {
+          "deepseek": {
+            "apiKeyConfigured": true
+          },
+          "glm": {
+            "apiKeyConfigured": true
+          },
+          "kimi": {
+            "apiKeyConfigured": true
+          },
+          "qwen": {
+            "apiKeyConfigured": true,
+            "apiBaseUrlConfigured": true
+          }
+        },
+        "embedding": {
+          "configured": true,
+          "dimensions": 1024,
+          "model": "voyage-4-large",
+          "provider": "voyage"
+        },
+        "supabase": {
+          "configured": true,
+          "serviceRoleConfigured": true
+        }
+      }
+    },
+    {
+      "host": "pdf.fenglin.pro",
+      "path": "/api/translate/stream",
+      "withoutSessionStatus": 401
+    }
+  ],
+  "modelChecks": {
+    "scope": "Production process environment and deployed adapters; synthetic text only; excludes authenticated browser/database flow.",
+    "startedAt": "2026-09-22T06:51:58.026Z",
+    "codeSha": "685cb0fa30b373cc805f6a1e18bd97e01d2e6e9d",
+    "defaults": {
+      "translation": "deepseek-flash",
+      "qa": "deepseek-v4-pro"
+    },
+    "results": [
+      {
+        "model": "deepseek-flash",
+        "test": "translation_stream",
+        "status": "pass",
+        "durationMs": 762,
+        "pass": true,
+        "finishReason": "stop",
+        "answerCharacters": 31
+      },
+      {
+        "model": "deepseek-flash",
+        "test": "qa_stream",
+        "status": "pass",
+        "durationMs": 964,
+        "pass": true,
+        "finishReason": "stop",
+        "answerCharacters": 21
+      },
+      {
+        "model": "qwen3.8-max",
+        "test": "translation_stream",
+        "status": "pass",
+        "durationMs": 2204,
+        "pass": true,
+        "finishReason": "stop",
+        "answerCharacters": 35
+      },
+      {
+        "model": "qwen3.8-flash",
+        "test": "translation_stream",
+        "status": "pass",
+        "durationMs": 1693,
+        "pass": true,
+        "finishReason": "stop",
+        "answerCharacters": 33
+      },
+      {
+        "model": "qwen3.8-flash",
+        "test": "qa_stream",
+        "status": "pass",
+        "durationMs": 1379,
+        "pass": true,
+        "finishReason": "stop",
+        "answerCharacters": 32
+      },
+      {
+        "model": "qwen3.8-max",
+        "test": "qa_stream",
+        "status": "pass",
+        "durationMs": 3472,
+        "pass": true,
+        "finishReason": "stop",
+        "answerCharacters": 27
+      },
+      {
+        "model": "glm-5.3",
+        "test": "translation_stream",
+        "status": "pass",
+        "durationMs": 1895,
+        "pass": true,
+        "finishReason": "stop",
+        "answerCharacters": 30
+      },
+      {
+        "model": "glm-5.3-flash",
+        "test": "translation_stream",
+        "status": "pass",
+        "durationMs": 1477,
+        "pass": true,
+        "finishReason": "stop",
+        "answerCharacters": 30
+      },
+      {
+        "model": "glm-5.3",
+        "test": "qa_stream",
+        "status": "pass",
+        "durationMs": 2197,
+        "pass": true,
+        "finishReason": "stop",
+        "answerCharacters": 30
+      },
+      {
+        "model": "glm-5.3-flash",
+        "test": "qa_stream",
+        "status": "pass",
+        "durationMs": 2619,
+        "pass": true,
+        "finishReason": "stop",
+        "answerCharacters": 27
+      },
+      {
+        "model": "glm-5.3-flashx",
+        "test": "translation_stream",
+        "status": "pass",
+        "durationMs": 1120,
+        "pass": true,
+        "finishReason": "stop",
+        "answerCharacters": 31
+      },
+      {
+        "model": "glm-5.3-flashx",
+        "test": "qa_stream",
+        "status": "pass",
+        "durationMs": 1148,
+        "pass": true,
+        "finishReason": "stop",
+        "answerCharacters": 52
+      },
+      {
+        "model": "kimi-k3",
+        "test": "translation_stream",
+        "status": "pass",
+        "durationMs": 6365,
+        "pass": true,
+        "finishReason": "stop",
+        "answerCharacters": 33
+      },
+      {
+        "model": "kimi-k3",
+        "test": "qa_stream",
+        "status": "pass",
+        "durationMs": 9330,
+        "pass": true,
+        "finishReason": "stop",
+        "answerCharacters": 24
+      },
+      {
+        "model": "deepseek-v4-pro",
+        "test": "qa_retained_default",
+        "status": "pass",
+        "durationMs": 1815,
+        "pass": true,
+        "finishReason": "stop",
+        "answerCharacters": 24
+      },
+      {
+        "model": "deepseek-flash",
+        "test": "qa_router_nonstream",
+        "status": "pass",
+        "durationMs": 839,
+        "pass": true,
+        "type": "global",
+        "fallback": false
+      }
+    ],
+    "finishedAt": "2026-09-22T06:52:25.279Z"
+  },
+  "browserChecks": [
+    {
+      "url": "https://pdf-translate-reader.xyz/",
+      "session": "isolated unauthenticated",
+      "title": "PDF Translate Reader",
+      "loginFormVisible": true,
+      "consoleErrors": 0,
+      "consoleWarnings": 0
+    },
+    {
+      "url": "https://pdf.fenglin.pro/",
+      "session": "isolated unauthenticated",
+      "title": "PDF Translate Reader",
+      "loginFormVisible": true,
+      "consoleErrors": 0,
+      "consoleWarnings": 0
+    }
+  ],
+  "acceptanceLimits": [
+    "Authenticated paper upload, retrieval, citation navigation, follow-up and database persistence were not exercised.",
+    "QA default selection and legacy model retirement remain pending.",
+    "Short synthetic checks do not establish a model quality or latency ranking."
+  ]
+}
