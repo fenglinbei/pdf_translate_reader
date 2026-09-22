@@ -10,7 +10,8 @@ import {
   normalizeTranslationLanguagePair,
 } from "../config/translationLanguages";
 import { detectBrowserUiLocale, normalizeUiLocale } from "../i18n/uiLocales";
-import { isTranslationModel } from "../translation/models";
+import { DEFAULT_TRANSLATION_MODEL, isSelectableTranslationModel } from "../translation/models";
+import { createModelCounts, isKnownModel } from "../../shared/modelRegistry.mjs";
 import type {
   ApiCallLog,
   AppSettings,
@@ -25,7 +26,7 @@ export const MIN_DRAGGED_WORDS_LIMIT = PROJECT_CONFIG.selection.minDraggedWordsL
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   contextWindowN: 2,
-  defaultModel: "deepseek-v4-flash",
+  defaultModel: DEFAULT_TRANSLATION_MODEL,
   longContextEnabled: true,
   mathpixAutoStartEnabled: true,
   maxDraggedWords: PROJECT_CONFIG.selection.defaultMaxDraggedWords,
@@ -129,7 +130,7 @@ export function normalizeAppSettings(input: unknown): AppSettings {
   const contextWindowN = [0, 1, 2, 3, 5].includes(Number(value.contextWindowN))
     ? (Number(value.contextWindowN) as AppSettings["contextWindowN"])
     : DEFAULT_APP_SETTINGS.contextWindowN;
-  const defaultModel = isTranslationModel(value.defaultModel)
+  const defaultModel = isSelectableTranslationModel(value.defaultModel)
     ? value.defaultModel
     : DEFAULT_APP_SETTINGS.defaultModel;
   const maxDraggedWords = clamp(
@@ -177,6 +178,10 @@ function clamp(value: number, min: number, max: number) {
 }
 
 function summarizeApiLogs(logs: ApiUsageLog[]): ApiUsageSummary {
+  const modelCounts = createModelCounts();
+  for (const log of logs) {
+    if (isKnownModel(log.model)) modelCounts[log.model] += 1;
+  }
   const recentLogs = logs
     .slice()
     .sort((left, right) => right.requestStartedAt - left.requestStartedAt)
@@ -188,12 +193,7 @@ function summarizeApiLogs(logs: ApiUsageLog[]): ApiUsageSummary {
     cacheMissTokens: sum(logs, "promptCacheMissTokens"),
     completionTokens: sum(logs, "completionTokens"),
     errorCalls: logs.filter((log) => log.status === "error").length,
-    modelCounts: {
-      "deepseek-v4-flash": logs.filter((log) => log.model === "deepseek-v4-flash").length,
-      "deepseek-v4-pro": logs.filter((log) => log.model === "deepseek-v4-pro").length,
-      "glm-5.2": logs.filter((log) => log.model === "glm-5.2").length,
-      "kimi-k3": logs.filter((log) => log.model === "kimi-k3").length,
-    },
+    modelCounts,
     promptTokens: sum(logs, "promptTokens"),
     recentLogs,
     successfulCalls: logs.filter((log) => log.status === "success").length,

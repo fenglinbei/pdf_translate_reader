@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
+import { TRANSLATION_PROVIDER_KEY_NAMES } from "../server/models/providerConfig.mjs";
 
 const APP_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PUBLIC_VITE_KEYS = new Set([
@@ -11,11 +12,6 @@ const PUBLIC_VITE_KEYS = new Set([
   "VITE_SUPABASE_ANON_KEY",
   "VITE_SUPABASE_URL",
 ]);
-const TRANSLATION_PROVIDER_KEYS = [
-  "DEEPSEEK_API_KEY",
-  "GLM_API_KEY",
-  "KIMI_API_KEY",
-];
 const envFile = process.argv[2];
 
 if (!envFile) {
@@ -25,9 +21,9 @@ if (!envFile) {
 const resolvedEnvFile = resolve(envFile);
 const parsedEnvironment = dotenv.parse(readFileSync(resolvedEnvFile, "utf8"));
 
-if (!TRANSLATION_PROVIDER_KEYS.some((key) => isConfiguredValue(parsedEnvironment[key]))) {
+if (!TRANSLATION_PROVIDER_KEY_NAMES.some((key) => isConfiguredValue(parsedEnvironment[key]))) {
   throw new Error(
-    `${resolvedEnvFile} must contain at least one configured DEEPSEEK_API_KEY, GLM_API_KEY, or KIMI_API_KEY.`,
+    `${resolvedEnvFile} must contain at least one configured translation provider key: ${TRANSLATION_PROVIDER_KEY_NAMES.join(", ")}.`,
   );
 }
 

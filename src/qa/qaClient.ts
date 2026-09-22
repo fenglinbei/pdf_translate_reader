@@ -226,7 +226,7 @@ export async function streamQaAnswer(
       throw new Error("QA stream is missing.");
     }
 
-    await readQaEventStream(response.body, handlers);
+    await readQaEventStream(response.body, handlers, requestSignal.touch);
   } catch (error) {
     if (requestSignal.timedOut()) {
       throw new Error("QA answer timed out. Try a shorter question or fewer follow-up details.");
@@ -253,34 +253,48 @@ async function getAuthHeader() {
 function createTimeoutSignal(parentSignal?: AbortSignal) {
   const abortController = new AbortController();
   let timedOut = false;
-  const timeoutId = window.setTimeout(() => {
+  let timeoutId: number | undefined;
+  const abortForTimeout = () => {
     timedOut = true;
     abortController.abort();
-  }, PROJECT_CONFIG.api.qaAnswerTimeoutMs);
+  };
+  // Heartbeats keep an active request alive, but never remove the total cap.
+  const deadlineId = window.setTimeout(abortForTimeout, 10 * 60_000);
+  function touch() {
+    if (abortController.signal.aborted) return;
+    window.clearTimeout(timeoutId);
+    timeoutId = window.setTimeout(abortForTimeout, PROJECT_CONFIG.api.qaAnswerTimeoutMs);
+  }
 
   function handleParentAbort() {
+    window.clearTimeout(timeoutId);
+    window.clearTimeout(deadlineId);
     abortController.abort();
   }
 
   if (parentSignal?.aborted) {
-    abortController.abort();
+    handleParentAbort();
   } else {
     parentSignal?.addEventListener("abort", handleParentAbort, { once: true });
+    touch();
   }
 
   return {
     dispose: () => {
       window.clearTimeout(timeoutId);
+      window.clearTimeout(deadlineId);
       parentSignal?.removeEventListener("abort", handleParentAbort);
     },
     signal: abortController.signal,
     timedOut: () => timedOut,
+    touch,
   };
 }
 
 async function readQaEventStream(
   stream: ReadableStream<Uint8Array>,
   handlers: QaStreamHandlers,
+  onActivity: () => void,
 ) {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
@@ -353,6 +367,7 @@ async function readQaEventStream(
       break;
     }
 
+    onActivity();
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split(/\r?\n/);
     buffer = lines.pop() ?? "";

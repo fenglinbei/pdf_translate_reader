@@ -120,8 +120,10 @@ async function handleQaStream(request, response, user) {
 
   const abortController = new AbortController();
   let assistantMessage;
+  let heartbeat;
 
   response.on("close", () => {
+    clearInterval(heartbeat);
     abortController.abort();
   });
 
@@ -187,6 +189,10 @@ async function handleQaStream(request, response, user) {
     requestMessageId = assistantMessage.id;
 
     writeSseHeaders(response);
+    heartbeat = setInterval(() => {
+      if (!response.destroyed && !response.writableEnded) response.write(": keep-alive\n\n");
+    }, 10_000);
+    heartbeat.unref?.();
     writeSse(response, "meta", {
       assistantMessageId: assistantMessage.id,
       executionMode: requestBody.executionMode,
@@ -657,6 +663,8 @@ async function handleQaStream(request, response, user) {
     writeJson(response, getErrorStatusCode(error), {
       error: serializeError(error),
     });
+  } finally {
+    clearInterval(heartbeat);
   }
 }
 
@@ -1168,6 +1176,7 @@ function writeSseHeaders(response) {
     "Cache-Control": "no-cache",
     Connection: "keep-alive",
     "Content-Type": "text/event-stream; charset=utf-8",
+    "X-Accel-Buffering": "no",
   });
 }
 

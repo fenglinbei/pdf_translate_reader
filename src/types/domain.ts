@@ -1,11 +1,8 @@
 import type { TranslationLanguage } from "../config/translationLanguages";
 import type { UiLocale } from "../i18n/uiLocales";
+import type { ModelId, ReasoningEffort } from "../../shared/modelRegistry.mjs";
 
-export type TranslationModel =
-  | "deepseek-v4-flash"
-  | "deepseek-v4-pro"
-  | "glm-5.2"
-  | "kimi-k3";
+export type TranslationModel = ModelId;
 export type SelectionMode = "continuous" | "cross";
 export type MobileInteractionMode = "pan" | "segmented";
 export type SourceLanguage = TranslationLanguage;
@@ -14,7 +11,7 @@ export type AnnotationColor = "yellow" | "blue" | "green" | "red";
 export type TextExtractionSource = "pdfjs" | "mathpix-v3-pdf";
 export type TranslationRequestKind = "selection" | "free";
 export type FreeTranslationSourceLanguage = SourceLanguage | "auto";
-export type TranslationReasoningEffort = "low" | "high" | "max";
+export type TranslationReasoningEffort = ReasoningEffort;
 export type TranslationStylePresetId =
   | "academic-faithful"
   | "academic-fluent"
@@ -462,7 +459,7 @@ export type ApiCallLog = {
 };
 
 export type QaScope = "current" | "current-plus-references" | "library";
-export type QaChatModel = "deepseek-v4-pro" | "glm-5.2";
+export type QaChatModel = ModelId;
 export type QaExecutionMode = "agentic";
 export type QaReasoningEffort = "auto" | "quick" | "standard" | "deep";
 export type QaAnswerLanguage = "auto" | "zh" | "en";

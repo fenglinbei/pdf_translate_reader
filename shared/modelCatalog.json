@@ -1,0 +1,386 @@
+{
+  "version": "2026-09-22.1",
+  "defaults": {
+    "translation": "deepseek-flash",
+    "qa": "deepseek-v4-pro",
+    "reasoningSummary": "deepseek-flash"
+  },
+  "models": {
+    "deepseek-flash": {
+      "label": "DeepSeek V4.1 Flash",
+      "shortLabel": "DS Flash",
+      "provider": "deepseek",
+      "apiModel": "deepseek-flash",
+      "tier": "core",
+      "availability": {
+        "translation": "ready",
+        "qa": "ready"
+      },
+      "context": {
+        "contextWindow": 1000000,
+        "maxOutputTokens": 384000,
+        "defaultMaxTokens": 32768
+      },
+      "outputTokenParameter": "max_tokens",
+      "reasoningProfile": "deepseek",
+      "source": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/"
+    },
+    "qwen3.8-max": {
+      "label": "Qwen 3.8 Max",
+      "shortLabel": "Qwen Max",
+      "provider": "qwen",
+      "apiModel": "qwen3.8-max",
+      "tier": "core",
+      "availability": {
+        "translation": "ready",
+        "qa": "ready"
+      },
+      "context": {
+        "contextWindow": 1000000,
+        "maxOutputTokens": 131072,
+        "defaultMaxTokens": 32768
+      },
+      "outputTokenParameter": "max_tokens",
+      "reasoningProfile": "qwen38",
+      "source": "https://help.aliyun.com/zh/model-studio/qwen3-8-max"
+    },
+    "qwen3.8-flash": {
+      "label": "Qwen 3.8 Flash",
+      "shortLabel": "Qwen Flash",
+      "provider": "qwen",
+      "apiModel": "qwen3.8-flash",
+      "tier": "core",
+      "availability": {
+        "translation": "ready",
+        "qa": "ready"
+      },
+      "context": {
+        "contextWindow": 1000000,
+        "maxOutputTokens": 131072,
+        "defaultMaxTokens": 32768
+      },
+      "outputTokenParameter": "max_tokens",
+      "reasoningProfile": "qwen38",
+      "source": "https://help.aliyun.com/zh/model-studio/qwen3-8-flash"
+    },
+    "glm-5.3": {
+      "label": "GLM 5.3",
+      "shortLabel": "GLM 5.3",
+      "provider": "glm",
+      "apiModel": "glm-5.3",
+      "tier": "core",
+      "availability": {
+        "translation": "ready",
+        "qa": "ready"
+      },
+      "context": {
+        "contextWindow": 1000000,
+        "maxOutputTokens": 131072,
+        "defaultMaxTokens": 32768
+      },
+      "outputTokenParameter": "max_tokens",
+      "reasoningProfile": "glm53",
+      "source": "https://docs.bigmodel.cn/cn/guide/models/text/glm-5.3"
+    },
+    "glm-5.3-flash": {
+      "label": "GLM 5.3 Flash",
+      "shortLabel": "GLM Flash",
+      "provider": "glm",
+      "apiModel": "glm-5.3-flash",
+      "tier": "core",
+      "availability": {
+        "translation": "ready",
+        "qa": "ready"
+      },
+      "context": {
+        "contextWindow": 1000000,
+        "maxOutputTokens": 131072,
+        "defaultMaxTokens": 32768
+      },
+      "outputTokenParameter": "max_tokens",
+      "reasoningProfile": "glm53",
+      "source": "https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash"
+    },
+    "kimi-k3": {
+      "label": "Kimi K3",
+      "shortLabel": "K3",
+      "provider": "kimi",
+      "apiModel": "kimi-k3",
+      "tier": "core",
+      "availability": {
+        "translation": "ready",
+        "qa": "ready"
+      },
+      "context": {
+        "contextWindow": 1000000,
+        "maxOutputTokens": 1048576,
+        "defaultMaxTokens": 32768
+      },
+      "outputTokenParameter": "max_completion_tokens",
+      "reasoningProfile": "kimiK3",
+      "source": "https://platform.kimi.com/docs/guide/kimi-k3-quickstart"
+    },
+    "glm-5.3-flashx": {
+      "label": "GLM 5.3 FlashX",
+      "shortLabel": "GLM FlashX",
+      "provider": "glm",
+      "apiModel": "glm-5.3-flashx",
+      "tier": "optional",
+      "availability": {
+        "translation": "ready",
+        "qa": "ready"
+      },
+      "context": {
+        "contextWindow": 1000000,
+        "maxOutputTokens": 131072,
+        "defaultMaxTokens": 32768
+      },
+      "outputTokenParameter": "max_tokens",
+      "reasoningProfile": "glm53",
+      "source": "https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash"
+    },
+    "deepseek-v4-flash": {
+      "label": "DeepSeek V4 Flash",
+      "shortLabel": "DS V4 Flash",
+      "provider": "deepseek",
+      "apiModel": "deepseek-v4-flash",
+      "tier": "legacy",
+      "replacement": "deepseek-flash",
+      "availability": {
+        "translation": "ready"
+      },
+      "context": {
+        "contextWindow": 1000000,
+        "maxOutputTokens": 384000,
+        "defaultMaxTokens": 32768
+      },
+      "outputTokenParameter": "max_tokens",
+      "reasoningProfile": "deepseek",
+      "source": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/"
+    },
+    "deepseek-v4-pro": {
+      "label": "DeepSeek V4 Pro",
+      "shortLabel": "DS V4 Pro",
+      "provider": "deepseek",
+      "apiModel": "deepseek-v4-pro",
+      "tier": "legacy",
+      "availability": {
+        "translation": "ready",
+        "qa": "ready"
+      },
+      "context": {
+        "contextWindow": 1000000,
+        "maxOutputTokens": 384000,
+        "defaultMaxTokens": 32768
+      },
+      "outputTokenParameter": "max_tokens",
+      "reasoningProfile": "deepseek",
+      "source": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/"
+    },
+    "glm-5.2": {
+      "label": "GLM 5.2",
+      "shortLabel": "GLM 5.2",
+      "provider": "glm",
+      "apiModel": "glm-5.2",
+      "tier": "legacy",
+      "availability": {
+        "translation": "ready",
+        "qa": "ready"
+      },
+      "context": {
+        "contextWindow": 1000000,
+        "maxOutputTokens": 131072,
+        "defaultMaxTokens": 32768
+      },
+      "outputTokenParameter": "max_tokens",
+      "reasoningProfile": "glm52",
+      "source": "https://docs.bigmodel.cn/cn/guide/models/text/glm-5.2"
+    }
+  },
+  "reasoningProfiles": {
+    "deepseek": {
+      "toggleParameter": "thinking",
+      "providerEfforts": [
+        "high",
+        "max"
+      ],
+      "translation": {
+        "canDisable": true,
+        "defaultEnabled": false,
+        "defaultEffort": "high",
+        "efforts": [
+          "high",
+          "max"
+        ]
+      },
+      "translationEffortMap": {
+        "low": "high",
+        "high": "high",
+        "max": "max"
+      },
+      "qa": {
+        "quick": {
+          "enabled": false
+        },
+        "standard": {
+          "enabled": true,
+          "effort": "high"
+        },
+        "deep": {
+          "enabled": true,
+          "effort": "max"
+        }
+      }
+    },
+    "qwen38": {
+      "toggleParameter": "enable_thinking",
+      "providerEfforts": [
+        "low",
+        "medium",
+        "xhigh"
+      ],
+      "translation": {
+        "canDisable": true,
+        "defaultEnabled": false,
+        "defaultEffort": "high",
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ]
+      },
+      "translationEffortMap": {
+        "low": "low",
+        "high": "medium",
+        "max": "xhigh"
+      },
+      "qa": {
+        "quick": {
+          "enabled": false
+        },
+        "standard": {
+          "enabled": true,
+          "effort": "medium"
+        },
+        "deep": {
+          "enabled": true,
+          "effort": "xhigh"
+        }
+      }
+    },
+    "glm53": {
+      "toggleParameter": "thinking",
+      "providerEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "translation": {
+        "canDisable": false,
+        "defaultEnabled": true,
+        "defaultEffort": "max",
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ]
+      },
+      "translationEffortMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "qa": {
+        "quick": {
+          "enabled": true,
+          "effort": "low"
+        },
+        "standard": {
+          "enabled": true,
+          "effort": "high"
+        },
+        "deep": {
+          "enabled": true,
+          "effort": "max"
+        }
+      }
+    },
+    "glm52": {
+      "toggleParameter": "thinking",
+      "providerEfforts": [
+        "max",
+        "xhigh",
+        "high",
+        "medium",
+        "low",
+        "minimal",
+        "none"
+      ],
+      "translation": {
+        "canDisable": true,
+        "defaultEnabled": false,
+        "defaultEffort": "high",
+        "efforts": [
+          "high",
+          "max"
+        ]
+      },
+      "translationEffortMap": {
+        "low": "high",
+        "high": "high",
+        "max": "max"
+      },
+      "qa": {
+        "quick": {
+          "enabled": true,
+          "effort": "none"
+        },
+        "standard": {
+          "enabled": true,
+          "effort": "high"
+        },
+        "deep": {
+          "enabled": true,
+          "effort": "max"
+        }
+      }
+    },
+    "kimiK3": {
+      "toggleParameter": null,
+      "providerEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "translation": {
+        "canDisable": false,
+        "defaultEnabled": true,
+        "defaultEffort": "max",
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ]
+      },
+      "translationEffortMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "qa": {
+        "quick": {
+          "enabled": true,
+          "effort": "low"
+        },
+        "standard": {
+          "enabled": true,
+          "effort": "high"
+        },
+        "deep": {
+          "enabled": true,
+          "effort": "max"
+        }
+      }
+    }
+  }
+}

@@ -1,4 +1,5 @@
 import { normalizeTranslationLanguagePair } from "../deepseek/languages.mjs";
+import { getTranslationReasoningCapability } from "../../shared/modelRegistry.mjs";
 import {
   assertFreeTranslationSourceWithinLimit,
   buildTranslationMessages,
@@ -474,16 +475,15 @@ function normalizeTranslationRequest(body) {
   };
 
   if (requestKind === "free") {
+    const capability = getTranslationReasoningCapability(model);
     normalizedRequest.reasoningEnabled = typeof body.reasoningEnabled === "boolean"
       ? body.reasoningEnabled
-      : model === "kimi-k3";
+      : capability.defaultEnabled;
     normalizedRequest.reasoningEffort = TRANSLATION_REASONING_EFFORTS.has(
       body.reasoningEffort,
     )
       ? body.reasoningEffort
-      : model === "kimi-k3"
-        ? "max"
-        : "high";
+      : capability.defaultEffort;
     normalizedRequest.summaryLocale = body.summaryLocale === "zh-CN"
       ? "zh-CN"
       : "en-US";

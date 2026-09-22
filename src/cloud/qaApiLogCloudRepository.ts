@@ -1,5 +1,6 @@
 import { requireSupabaseClient } from "../auth/supabaseClient";
 import type { QaApiLog } from "../types/domain";
+import { isKnownModel } from "../../shared/modelRegistry.mjs";
 
 type QaApiLogRow = {
   error_message: string | null;
@@ -75,7 +76,7 @@ function rowToQaApiLog(row: QaApiLogRow): QaApiLog {
 }
 
 function isQaModel(value: unknown): value is QaApiLog["model"] {
-  return value === "deepseek-v4-pro" || value === "glm-5.2";
+  return isKnownModel(value, "qa");
 }
 
 function parseIsoTime(value: string | null) {

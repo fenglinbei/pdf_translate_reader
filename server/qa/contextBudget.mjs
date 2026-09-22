@@ -1,26 +1,11 @@
-// Model context window configuration and token-aware budget allocation.
-//
-// Both supported QA models (deepseek-v4-pro, glm-5.2) expose a 1M-token
-// context window. This module computes per-section character budgets so the
-// prompt builder can scale evidence / full-text / conversation inputs to fill
-// the window instead of relying on the old fixed 240k-char ceiling.
+import { getModelIds, requireModelDefinition } from "../../shared/modelRegistry.mjs";
 
-export const MODEL_CONTEXT_CONFIG = {
-  "deepseek-v4-pro": {
-    contextWindow: 1_000_000,
-    maxOutputTokens: 384_000,
-    defaultMaxTokens: 32768,
-  },
-  "glm-5.2": {
-    contextWindow: 1_000_000,
-    maxOutputTokens: 131_072,
-    defaultMaxTokens: 32768,
-  },
-};
+// Adapter readiness is checked separately when a request enters the QA client.
+export const MODEL_CONTEXT_CONFIG = Object.freeze(Object.fromEntries(
+  getModelIds({ task: "qa" }).map((id) => [id, requireModelDefinition(id).context]),
+));
 
-export const FALLBACK_MODEL = "glm-5.2";
-
-// Tokens reserved for the model's answer + reasoning output. Both models can
+// Tokens reserved for the model's answer + reasoning output. These models can
 // produce very long thinking traces; we keep a generous slice so the answer is
 // never truncated by the input filling the window.
 const OUTPUT_RESERVE_TOKENS = 65_536;
@@ -29,13 +14,15 @@ const SYSTEM_PROMPT_RESERVE_TOKENS = 4096;
 // and the prompt scaffolding around the full paper text.
 const LONG_CONTEXT_EXTRAS_RESERVE_TOKENS = 60_000;
 
-// Conservative chars-per-token estimate for mixed academic text (English +
-// LaTeX + CJK). 3.0 errs on the side of under-counting tokens so budgets stay
-// safe; this is more conservative than the old length/3.5 heuristic.
+// Existing lightweight estimate, not an exact tokenizer. Very large CJK or
+// formula-heavy documents need separate context-limit validation.
 const CHARS_PER_TOKEN = 3.0;
 
 export function getModelContextConfig(model) {
-  return MODEL_CONTEXT_CONFIG[model] ?? MODEL_CONTEXT_CONFIG[FALLBACK_MODEL];
+  if (!Object.hasOwn(MODEL_CONTEXT_CONFIG, model)) {
+    throw new Error(`Unknown QA context budget model: ${String(model)}`);
+  }
+  return MODEL_CONTEXT_CONFIG[model];
 }
 
 export function estimateTokens(text) {

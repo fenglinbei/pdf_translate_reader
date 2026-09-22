@@ -2,48 +2,30 @@ import {
   createDeepSeekChatStream,
   DeepSeekClientError,
 } from "../deepseek/client.mjs";
+import {
+  getAvailableModelIds,
+  MODEL_DEFAULTS,
+  requireModelDefinition,
+  resolveTranslationReasoning,
+  TRANSLATION_REASONING_EFFORTS as REASONING_EFFORTS,
+} from "../../shared/modelRegistry.mjs";
+import { getModelProviderConfig } from "../models/providerConfig.mjs";
+import { createModelChatBody } from "../models/requestBody.mjs";
 
-const DEFAULT_GLM_API_BASE_URL = "https://open.bigmodel.cn/api/paas/v4";
-const DEFAULT_KIMI_API_BASE_URL = "https://api.moonshot.cn/v1";
-const DEFAULT_GLM_MAX_TOKENS = 16_384;
-const DEFAULT_KIMI_MAX_COMPLETION_TOKENS = 16_384;
+const DEFAULT_TRANSLATION_MAX_TOKENS = 16_384;
 const MIN_OUTPUT_TOKENS = 1_024;
 const MAX_OUTPUT_TOKENS = 65_536;
 
-export const DEFAULT_TRANSLATION_MODEL = "deepseek-v4-flash";
-export const TRANSLATION_MODELS = new Set([
-  "deepseek-v4-flash",
-  "deepseek-v4-pro",
-  "glm-5.2",
-  "kimi-k3",
-]);
-export const TRANSLATION_REASONING_EFFORTS = new Set(["low", "high", "max"]);
+export const DEFAULT_TRANSLATION_MODEL = MODEL_DEFAULTS.translation;
+export const TRANSLATION_MODELS = new Set(getAvailableModelIds("translation"));
+export const TRANSLATION_REASONING_EFFORTS = new Set(REASONING_EFFORTS);
 
 export function normalizeTranslationModel(model) {
   return TRANSLATION_MODELS.has(model) ? model : DEFAULT_TRANSLATION_MODEL;
 }
 
 export function resolveTranslationReasoningConfig(model, reasoning = {}) {
-  const normalizedModel = normalizeTranslationModel(model);
-  const defaultEnabled = normalizedModel === "kimi-k3";
-  const defaultEffort = normalizedModel === "kimi-k3" ? "max" : "high";
-  const requestedEnabled = typeof reasoning.enabled === "boolean"
-    ? reasoning.enabled
-    : defaultEnabled;
-  const requestedEffort = TRANSLATION_REASONING_EFFORTS.has(reasoning.effort)
-    ? reasoning.effort
-    : defaultEffort;
-  const enabled = normalizedModel === "kimi-k3" ? true : requestedEnabled;
-  const effort = normalizedModel !== "kimi-k3" && requestedEffort === "low"
-    ? "high"
-    : requestedEffort;
-
-  return {
-    effort,
-    enabled,
-    forced: enabled !== requestedEnabled,
-    requestedEnabled,
-  };
+  return resolveTranslationReasoning(normalizeTranslationModel(model), reasoning);
 }
 
 export async function createTranslationChatStream({
@@ -52,14 +34,18 @@ export async function createTranslationChatStream({
   resolvedReasoning,
   signal,
 }) {
+  if (model !== undefined && !TRANSLATION_MODELS.has(model)) {
+    throw new TranslationModelError(400, "unsupported_translation_model", `Unsupported translation model: ${String(model)}`);
+  }
   const normalizedModel = normalizeTranslationModel(model);
+  const reasoning = resolveTranslationReasoningConfig(normalizedModel, resolvedReasoning);
 
-  if (normalizedModel === "deepseek-v4-flash" || normalizedModel === "deepseek-v4-pro") {
+  if (requireModelDefinition(normalizedModel).provider === "deepseek") {
     try {
       return await createDeepSeekChatStream({
         messages,
         model: normalizedModel,
-        resolvedReasoning,
+        resolvedReasoning: reasoning,
         signal,
       });
     } catch (error) {
@@ -73,7 +59,7 @@ export async function createTranslationChatStream({
 
   const providerConfig = getProviderConfig(normalizedModel);
 
-  if (!providerConfig.apiKey) {
+  if (!providerConfig.apiKeyConfigured) {
     throw new TranslationModelError(
       500,
       `${providerConfig.provider}_api_key_missing`,
@@ -81,15 +67,17 @@ export async function createTranslationChatStream({
     );
   }
 
+  if (!providerConfig.apiBaseUrlConfigured) {
+    throw new TranslationModelError(500, `${providerConfig.provider}_api_base_url_missing`, "ALIYUN_API_BASE_URL is not configured for the selected region/workspace.");
+  }
+
+  const body = createChatCompletionBody(normalizedModel, messages, reasoning);
+
   let response;
 
   try {
     response = await fetch(`${providerConfig.apiBaseUrl}/chat/completions`, {
-      body: JSON.stringify(createChatCompletionBody(
-        normalizedModel,
-        messages,
-        resolvedReasoning,
-      )),
+      body: JSON.stringify(body),
       headers: {
         Authorization: `Bearer ${providerConfig.apiKey}`,
         "Content-Type": "application/json",
@@ -141,92 +129,35 @@ export class TranslationModelError extends Error {
 }
 
 function getProviderConfig(model) {
-  if (model === "glm-5.2") {
-    return {
-      apiBaseUrl: normalizeBaseUrl(
-        process.env.GLM_API_BASE_URL ?? DEFAULT_GLM_API_BASE_URL,
-      ),
-      apiKey: process.env.GLM_API_KEY,
-      apiKeyName: "GLM_API_KEY",
-      displayName: "GLM",
-      provider: "glm",
-    };
-  }
-
-  return {
-    apiBaseUrl: normalizeBaseUrl(
-      process.env.KIMI_API_BASE_URL ??
-        process.env.KIMI_BASE_URL ??
-        DEFAULT_KIMI_API_BASE_URL,
-    ),
-    apiKey: process.env.KIMI_API_KEY,
-    apiKeyName: "KIMI_API_KEY",
-    displayName: "Kimi",
-    provider: "kimi",
-  };
+  return getModelProviderConfig(requireModelDefinition(model).provider);
 }
 
 function createChatCompletionBody(model, messages, resolvedReasoning) {
-  if (model === "glm-5.2") {
-    const body = {
-      do_sample: false,
-      max_tokens: normalizeOutputTokenLimit(
-        process.env.GLM_TRANSLATION_MAX_TOKENS,
-        DEFAULT_GLM_MAX_TOKENS,
-      ),
-      messages,
-      model,
-      stream: true,
-    };
-
-    if (resolvedReasoning?.enabled) {
-      body.reasoning_effort = resolvedReasoning.effort === "low"
-        ? "high"
-        : resolvedReasoning.effort;
-      body.thinking = {
-        type: "enabled",
-      };
-    } else {
-      body.thinking = {
-        type: "disabled",
-      };
-    }
-
-    return body;
-  }
-
-  const body = {
-    max_completion_tokens: normalizeOutputTokenLimit(
-      process.env.KIMI_TRANSLATION_MAX_COMPLETION_TOKENS,
-      DEFAULT_KIMI_MAX_COMPLETION_TOKENS,
-    ),
-    messages,
+  const definition = requireModelDefinition(model);
+  const limitName = definition.provider === "kimi"
+    ? "KIMI_TRANSLATION_MAX_COMPLETION_TOKENS"
+    : `${definition.provider.toUpperCase()}_TRANSLATION_MAX_TOKENS`;
+  return createModelChatBody({
     model,
-    stream: true,
-    stream_options: {
-      include_usage: true,
+    messages,
+    maxTokens: normalizeOutputTokenLimit(process.env[limitName], DEFAULT_TRANSLATION_MAX_TOKENS),
+    deterministic: true,
+    temperature: definition.provider === "qwen" ? 0.2 : undefined,
+    thinking: {
+      enabled: resolvedReasoning.enabled,
+      effort: definition.reasoning.translationEffortMap[resolvedReasoning.effort],
     },
-  };
-
-  if (resolvedReasoning) {
-    body.reasoning_effort = resolvedReasoning.effort;
-  }
-
-  return body;
+  });
 }
 
 function normalizeOutputTokenLimit(value, fallback) {
   const parsed = Number(value);
 
-  if (!Number.isFinite(parsed)) {
+  if (!value?.trim() || !Number.isFinite(parsed) || parsed <= 0) {
     return fallback;
   }
 
   return Math.min(MAX_OUTPUT_TOKENS, Math.max(MIN_OUTPUT_TOKENS, Math.round(parsed)));
-}
-
-function normalizeBaseUrl(value) {
-  return value.replace(/\/+$/, "");
 }
 
 function getProviderErrorCode(provider, statusCode) {

@@ -14,6 +14,10 @@ export type ApiHealth = {
     kimi: {
       apiKeyConfigured: boolean;
     };
+    qwen?: {
+      apiKeyConfigured: boolean;
+      apiBaseUrlConfigured: boolean;
+    };
   };
   embedding?: {
     configured: boolean;

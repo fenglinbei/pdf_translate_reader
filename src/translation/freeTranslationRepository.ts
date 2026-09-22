@@ -14,14 +14,14 @@ import type {
   TranslationModel,
   TranslationReasoningEffort,
 } from "../types/domain";
-import { isTranslationModel } from "./models";
+import { DEFAULT_TRANSLATION_MODEL, isTranslationModel } from "./models";
+import { resolveTranslationReasoning } from "../../shared/modelRegistry.mjs";
 import {
   getTranslationStyleHash,
   normalizeTranslationStyle,
 } from "./translationStyle";
 
 const FREE_TRANSLATION_SCHEMA_VERSION = 1 as const;
-const DEFAULT_TRANSLATION_MODEL: TranslationModel = "deepseek-v4-flash";
 const FREE_TRANSLATION_REASONING_SUMMARY_MAX_CHARACTERS = 6_000;
 
 export const DEFAULT_FREE_TRANSLATION_HISTORY_LIMIT = 20;
@@ -381,25 +381,14 @@ function normalizeTranslationModel(value: unknown): TranslationModel {
 }
 
 function normalizeReasoningEnabled(value: unknown, model: TranslationModel) {
-  if (model === "kimi-k3") {
-    return true;
-  }
-
-  return typeof value === "boolean" ? value : false;
+  return resolveTranslationReasoning(model, { enabled: value }).enabled;
 }
 
 function normalizeReasoningEffort(
   value: unknown,
   model: TranslationModel,
 ): TranslationReasoningEffort {
-  const defaultEffort = model === "kimi-k3" ? "max" : "high";
-  const normalizedEffort = value === "low" || value === "high" || value === "max"
-    ? value
-    : defaultEffort;
-
-  return model !== "kimi-k3" && normalizedEffort === "low"
-    ? "high"
-    : normalizedEffort;
+  return resolveTranslationReasoning(model, { effort: value }).effort;
 }
 
 function normalizeTerminology(value: unknown, omitIncomplete: boolean) {

@@ -154,6 +154,7 @@ describe("translation model client", () => {
       max_completion_tokens: 16_384,
       messages,
       model: "kimi-k3",
+      reasoning_effort: "max",
       stream: true,
       stream_options: { include_usage: true },
     });
@@ -288,7 +289,7 @@ describe("translation model client", () => {
   it("falls back only for an absent or unsupported model", () => {
     assert.equal(normalizeTranslationModel("glm-5.2"), "glm-5.2");
     assert.equal(normalizeTranslationModel("kimi-k3"), "kimi-k3");
-    assert.equal(normalizeTranslationModel("unsupported"), "deepseek-v4-flash");
+    assert.equal(normalizeTranslationModel("unsupported"), "deepseek-flash");
   });
 
   it("normalizes legacy reasoning defaults by model", () => {
@@ -565,7 +566,7 @@ describe("translation model client", () => {
       .find((event) => event.eventName === "thinking_completed");
 
     assert.equal(requests.length, 3);
-    assert.equal(firstSanitizerCall.body.model, "deepseek-v4-flash");
+    assert.equal(firstSanitizerCall.body.model, "deepseek-flash");
     assert.equal(firstSanitizerCall.body.stream, true);
     assert.ok(firstSanitizerCall.body.max_tokens <= 160);
     assert.deepEqual(firstSanitizerCall.body.thinking, { type: "disabled" });
@@ -584,11 +585,11 @@ describe("translation model client", () => {
       [
         {
           partId: "thinking-part-1",
-          source: "deepseek-v4-flash",
+          source: "deepseek-flash",
         },
         {
           partId: "thinking-part-2",
-          source: "deepseek-v4-flash",
+          source: "deepseek-flash",
         },
       ],
     );
@@ -1643,7 +1644,7 @@ function captureFetchCall(url, init) {
 }
 
 function isReasoningSanitizerCall(call) {
-  return call?.body?.model === "deepseek-v4-flash" &&
+  return call?.body?.model === "deepseek-flash" &&
     call.body.stream === true &&
     typeof call.body.messages?.[0]?.content === "string" &&
     /private translation-reasoning candidate/i

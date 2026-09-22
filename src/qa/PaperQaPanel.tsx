@@ -26,6 +26,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { useI18n } from "../i18n/I18nProvider";
 import { PROJECT_CONFIG } from "../config/projectConfig";
+import { getAvailableModelIds, getModelLabel, MODEL_DEFAULTS } from "../../shared/modelRegistry.mjs";
 import type {
   QaAnswerLanguage,
   QaAgentStep,
@@ -80,7 +81,7 @@ type SelectedEvidenceRef = {
   messageId: string;
 };
 
-const QA_MODELS: QaChatModel[] = ["deepseek-v4-pro", "glm-5.2"];
+const QA_MODELS = getAvailableModelIds("qa");
 const QA_REASONING_EFFORTS: QaReasoningEffort[] = ["auto", "quick", "standard", "deep"];
 
 export function PaperQaPanel({
@@ -111,7 +112,7 @@ export function PaperQaPanel({
   const [isLoadingThreads, setIsLoadingThreads] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [messages, setMessages] = useState<LocalQaMessage[]>([]);
-  const [model, setModel] = useState<QaChatModel>("deepseek-v4-pro");
+  const [model, setModel] = useState<QaChatModel>(MODEL_DEFAULTS.qa);
   const [reasoningEffort, setReasoningEffort] = useState<QaReasoningEffort>("auto");
   const [retrievalWarnings, setRetrievalWarnings] = useState<string[]>([]);
   const [selectedEvidenceRef, setSelectedEvidenceRef] = useState<SelectedEvidenceRef>();
@@ -1707,11 +1708,7 @@ function formatThreadTime(value?: number) {
 }
 
 function getQaModelLabel(model: QaChatModel) {
-  if (model === "glm-5.2") {
-    return "GLM 5.2";
-  }
-
-  return "DeepSeek V4 Pro";
+  return getModelLabel(model);
 }
 
 function getConfidenceLabelKey(confidence: QaCitation["confidence"]) {

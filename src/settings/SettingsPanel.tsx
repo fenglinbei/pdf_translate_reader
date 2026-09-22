@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Check, Trash2, X } from "lucide-react";
+import { createModelCounts, isAvailableModel, MODEL_IDS } from "../../shared/modelRegistry.mjs";
 import {
   TRANSLATION_LANGUAGES,
   type TranslationLanguage,
@@ -56,12 +57,7 @@ const EMPTY_USAGE_SUMMARY: ApiUsageSummary = {
   cacheMissTokens: 0,
   completionTokens: 0,
   errorCalls: 0,
-  modelCounts: {
-    "deepseek-v4-flash": 0,
-    "deepseek-v4-pro": 0,
-    "glm-5.2": 0,
-    "kimi-k3": 0,
-  },
+  modelCounts: createModelCounts(),
   promptTokens: 0,
   recentLogs: [],
   successfulCalls: 0,
@@ -373,6 +369,7 @@ export function SettingsPanel({
             <Readout label="DeepSeek" value={formatConfiguredStatus(translationProviders?.deepseek.apiKeyConfigured, t)} />
             <Readout label="GLM" value={formatConfiguredStatus(translationProviders?.glm.apiKeyConfigured, t)} />
             <Readout label="Kimi" value={formatConfiguredStatus(translationProviders?.kimi.apiKeyConfigured, t)} />
+            <Readout label="Qwen" value={formatConfiguredStatus(translationProviders?.qwen?.apiKeyConfigured, t)} />
             <Readout
               label={t("settings.supabase")}
               value={supabaseConfigured === undefined ? "-" : supabaseConfigured ? t("common.configured") : t("common.missing")}
@@ -382,7 +379,10 @@ export function SettingsPanel({
             <Readout label={t("settings.tokens")} value={formatLocalizedNumber(usageSummary.totalTokens)} />
             <Readout
               label={t("settings.models")}
-              value={`F ${usageSummary.modelCounts["deepseek-v4-flash"]} / P ${usageSummary.modelCounts["deepseek-v4-pro"]} / GLM ${usageSummary.modelCounts["glm-5.2"]} / K3 ${usageSummary.modelCounts["kimi-k3"]}`}
+              value={MODEL_IDS
+                .filter((id) => isAvailableModel(id, "translation") || isAvailableModel(id, "qa") || usageSummary.modelCounts[id] > 0)
+                .map((id) => `${getTranslationModelShortLabel(id)} ${usageSummary.modelCounts[id]}`)
+                .join(" / ")}
             />
             <Readout label={t("settings.dsCacheHit")} value={formatLocalizedNumber(usageSummary.cacheHitTokens)} />
             <Readout label={t("settings.dsCacheMiss")} value={formatLocalizedNumber(usageSummary.cacheMissTokens)} />

@@ -1,0 +1,632 @@
+{
+  "schemaVersion": 1,
+  "catalogVersion": "2026-09-22.1",
+  "startedAt": "2026-09-22T06:04:12.069Z",
+  "scope": "Synthetic API and basic answer checks only; not representative paper-quality acceptance.",
+  "reasoningEffort": "QA standard; router quick; translation disabled where supported, otherwise low",
+  "results": [
+    {
+      "model": "deepseek-flash",
+      "id": "translation",
+      "status": "pass",
+      "durationMs": 1052,
+      "content": "基线在400道题中正确回答了300道；这并不能确立统计显著性。",
+      "finishReason": "stop",
+      "usage": {
+        "prompt_tokens": 37,
+        "completion_tokens": 17,
+        "total_tokens": 54,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 37
+      }
+    },
+    {
+      "model": "deepseek-flash",
+      "id": "qa_evidence_arithmetic",
+      "status": "pass",
+      "durationMs": 1151,
+      "content": "A 的准确率为 80%（320/400），B 的准确率为 75%（300/400）[C1]。因此 A 比 B 高 5 个百分点 [C1]。",
+      "usage": {
+        "completionTokens": 154,
+        "promptCacheHitTokens": 0,
+        "promptCacheMissTokens": 373,
+        "promptTokens": 373,
+        "reasoningTokens": 110,
+        "totalTokens": 527
+      },
+      "finishReason": "stop",
+      "firstContentMs": 1032
+    },
+    {
+      "model": "deepseek-flash",
+      "id": "qa_missing_evidence",
+      "status": "pass",
+      "durationMs": 1061,
+      "content": "证据中未报告 p 值，因此无法判断该结果是否达到统计显著[C1]。",
+      "usage": {
+        "completionTokens": 43,
+        "promptCacheHitTokens": 0,
+        "promptCacheMissTokens": 370,
+        "promptTokens": 370,
+        "reasoningTokens": 22,
+        "totalTokens": 413
+      },
+      "finishReason": "stop",
+      "firstContentMs": 965
+    },
+    {
+      "model": "deepseek-flash",
+      "id": "qa_formula_followup",
+      "status": "pass",
+      "durationMs": 3610,
+      "content": "第二个数据点对应预测 4、观测 2，其平方误差为 \\((4-2)^2=4\\)；若指整个示例的 MSE，则为 \\(\\frac{(2-1)^2+(4-2)^2}{2}=2.5\\) [C2]。",
+      "usage": {
+        "completionTokens": 692,
+        "promptCacheHitTokens": 0,
+        "promptCacheMissTokens": 408,
+        "promptTokens": 408,
+        "reasoningTokens": 632,
+        "totalTokens": 1100
+      },
+      "finishReason": "stop",
+      "firstContentMs": 3444
+    },
+    {
+      "model": "qwen3.8-max",
+      "id": "translation",
+      "status": "pass",
+      "durationMs": 1037,
+      "content": "基线正确回答了 400 个问题中的 300 个；这并未确立统计显著性。",
+      "finishReason": "stop",
+      "usage": {
+        "prompt_tokens": 53,
+        "total_tokens": 78,
+        "completion_tokens": 25,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 53
+        }
+      }
+    },
+    {
+      "model": "qwen3.8-max",
+      "id": "qa_evidence_arithmetic",
+      "status": "pass",
+      "durationMs": 4534,
+      "content": "在相同的 400 道题上，系统 A 答对 320 题，准确率为 80%；系统 B 答对 300 题，准确率为 75% [C1]。A 比 B 高 5 个百分点 [C1]。",
+      "usage": {
+        "completionTokens": 206,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 381,
+        "reasoningTokens": 136,
+        "totalTokens": 587
+      },
+      "finishReason": "stop",
+      "firstContentMs": 3331
+    },
+    {
+      "model": "qwen3.8-max",
+      "id": "qa_missing_evidence",
+      "status": "pass",
+      "durationMs": 4055,
+      "content": "根据证据，该结果未报告任何 p 值、置信区间或逐题数据 [C1]。因此，无法判断其是否达到统计显著。",
+      "usage": {
+        "completionTokens": 147,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 379,
+        "reasoningTokens": 111,
+        "totalTokens": 526
+      },
+      "finishReason": "stop",
+      "firstContentMs": 3467
+    },
+    {
+      "model": "qwen3.8-max",
+      "id": "qa_formula_followup",
+      "status": "pass",
+      "durationMs": 6787,
+      "content": "根据证据，MSE 公式为 MSE = (1/n)·Σ(prediction_i − observation_i)²，其中 predictions = [2, 4]，observations = [1, 2] [C2]。代入得 MSE = (1/2)·[(2−1)² + (4−2)²] = (1/2)·(1+4) = 2.5 [C2]。",
+      "usage": {
+        "completionTokens": 298,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 417,
+        "reasoningTokens": 202,
+        "totalTokens": 715
+      },
+      "finishReason": "stop",
+      "firstContentMs": 4980
+    },
+    {
+      "model": "qwen3.8-flash",
+      "id": "translation",
+      "status": "pass",
+      "durationMs": 970,
+      "content": "基线模型在 400 个问题中正确回答了 300 个；这并未确立统计显著性。",
+      "finishReason": "stop",
+      "usage": {
+        "prompt_tokens": 53,
+        "total_tokens": 80,
+        "completion_tokens": 27,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 53
+        }
+      }
+    },
+    {
+      "model": "qwen3.8-flash",
+      "id": "qa_evidence_arithmetic",
+      "status": "pass",
+      "durationMs": 2728,
+      "content": "在同一组400道题目上，系统A答对320道（准确率80%），系统B答对300道（准确率75%）[C1]。A的准确率比B高出5个百分点[C1]。",
+      "usage": {
+        "completionTokens": 172,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 381,
+        "reasoningTokens": 115,
+        "totalTokens": 553
+      },
+      "finishReason": "stop",
+      "firstContentMs": 2076
+    },
+    {
+      "model": "qwen3.8-flash",
+      "id": "qa_missing_evidence",
+      "status": "pass",
+      "durationMs": 2305,
+      "content": "已给证据明确说明该结果未报告 p 值、置信区间或逐题结果 [C1]。因此无法判断是否达到统计显著，证据不足以支持任何显著性结论。",
+      "usage": {
+        "completionTokens": 152,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 379,
+        "reasoningTokens": 109,
+        "totalTokens": 531
+      },
+      "finishReason": "stop",
+      "firstContentMs": 1673
+    },
+    {
+      "model": "qwen3.8-flash",
+      "id": "qa_formula_followup",
+      "status": "pass",
+      "durationMs": 4911,
+      "content": "根据 [C2]，MSE = (1/n) Σ(prediction_i − observation_i)²，代入 n=2、预测值 [2, 4]、观测值 [1, 2] 得 MSE = (1/2)[(2−1)² + (4−2)²] = (1+4)/2 = **2.5**。该证据未提供其他替代结果或误差范围。",
+      "usage": {
+        "completionTokens": 239,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 417,
+        "reasoningTokens": 145,
+        "totalTokens": 656
+      },
+      "finishReason": "stop",
+      "firstContentMs": 2848
+    },
+    {
+      "model": "glm-5.3-flash",
+      "id": "translation",
+      "status": "pass",
+      "durationMs": 2284,
+      "content": "基线在400个问题中正确回答了300个；这并不能证明具有统计显著性。",
+      "finishReason": "stop",
+      "usage": {
+        "prompt_tokens": 45,
+        "completion_tokens": 22,
+        "total_tokens": 67,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "id": "qa_evidence_arithmetic",
+      "status": "pass",
+      "durationMs": 2208,
+      "content": "A 的准确率为 80%（320/400），B 的准确率为 75%（300/400），因此 A 比 B 高 5 个百分点 [C1]。",
+      "usage": {
+        "completionTokens": 64,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 350,
+        "reasoningTokens": 27,
+        "totalTokens": 414
+      },
+      "finishReason": "stop",
+      "firstContentMs": 1482
+    },
+    {
+      "model": "glm-5.3-flash",
+      "id": "qa_missing_evidence",
+      "status": "pass",
+      "durationMs": 2181,
+      "content": "证据中未报告任何 p 值，文档明确说明没有置信区间、p 值或按题目的结果 [C1]。因此无法判断统计显著性——证据不足。",
+      "usage": {
+        "completionTokens": 41,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 351,
+        "reasoningTokens": 0,
+        "totalTokens": 392
+      },
+      "finishReason": "stop",
+      "firstContentMs": 931
+    },
+    {
+      "model": "glm-5.3-flash",
+      "id": "qa_formula_followup",
+      "status": "pass",
+      "durationMs": 3615,
+      "content": "第二个例子中，预测值为 [2, 4]，观测值为 [1, 2] [C2]。代入公式 MSE = (1/n) × Σ(预测值 − 观测值)²，得 ((2−1)² + (4−2)²) / 2 = (1 + 4) / 2 [C2]。因此 MSE = 2.5 [C2]。",
+      "usage": {
+        "completionTokens": 136,
+        "promptCacheHitTokens": 128,
+        "promptTokens": 389,
+        "reasoningTokens": 46,
+        "totalTokens": 525
+      },
+      "finishReason": "stop",
+      "firstContentMs": 1765
+    },
+    {
+      "model": "glm-5.3",
+      "id": "translation",
+      "status": "pass",
+      "durationMs": 1789,
+      "content": "基线正确回答了400个问题中的300个；这并不能证明具有统计学意义。",
+      "finishReason": "stop",
+      "usage": {
+        "prompt_tokens": 45,
+        "completion_tokens": 20,
+        "total_tokens": 65,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "model": "glm-5.3",
+      "id": "qa_evidence_arithmetic",
+      "status": "pass",
+      "durationMs": 2707,
+      "content": "A 的准确率为 320/400 = 80%，B 的准确率为 300/400 = 75% [C1]。因此 A 比 B 高 5 个百分点 [C1]。",
+      "usage": {
+        "completionTokens": 43,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 350,
+        "reasoningTokens": 0,
+        "totalTokens": 393
+      },
+      "finishReason": "stop",
+      "firstContentMs": 1264
+    },
+    {
+      "model": "glm-5.3",
+      "id": "qa_missing_evidence",
+      "status": "pass",
+      "durationMs": 3616,
+      "content": "证据中没有报告任何 p 值，因此无法回答具体数值，也无法判断是否达到统计显著 [C1]。若需要判断显著性，还需提供 p 值、置信区间或逐题结果数据 [C1]。",
+      "usage": {
+        "completionTokens": 55,
+        "promptCacheHitTokens": 128,
+        "promptTokens": 351,
+        "reasoningTokens": 5,
+        "totalTokens": 406
+      },
+      "finishReason": "stop",
+      "firstContentMs": 1758
+    },
+    {
+      "model": "glm-5.3",
+      "id": "qa_formula_followup",
+      "status": "pass",
+      "durationMs": 5287,
+      "content": "根据公式 MSE = (1/n) * Σ(prediction_i − observation_i)² [C2]，代入预测值 [2, 4] 与观测值 [1, 2]：MSE = ((2−1)² + (4−2)²) / 2 = (1 + 4) / 2 = 2.5 [C2]。",
+      "usage": {
+        "completionTokens": 125,
+        "promptCacheHitTokens": 128,
+        "promptTokens": 389,
+        "reasoningTokens": 44,
+        "totalTokens": 514
+      },
+      "finishReason": "stop",
+      "firstContentMs": 3175
+    },
+    {
+      "model": "glm-5.3-flashx",
+      "id": "translation",
+      "status": "pass",
+      "durationMs": 1048,
+      "content": "基线在400道题中答对了300道；这并不能确立统计显著性。",
+      "finishReason": "stop",
+      "usage": {
+        "prompt_tokens": 45,
+        "completion_tokens": 20,
+        "total_tokens": 65,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "model": "glm-5.3-flashx",
+      "id": "qa_evidence_arithmetic",
+      "status": "pass",
+      "durationMs": 1275,
+      "content": "A 的准确率为 320/400 = 80%，B 的准确率为 300/400 = 75% [C1]。因此 A 比 B 高 5 个百分点。",
+      "usage": {
+        "completionTokens": 40,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 350,
+        "reasoningTokens": 0,
+        "totalTokens": 390
+      },
+      "finishReason": "stop",
+      "firstContentMs": 1071
+    },
+    {
+      "model": "glm-5.3-flashx",
+      "id": "qa_missing_evidence",
+      "status": "pass",
+      "durationMs": 977,
+      "content": "证据中未报告任何 p 值 [C1]，因此无法判断统计显著性。",
+      "usage": {
+        "completionTokens": 21,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 351,
+        "reasoningTokens": 0,
+        "totalTokens": 372
+      },
+      "finishReason": "stop",
+      "firstContentMs": 812
+    },
+    {
+      "model": "glm-5.3-flashx",
+      "id": "qa_formula_followup",
+      "status": "pass",
+      "durationMs": 2342,
+      "content": "第二个例子的数据来自度量说明部分：预测值为 [2, 4]，观测值为 [1, 2] [C2]。代入公式 MSE = (1/n) × Σ(预测 − 观测)²，得 MSE = (1/2) × [(2−1)² + (4−2)²] = (1 + 4)/2。计算结果为 MSE = 2.5 [C2]。",
+      "usage": {
+        "completionTokens": 198,
+        "promptCacheHitTokens": 128,
+        "promptTokens": 389,
+        "reasoningTokens": 103,
+        "totalTokens": 587
+      },
+      "finishReason": "stop",
+      "firstContentMs": 1722
+    },
+    {
+      "model": "kimi-k3",
+      "id": "translation",
+      "status": "pass",
+      "durationMs": 4490,
+      "content": "基线正确回答了400道题中的300道；这并不能确立统计显著性。",
+      "finishReason": "stop",
+      "usage": {
+        "prompt_tokens": 129,
+        "completion_tokens": 104,
+        "total_tokens": 233,
+        "completion_tokens_details": {
+          "reasoning_tokens": 72
+        },
+        "prompt_tokens_details": {
+          "cache_write_tokens": 0
+        }
+      }
+    },
+    {
+      "model": "kimi-k3",
+      "id": "qa_evidence_arithmetic",
+      "status": "pass",
+      "durationMs": 5612,
+      "content": "A 的准确率为 320/400=80%，B 为 300/400=75% [C1]。A 比 B 高 5 个百分点 [C1]。",
+      "usage": {
+        "completionTokens": 145,
+        "promptTokens": 437,
+        "reasoningTokens": 90,
+        "totalTokens": 582
+      },
+      "finishReason": "stop",
+      "firstContentMs": 4820
+    },
+    {
+      "model": "kimi-k3",
+      "id": "qa_missing_evidence",
+      "status": "pass",
+      "durationMs": 5263,
+      "content": "未报告 p 值；证据明确说明没有置信区间、p 值或逐题结果，仅给出 A 320/400、B 300/400，因此无法判断是否统计显著 [C1]。",
+      "usage": {
+        "completionTokens": 155,
+        "promptTokens": 434,
+        "reasoningTokens": 97,
+        "totalTokens": 589
+      },
+      "finishReason": "stop",
+      "firstContentMs": 4266
+    },
+    {
+      "model": "kimi-k3",
+      "id": "qa_formula_followup",
+      "status": "pass",
+      "durationMs": 7856,
+      "content": "第二个例子中，MSE = (1/2) × [ (2−1)² + (4−2)² ]，依据给定公式与数据 [C2]。代入得 (1/2) × (1 + 4) = 2.5 [C2]。所以 MSE 为 2.5。",
+      "usage": {
+        "completionTokens": 185,
+        "promptTokens": 471,
+        "reasoningTokens": 99,
+        "totalTokens": 656
+      },
+      "finishReason": "stop",
+      "firstContentMs": 6468
+    },
+    {
+      "model": "deepseek-flash",
+      "id": "qa_router_json",
+      "status": "pass",
+      "durationMs": 792,
+      "content": "{\"type\":\"global\",\"confidence\":\"high\",\"reason\":\"The question asks for a summary of the paper's main methods and conclusions, which spans the entire paper.\",\"routerVersion\":\"query-router-v1\"}"
+    },
+    {
+      "model": "qwen3.8-max",
+      "id": "qa_router_json",
+      "status": "pass",
+      "durationMs": 1274,
+      "content": "{\"type\":\"global\",\"confidence\":\"high\",\"reason\":\"The question asks to summarize the main methods and conclusions of the entire paper, which is a whole-paper synthesis request.\",\"routerVersion\":\"query-router-v1\"}"
+    },
+    {
+      "model": "qwen3.8-flash",
+      "id": "qa_router_json",
+      "status": "pass",
+      "durationMs": 965,
+      "content": "{\"type\":\"global\",\"confidence\":\"high\",\"reason\":\"The question asks for a summary of the main methods and conclusions, which requires synthesizing information from across the entire paper.\",\"routerVersion\":\"query-router-v1\"}"
+    },
+    {
+      "model": "glm-5.3-flash",
+      "id": "qa_router_json",
+      "status": "pass",
+      "durationMs": 2501,
+      "content": "{\"type\":\"global\",\"confidence\":\"high\",\"reason\":\"要求总结论文的主要方法与结论,属于全文层面的综合概括。\",\"routerVersion\":\"query-router-v1\"}"
+    },
+    {
+      "model": "glm-5.3",
+      "id": "qa_router_json",
+      "status": "pass",
+      "durationMs": 3240,
+      "content": "{\"type\":\"global\",\"confidence\":\"high\",\"reason\":\"Asks for a summary of the paper's main methods and conclusions, spanning the whole paper.\",\"routerVersion\":\"query-router-v1\"}"
+    },
+    {
+      "model": "glm-5.3-flashx",
+      "id": "qa_router_json",
+      "status": "pass",
+      "durationMs": 1876,
+      "content": "{\"type\":\"global\",\"confidence\":\"high\",\"reason\":\"要求总结论文的主要方法和结论，属于全文层面的综合性问题。\",\"routerVersion\":\"query-router-v1\"}"
+    },
+    {
+      "model": "kimi-k3",
+      "id": "qa_router_json",
+      "status": "pass",
+      "durationMs": 5931,
+      "content": "{\"type\":\"global\",\"confidence\":\"high\",\"reason\":\"Asks for a summary of the paper's overall methods and conclusions, spanning the entire paper.\",\"routerVersion\":\"query-router-v1\"}"
+    }
+  ],
+  "finishedAt": "2026-09-22T06:06:25.487Z",
+  "preliminaryRouter": {
+    "note": "Abbreviated prompt without category definitions; diagnostic only, superseded by the existing production router prompt.",
+    "results": [
+      {
+        "model": "deepseek-flash",
+        "id": "qa_router_json",
+        "status": "review",
+        "durationMs": 747,
+        "content": "{\"type\":\"detail\"}",
+        "finishReason": "stop",
+        "usage": {
+          "completionTokens": 5,
+          "promptCacheHitTokens": 0,
+          "promptCacheMissTokens": 34,
+          "promptTokens": 34,
+          "totalTokens": 39
+        }
+      },
+      {
+        "model": "qwen3.8-max",
+        "id": "qa_router_json",
+        "status": "pass",
+        "durationMs": 707,
+        "content": "{\"type\":\"global\"}",
+        "finishReason": "stop",
+        "usage": {
+          "completionTokens": 5,
+          "promptCacheHitTokens": 0,
+          "promptTokens": 46,
+          "totalTokens": 51
+        }
+      },
+      {
+        "model": "qwen3.8-flash",
+        "id": "qa_router_json",
+        "status": "review",
+        "durationMs": 848,
+        "content": "{\"type\":\"detail\"}",
+        "finishReason": "stop",
+        "usage": {
+          "completionTokens": 5,
+          "promptCacheHitTokens": 0,
+          "promptTokens": 46,
+          "totalTokens": 51
+        }
+      },
+      {
+        "model": "glm-5.3-flash",
+        "id": "qa_router_json",
+        "status": "review",
+        "durationMs": 1465,
+        "content": "{\"type\":\"detail\"}",
+        "finishReason": "stop",
+        "usage": {
+          "completionTokens": 10,
+          "promptCacheHitTokens": 0,
+          "promptTokens": 42,
+          "reasoningTokens": 3,
+          "totalTokens": 52
+        }
+      },
+      {
+        "model": "glm-5.3",
+        "id": "qa_router_json",
+        "status": "pass",
+        "durationMs": 8199,
+        "content": "{\"type\":\"global\"}",
+        "finishReason": "stop",
+        "usage": {
+          "completionTokens": 64,
+          "promptCacheHitTokens": 0,
+          "promptTokens": 42,
+          "reasoningTokens": 57,
+          "totalTokens": 106
+        }
+      },
+      {
+        "model": "glm-5.3-flashx",
+        "id": "qa_router_json",
+        "status": "review",
+        "durationMs": 913,
+        "content": "{\"type\":\"detail\"}",
+        "finishReason": "stop",
+        "usage": {
+          "completionTokens": 7,
+          "promptCacheHitTokens": 0,
+          "promptTokens": 42,
+          "reasoningTokens": 0,
+          "totalTokens": 49
+        }
+      },
+      {
+        "model": "kimi-k3",
+        "id": "qa_router_json",
+        "status": "pass",
+        "durationMs": 5172,
+        "content": "{\"type\":\"global\"}",
+        "finishReason": "stop",
+        "usage": {
+          "completionTokens": 140,
+          "promptTokens": 126,
+          "reasoningTokens": 120,
+          "totalTokens": 266
+        }
+      }
+    ]
+  },
+  "routerRetestStartedAt": "2026-09-22T06:06:15.297Z",
+  "reproduction": "node scripts/evaluate-model-support.mjs --run --include-optional --output=/tmp/model-evaluation.json"
+}

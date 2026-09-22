@@ -1,7 +1,9 @@
 import { getDeepSeekRuntimeConfig } from "./config.mjs";
+import { getAvailableModelIds, MODEL_DEFAULTS, requireModelDefinition } from "../../shared/modelRegistry.mjs";
 
-export const DEEPSEEK_MODELS = new Set(["deepseek-v4-flash", "deepseek-v4-pro"]);
-export const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash";
+export const DEEPSEEK_MODELS = new Set(getAvailableModelIds("translation")
+  .filter((id) => requireModelDefinition(id).provider === "deepseek"));
+export const DEFAULT_DEEPSEEK_MODEL = MODEL_DEFAULTS.translation;
 
 export async function createDeepSeekChatStream({
   messages,

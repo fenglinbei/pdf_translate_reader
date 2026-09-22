@@ -1,3 +1,4 @@
+import { MODEL_DEFAULTS } from "../../shared/modelRegistry.mjs";
 import {
   createDeepSeekChatCompletionStream,
 } from "../deepseek/client.mjs";
@@ -11,7 +12,7 @@ import {
   createReasoningSegmenter,
 } from "./reasoningSegmenter.mjs";
 
-export const REASONING_SUMMARY_MODEL = "deepseek-v4-flash";
+export const REASONING_SUMMARY_MODEL = MODEL_DEFAULTS.reasoningSummary;
 
 const REASONING_MAX_CANDIDATE_CHARS = 4_000;
 const REASONING_MAX_PUBLIC_HISTORY_PARTS = 8;
