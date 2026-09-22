@@ -75,7 +75,7 @@ test("frontend choices and backend request allowlist use identical readiness", (
   assert.deepEqual(getAvailableModelIds("qa"), [...QA_CHAT_MODELS]);
   assert.equal(settings.DEFAULT_APP_SETTINGS.defaultModel, "deepseek-flash");
   assert.equal(MODEL_DEFAULTS.translation, "deepseek-flash");
-  assert.equal(MODEL_DEFAULTS.qa, "deepseek-v4-pro"); // QA default awaits evaluation.
+  assert.equal(MODEL_DEFAULTS.qa, "deepseek-v4-pro"); // QA default awaits confirmation after evaluation.
   for (const id of getModelIds({tier: "core"})) {
     assert.ok(TRANSLATION_MODELS.has(id), id);
     assert.ok(QA_CHAT_MODELS.has(id), id);

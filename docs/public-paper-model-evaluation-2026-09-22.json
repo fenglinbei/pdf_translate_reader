@@ -1,0 +1,1821 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-09-22T06:23:50.795Z",
+  "reasoningEffort": "standard",
+  "concurrency": 2,
+  "sources": [
+    {
+      "id": "attention",
+      "title": "Attention Is All You Need",
+      "language": "en",
+      "url": "https://arxiv.org/pdf/1706.03762v7",
+      "pageOffset": 0,
+      "bodyPages": 10,
+      "pdfSha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697",
+      "pageCount": 15
+    },
+    {
+      "id": "multilingual",
+      "title": "大模型时代的多语言研究综述",
+      "language": "zh",
+      "url": "https://aclanthology.org/2024.ccl-2.4.pdf",
+      "pageOffset": 62,
+      "bodyPages": 12,
+      "pdfSha256": "096653c08ce6a7d22d895d54066bae7695488c7f1d0ebe9fd8044bc8aab40b78",
+      "pageCount": 23
+    }
+  ],
+  "cases": [
+    {
+      "id": "en_summary",
+      "paper": "attention",
+      "mode": "long_context",
+      "question": "用中文概括这篇论文的核心架构变化、两项主要机器翻译结果和结论适用范围，控制在 200 字内，并标明相关章节。",
+      "rubric": "Transformer/self-attention; 28.4 and 41.8 BLEU; restrict conclusion to reported tasks."
+    },
+    {
+      "id": "en_formula",
+      "paper": "attention",
+      "pages": [
+        4
+      ],
+      "question": "解释式(1)中为什么除以 sqrt(d_k)，而不是直接除以 d_k。若 d_k=64，缩放分母是多少？请用公式和原文证据回答，不超过 160 字。",
+      "rubric": "Denominator 8; variance grows with d_k; mitigate softmax saturation/small gradients; cite C1."
+    },
+    {
+      "id": "en_table",
+      "paper": "attention",
+      "pages": [
+        8
+      ],
+      "question": "仅看表2的 WMT14 英德 BLEU，Transformer big 比 base 高多少分？同时给出二者原值和证据引用，控制在 100 字内。",
+      "rubric": "big 28.4; base 27.3; absolute difference 1.1 BLEU, not percentage points."
+    },
+    {
+      "id": "en_followup",
+      "paper": "attention",
+      "pages": [
+        8
+      ],
+      "previous": "en_table",
+      "question": "那相对提升百分比是多少？该表给出了这个差异的 95% 置信区间吗？区分自行计算与原文报告，控制在 140 字内。",
+      "rubric": "Computed relative improvement about 4.03%; no 95% CI in supplied table; cite current evidence."
+    },
+    {
+      "id": "zh_summary",
+      "paper": "multilingual",
+      "mode": "long_context",
+      "question": "用不超过 250 字概括这篇综述的研究对象、前沿方向和主要挑战，区分综述归纳与作者提出的新模型，并标明相关章节。",
+      "rubric": "Survey, not a new model; multilingual training/alignment/extension; fairness/safety, curse and training cost."
+    },
+    {
+      "id": "zh_evidence",
+      "paper": "multilingual",
+      "pages": [
+        4
+      ],
+      "question": "ROOTS 的 59 种语言是否全是自然语言？请区分具体类别，并解释为什么不能把 59 直接用作自然语言覆盖数。必须引用证据，不超过 120 字。",
+      "rubric": "46 natural plus 13 programming; 59 includes both categories; cite C1 (printed p66)."
+    },
+    {
+      "id": "zh_data",
+      "paper": "multilingual",
+      "pages": [
+        4
+      ],
+      "question": "按 Aya、Bactrain-X 的顺序比较二者指令数据的构造方式及质量限制；论文是否以统一实验直接证明一个全面优于另一个？必须引用证据，不超过 200 字。",
+      "rubric": "Aya human contribution/filtering; Bactrain-X translation plus gpt-3.5-turbo answers and low-resource noise; no unified superiority experiment."
+    },
+    {
+      "id": "zh_followup",
+      "paper": "multilingual",
+      "pages": [
+        4
+      ],
+      "previous": "zh_data",
+      "question": "刚才后者的 6 万 7 千条是每种语言还是所有语言合计？据文中语言数估算总量，并说明这个估算能否单独证明它比前者质量更高。引用证据，不超过 160 字。",
+      "rubric": "Bactrain-X has 67k per language across 51, estimated 3,417,000; quantity cannot prove quality over Aya."
+    }
+  ],
+  "results": [
+    {
+      "model": "deepseek-flash",
+      "caseId": "en_summary",
+      "status": "pass",
+      "criteria": {
+        "architecture": true,
+        "reported_results": true,
+        "scope": true
+      },
+      "durationMs": 3613,
+      "firstContentMs": 2959,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 610,
+        "promptCacheHitTokens": 0,
+        "promptCacheMissTokens": 7923,
+        "promptTokens": 7923,
+        "reasoningTokens": 486,
+        "totalTokens": 8533
+      },
+      "answerSha256": "2a31efb7aac2d9b1dc744e7e9f5e1b295a3d450c2d1d97fefd361b1813928746",
+      "inputChars": 39353,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "deepseek-flash",
+      "caseId": "en_formula",
+      "status": "pass",
+      "criteria": {
+        "denominator": true,
+        "variance": true,
+        "gradient": true,
+        "citation": true
+      },
+      "durationMs": 2287,
+      "firstContentMs": 1880,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 328,
+        "promptCacheHitTokens": 0,
+        "promptCacheMissTokens": 864,
+        "promptTokens": 864,
+        "reasoningTokens": 212,
+        "totalTokens": 1192
+      },
+      "answerSha256": "50099118edccdab93a37fce4538253632072b59949af0dcab2978ef1d30bffc0",
+      "inputChars": 3775,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "qwen3.8-max",
+      "caseId": "en_summary",
+      "status": "pass",
+      "criteria": {
+        "architecture": true,
+        "reported_results": true,
+        "scope": true
+      },
+      "durationMs": 6892,
+      "firstContentMs": 4617,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 261,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 8562,
+        "reasoningTokens": 145,
+        "totalTokens": 8823
+      },
+      "answerSha256": "5be2138f002c6badbb3878589faafe8cb02f704fde8044a269ef7b923ccb0146",
+      "inputChars": 39353,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "deepseek-flash",
+      "caseId": "en_table",
+      "status": "pass",
+      "criteria": {
+        "values": true,
+        "difference": true,
+        "citation": true
+      },
+      "durationMs": 1532,
+      "firstContentMs": 1400,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 208,
+        "promptCacheHitTokens": 0,
+        "promptCacheMissTokens": 1192,
+        "promptTokens": 1192,
+        "reasoningTokens": 161,
+        "totalTokens": 1400
+      },
+      "answerSha256": "ba6d71524b5954c7e07e0498137220884e3e0ee6c54eb047265f18a2b5bee03d",
+      "inputChars": 4303,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "deepseek-flash",
+      "caseId": "en_followup",
+      "status": "review",
+      "criteria": {
+        "relative_calculation": false,
+        "missing_interval": true,
+        "citation": true
+      },
+      "durationMs": 2194,
+      "firstContentMs": 1940,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 353,
+        "promptCacheHitTokens": 0,
+        "promptCacheMissTokens": 1307,
+        "promptTokens": 1307,
+        "reasoningTokens": 286,
+        "totalTokens": 1660
+      },
+      "answerSha256": "6cc6e09976221740abc2bcd1c5439880d8d1d28243e2a10d45bcb67e8ce78197",
+      "inputChars": 4600,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [
+          "原自动检查为保守提示；逐条复核，舍入 4.0% / 342 万及译成等同义表述均可接受。"
+        ],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "deepseek-flash",
+      "caseId": "zh_summary",
+      "status": "pass",
+      "criteria": {
+        "survey": true,
+        "directions": true,
+        "challenges": true
+      },
+      "durationMs": 4489,
+      "firstContentMs": 4007,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 792,
+        "promptCacheHitTokens": 0,
+        "promptCacheMissTokens": 14159,
+        "promptTokens": 14159,
+        "reasoningTokens": 656,
+        "totalTokens": 14951
+      },
+      "answerSha256": "f08865d88b274595cb30dfc12adb6c3d48e4f5ec2f052f002fef172a3bb48169",
+      "inputChars": 27982,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "qwen3.8-max",
+      "caseId": "en_formula",
+      "status": "pass",
+      "criteria": {
+        "denominator": true,
+        "variance": true,
+        "gradient": true,
+        "citation": true
+      },
+      "durationMs": 8437,
+      "firstContentMs": 5388,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 355,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 868,
+        "reasoningTokens": 196,
+        "totalTokens": 1223
+      },
+      "answerSha256": "57e493e0edc1d8d3edce13e8a156b50b94325b2f2559f8b9c479015ac332798e",
+      "inputChars": 3775,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "deepseek-flash",
+      "caseId": "zh_evidence",
+      "status": "pass",
+      "criteria": {
+        "natural": true,
+        "programming": true,
+        "citation": true
+      },
+      "durationMs": 1610,
+      "firstContentMs": 1391,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 220,
+        "promptCacheHitTokens": 0,
+        "promptCacheMissTokens": 1585,
+        "promptTokens": 1585,
+        "reasoningTokens": 146,
+        "totalTokens": 1805
+      },
+      "answerSha256": "e4212dc0fc8451bcd16088e9bc8bc53ad57154736ef7d6ba4e557aa791471820",
+      "inputChars": 3495,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "qwen3.8-max",
+      "caseId": "en_table",
+      "status": "pass",
+      "criteria": {
+        "values": true,
+        "difference": true,
+        "citation": true
+      },
+      "durationMs": 3342,
+      "firstContentMs": 2782,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 153,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 1275,
+        "reasoningTokens": 114,
+        "totalTokens": 1428
+      },
+      "answerSha256": "c6c01217ed843cd39ce762ff3e084ff123ddff2579277787df58670b766f646a",
+      "inputChars": 4303,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "deepseek-flash",
+      "caseId": "zh_data",
+      "status": "pass",
+      "criteria": {
+        "human": true,
+        "synthetic": true,
+        "noise": true,
+        "unsupported_comparison": true,
+        "citation": true
+      },
+      "durationMs": 3773,
+      "firstContentMs": 3244,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 674,
+        "promptCacheHitTokens": 0,
+        "promptCacheMissTokens": 1583,
+        "promptTokens": 1583,
+        "reasoningTokens": 522,
+        "totalTokens": 2257
+      },
+      "answerSha256": "70d595f87cf44a3be1aa56799f43db09669c8522c9408be39d1430b602f93094",
+      "inputChars": 3501,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": [
+          "未按问题指定的 Aya、Bactrain-X 顺序组织回答；后续代词引用容易产生歧义。"
+        ]
+      }
+    },
+    {
+      "model": "deepseek-flash",
+      "caseId": "zh_followup",
+      "status": "pass",
+      "criteria": {
+        "per_language": true,
+        "total": true,
+        "quality_limit": true,
+        "citation": true
+      },
+      "durationMs": 2540,
+      "firstContentMs": 2399,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 540,
+        "promptCacheHitTokens": 0,
+        "promptCacheMissTokens": 1817,
+        "promptTokens": 1817,
+        "reasoningTokens": 479,
+        "totalTokens": 2357
+      },
+      "answerSha256": "054172b835529a026f7728c1e9d9d1f1f1fad64287c98d6ac04f5d41e980304c",
+      "inputChars": 4009,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "qwen3.8-max",
+      "caseId": "en_followup",
+      "status": "pass",
+      "criteria": {
+        "relative_calculation": true,
+        "missing_interval": true,
+        "citation": true
+      },
+      "durationMs": 8776,
+      "firstContentMs": 7467,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 421,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 1383,
+        "reasoningTokens": 354,
+        "totalTokens": 1804
+      },
+      "answerSha256": "26cd2ea37e0b87bde460e69bbd12d9c6854a41a9eb6cd873e10b3fa081e3c153",
+      "inputChars": 4579,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "qwen3.8-flash",
+      "caseId": "en_summary",
+      "status": "pass",
+      "criteria": {
+        "architecture": true,
+        "reported_results": true,
+        "scope": true
+      },
+      "durationMs": 5774,
+      "firstContentMs": 3249,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 376,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 8562,
+        "reasoningTokens": 169,
+        "totalTokens": 8938
+      },
+      "answerSha256": "6875248227aeb5987ab516ebde8a6f390ac592a462282e33492a7702e5bd9765",
+      "inputChars": 39353,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "qwen3.8-flash",
+      "caseId": "en_formula",
+      "status": "pass",
+      "criteria": {
+        "denominator": true,
+        "variance": true,
+        "gradient": true,
+        "citation": true
+      },
+      "durationMs": 7208,
+      "firstContentMs": 5853,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 387,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 868,
+        "reasoningTokens": 290,
+        "totalTokens": 1255
+      },
+      "answerSha256": "2964f9c6f1b0cb9ad649fa0fe2660c1c6a41bd14921967c664e0e21d98332135",
+      "inputChars": 3775,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "qwen3.8-flash",
+      "caseId": "en_table",
+      "status": "pass",
+      "criteria": {
+        "values": true,
+        "difference": true,
+        "citation": true
+      },
+      "durationMs": 3709,
+      "firstContentMs": 2924,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 173,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 1275,
+        "reasoningTokens": 125,
+        "totalTokens": 1448
+      },
+      "answerSha256": "dc4ff60c676ead1c00ed8945ce8413e109dd3494b2f09efe824825574332e551",
+      "inputChars": 4303,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "qwen3.8-max",
+      "caseId": "zh_summary",
+      "status": "pass",
+      "criteria": {
+        "survey": true,
+        "directions": true,
+        "challenges": true
+      },
+      "durationMs": 11720,
+      "firstContentMs": 6243,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 405,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 14934,
+        "reasoningTokens": 201,
+        "totalTokens": 15339
+      },
+      "answerSha256": "fcbbfda76cbfbb23bb24bc24976119f63762f4fcc742bf2bb10c7a2b4e7525d8",
+      "inputChars": 27982,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "qwen3.8-flash",
+      "caseId": "en_followup",
+      "status": "review",
+      "criteria": {
+        "relative_calculation": false,
+        "missing_interval": true,
+        "citation": true
+      },
+      "durationMs": 4349,
+      "firstContentMs": 3132,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 282,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 1393,
+        "reasoningTokens": 204,
+        "totalTokens": 1675
+      },
+      "answerSha256": "60b9cd39d7cfaa25e90ccf83fdb48488e5ce4462e8e339e78ceeb6a44a0192b8",
+      "inputChars": 4594,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [
+          "原自动检查为保守提示；逐条复核，舍入 4.0% / 342 万及译成等同义表述均可接受。"
+        ],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "qwen3.8-max",
+      "caseId": "zh_evidence",
+      "status": "pass",
+      "criteria": {
+        "natural": true,
+        "programming": true,
+        "citation": true
+      },
+      "durationMs": 4995,
+      "firstContentMs": 3742,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 195,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 1633,
+        "reasoningTokens": 132,
+        "totalTokens": 1828
+      },
+      "answerSha256": "1312a6b1c354e8ce8fddf61ce5b1d524471482c1eb68ae5b462cb858282a5d99",
+      "inputChars": 3495,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "qwen3.8-max",
+      "caseId": "zh_data",
+      "status": "pass",
+      "criteria": {
+        "human": true,
+        "synthetic": true,
+        "noise": true,
+        "unsupported_comparison": true,
+        "citation": true
+      },
+      "durationMs": 9698,
+      "firstContentMs": 6527,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 453,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 1629,
+        "reasoningTokens": 288,
+        "totalTokens": 2082
+      },
+      "answerSha256": "5aaa4d9f3e8c84cbe86f6be578b4d14014ac0a96f6daef13e7524cc263553890",
+      "inputChars": 3501,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "qwen3.8-flash",
+      "caseId": "zh_summary",
+      "status": "pass",
+      "criteria": {
+        "survey": true,
+        "directions": true,
+        "challenges": true
+      },
+      "durationMs": 13539,
+      "firstContentMs": 10249,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 425,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 14934,
+        "reasoningTokens": 251,
+        "totalTokens": 15359
+      },
+      "answerSha256": "e6e22373ccce1b818b7d0f35e46b45e5062d0ed4c4338b3624a0d156f608bd6a",
+      "inputChars": 27982,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "qwen3.8-flash",
+      "caseId": "zh_evidence",
+      "status": "pass",
+      "criteria": {
+        "natural": true,
+        "programming": true,
+        "citation": true
+      },
+      "durationMs": 3155,
+      "firstContentMs": 2611,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 158,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 1633,
+        "reasoningTokens": 114,
+        "totalTokens": 1791
+      },
+      "answerSha256": "ebe12540ddfb050c2226d1ed8058b73b4b9b74029989dbfd8a0eefeb0a6e995c",
+      "inputChars": 3495,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "qwen3.8-max",
+      "caseId": "zh_followup",
+      "status": "pass",
+      "criteria": {
+        "per_language": true,
+        "total": true,
+        "quality_limit": true,
+        "citation": true
+      },
+      "durationMs": 10831,
+      "firstContentMs": 9086,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 501,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 1878,
+        "reasoningTokens": 409,
+        "totalTokens": 2379
+      },
+      "answerSha256": "a84744875371d1d7a0e26ad780e646eefa88a3254c681bb17026979105cfa4d0",
+      "inputChars": 4044,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "qwen3.8-flash",
+      "caseId": "zh_data",
+      "status": "pass",
+      "criteria": {
+        "human": true,
+        "synthetic": true,
+        "noise": true,
+        "unsupported_comparison": true,
+        "citation": true
+      },
+      "durationMs": 5613,
+      "firstContentMs": 3702,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 352,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 1629,
+        "reasoningTokens": 229,
+        "totalTokens": 1981
+      },
+      "answerSha256": "6c6dee63827376207f4ce57219ed49d3181b9e1c975e3e988f31404585bef8d0",
+      "inputChars": 3501,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": [
+          "将 Aya 描述为无此噪音偏强；人工筛选不等于不存在任何质量问题。"
+        ]
+      }
+    },
+    {
+      "model": "glm-5.3",
+      "caseId": "en_summary",
+      "status": "pass",
+      "criteria": {
+        "architecture": true,
+        "reported_results": true,
+        "scope": true
+      },
+      "durationMs": 7541,
+      "firstContentMs": 2502,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 203,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 8039,
+        "reasoningTokens": 21,
+        "totalTokens": 8242
+      },
+      "answerSha256": "3f697ec3cf525cb17ec718ab986808cbe3bcda99a1c7c9cddb5d3644c048619e",
+      "inputChars": 39353,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "qwen3.8-flash",
+      "caseId": "zh_followup",
+      "status": "review",
+      "criteria": {
+        "per_language": true,
+        "total": false,
+        "quality_limit": true,
+        "citation": true
+      },
+      "durationMs": 7859,
+      "firstContentMs": 5822,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 380,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 1839,
+        "reasoningTokens": 274,
+        "totalTokens": 2219
+      },
+      "answerSha256": "7da2031da02a909ad628354c877e4934ede6822d487b0290b6e582350d225692",
+      "inputChars": 3971,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [
+          "原自动检查为保守提示；逐条复核，舍入 4.0% / 342 万及译成等同义表述均可接受。"
+        ],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "glm-5.3",
+      "caseId": "en_formula",
+      "status": "pass",
+      "criteria": {
+        "denominator": true,
+        "variance": true,
+        "gradient": true,
+        "citation": true
+      },
+      "durationMs": 5043,
+      "firstContentMs": 1372,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 134,
+        "promptCacheHitTokens": 128,
+        "promptTokens": 847,
+        "reasoningTokens": 0,
+        "totalTokens": 981
+      },
+      "answerSha256": "0085936563cae89083c1ca56cc79f72c2cdaf60e307057231d355226062cf299",
+      "inputChars": 3775,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "glm-5.3",
+      "caseId": "en_table",
+      "status": "pass",
+      "criteria": {
+        "values": true,
+        "difference": true,
+        "citation": true
+      },
+      "durationMs": 2071,
+      "firstContentMs": 1237,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 46,
+        "promptCacheHitTokens": 128,
+        "promptTokens": 1167,
+        "reasoningTokens": 0,
+        "totalTokens": 1213
+      },
+      "answerSha256": "8ec46d524eba70cf80c983087fe59c2f8983ba7e0ba522a87307dd3401fd3957",
+      "inputChars": 4303,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "caseId": "en_summary",
+      "status": "pass",
+      "criteria": {
+        "architecture": true,
+        "reported_results": true,
+        "scope": true
+      },
+      "durationMs": 7914,
+      "firstContentMs": 1952,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 236,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 8039,
+        "reasoningTokens": 24,
+        "totalTokens": 8275
+      },
+      "answerSha256": "646c24826decbc6024b4de8ccecabe271887e59eb544024745a2cd99acb19f0a",
+      "inputChars": 39353,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "glm-5.3",
+      "caseId": "en_followup",
+      "status": "review",
+      "criteria": {
+        "relative_calculation": false,
+        "missing_interval": true,
+        "citation": true
+      },
+      "durationMs": 4442,
+      "firstContentMs": 2431,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 115,
+        "promptCacheHitTokens": 128,
+        "promptTokens": 1279,
+        "reasoningTokens": 36,
+        "totalTokens": 1394
+      },
+      "answerSha256": "ac71f5157921c05f84eed4c8fd0ec8a338131cc976fe324f54a6c9eb5ad46094",
+      "inputChars": 4598,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [
+          "原自动检查为保守提示；逐条复核，舍入 4.0% / 342 万及译成等同义表述均可接受。"
+        ],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "caseId": "en_formula",
+      "status": "pass",
+      "criteria": {
+        "denominator": true,
+        "variance": true,
+        "gradient": true,
+        "citation": true
+      },
+      "durationMs": 4559,
+      "firstContentMs": 800,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 142,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 847,
+        "reasoningTokens": 0,
+        "totalTokens": 989
+      },
+      "answerSha256": "4a25bceb37f554cc255eb7fb603c1ee8aaec94549a4800277e1ddc197acb9471",
+      "inputChars": 3775,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "caseId": "en_table",
+      "status": "pass",
+      "criteria": {
+        "values": true,
+        "difference": true,
+        "citation": true
+      },
+      "durationMs": 2140,
+      "firstContentMs": 851,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 60,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 1167,
+        "reasoningTokens": 0,
+        "totalTokens": 1227
+      },
+      "answerSha256": "fa2b27e00e6386b088121f83caf29ec72334805e3fe99c5ce4c3fda02e1ba46b",
+      "inputChars": 4303,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "glm-5.3",
+      "caseId": "zh_summary",
+      "status": "pass",
+      "criteria": {
+        "survey": true,
+        "directions": true,
+        "challenges": true
+      },
+      "durationMs": 9942,
+      "firstContentMs": 5028,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 270,
+        "promptCacheHitTokens": 128,
+        "promptTokens": 14355,
+        "reasoningTokens": 74,
+        "totalTokens": 14625
+      },
+      "answerSha256": "bf26d5ca006beb356b391584966d34aea614353254414f2117c3087b2ba46141",
+      "inputChars": 27982,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "issue",
+        "notes": [
+          "将所综述的 MAPO/CLiKA 等一概称为他人工作；原文包含该综述作者团队此前发表的工作，不能由综述性质推断全部为他人成果。"
+        ],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "caseId": "en_followup",
+      "status": "pass",
+      "criteria": {
+        "relative_calculation": true,
+        "missing_interval": true,
+        "citation": true
+      },
+      "durationMs": 6035,
+      "firstContentMs": 3385,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 159,
+        "promptCacheHitTokens": 128,
+        "promptTokens": 1293,
+        "reasoningTokens": 56,
+        "totalTokens": 1452
+      },
+      "answerSha256": "abee0ebf2fab19975b8f1de797098967c7771e3f82eb4739fee210b5730ac996",
+      "inputChars": 4632,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "glm-5.3",
+      "caseId": "zh_evidence",
+      "status": "pass",
+      "criteria": {
+        "natural": true,
+        "programming": true,
+        "citation": true
+      },
+      "durationMs": 3044,
+      "firstContentMs": 2127,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 66,
+        "promptCacheHitTokens": 128,
+        "promptTokens": 1538,
+        "reasoningTokens": 0,
+        "totalTokens": 1604
+      },
+      "answerSha256": "603c55d5ac09feaaa8f9217b5222ab9ed84121ddcaa2be54dc1cd24b49e6b64e",
+      "inputChars": 3495,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "caseId": "zh_summary",
+      "status": "pass",
+      "criteria": {
+        "survey": true,
+        "directions": true,
+        "challenges": true
+      },
+      "durationMs": 9167,
+      "firstContentMs": 2515,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 257,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 14355,
+        "reasoningTokens": 23,
+        "totalTokens": 14612
+      },
+      "answerSha256": "d3b2195f27ed9878b3bdad989ec622ad5258e5764b15e3c1f48cd0dbb1094ade",
+      "inputChars": 27982,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": [
+          "仅汉字已有 282 字，超过要求 250 字。"
+        ]
+      }
+    },
+    {
+      "model": "glm-5.3",
+      "caseId": "zh_data",
+      "status": "pass",
+      "criteria": {
+        "human": true,
+        "synthetic": true,
+        "noise": true,
+        "unsupported_comparison": true,
+        "citation": true
+      },
+      "durationMs": 8044,
+      "firstContentMs": 3440,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 251,
+        "promptCacheHitTokens": 128,
+        "promptTokens": 1539,
+        "reasoningTokens": 62,
+        "totalTokens": 1790
+      },
+      "answerSha256": "3d888022d846459b1ae2608485033c72826b1413b222cd1fe2ce10c3dcd520df",
+      "inputChars": 3501,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "caseId": "zh_evidence",
+      "status": "pass",
+      "criteria": {
+        "natural": true,
+        "programming": true,
+        "citation": true
+      },
+      "durationMs": 3301,
+      "firstContentMs": 913,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 80,
+        "promptCacheHitTokens": 128,
+        "promptTokens": 1538,
+        "reasoningTokens": 0,
+        "totalTokens": 1618
+      },
+      "answerSha256": "7de2621163cf4f74da6ce86a32ce1a2c4ad032a57fd088907caea9222b301003",
+      "inputChars": 3495,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "glm-5.3",
+      "caseId": "zh_followup",
+      "status": "review",
+      "criteria": {
+        "per_language": true,
+        "total": false,
+        "quality_limit": true,
+        "citation": true
+      },
+      "durationMs": 6391,
+      "firstContentMs": 2955,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 184,
+        "promptCacheHitTokens": 128,
+        "promptTokens": 1810,
+        "reasoningTokens": 46,
+        "totalTokens": 1994
+      },
+      "answerSha256": "844bc2ba4aaa26beb4a128f1fe91b880d81e4a10933a7f54699759ad296f975c",
+      "inputChars": 4085,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [
+          "原自动检查为保守提示；逐条复核，舍入 4.0% / 342 万及译成等同义表述均可接受。"
+        ],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "caseId": "zh_data",
+      "status": "pass",
+      "criteria": {
+        "human": true,
+        "synthetic": true,
+        "noise": true,
+        "unsupported_comparison": true,
+        "citation": true
+      },
+      "durationMs": 6588,
+      "firstContentMs": 729,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 243,
+        "promptCacheHitTokens": 128,
+        "promptTokens": 1539,
+        "reasoningTokens": 0,
+        "totalTokens": 1782
+      },
+      "answerSha256": "86dcfe5ccc49beeb19d2e6e64b72c4cf3d6b1df3966194ab2a6bc8b1c67c5872",
+      "inputChars": 3501,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": [
+          "仅汉字已有 238 字，超过要求 200 字。"
+        ]
+      }
+    },
+    {
+      "model": "glm-5.3-flash",
+      "caseId": "zh_followup",
+      "status": "pass",
+      "criteria": {
+        "per_language": true,
+        "total": true,
+        "quality_limit": true,
+        "citation": true
+      },
+      "durationMs": 5312,
+      "firstContentMs": 993,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 172,
+        "promptCacheHitTokens": 128,
+        "promptTokens": 1855,
+        "reasoningTokens": 0,
+        "totalTokens": 2027
+      },
+      "answerSha256": "e3817dd2632fa64a56ea40aa1e255892dee1091ad668b044e954265bce91b661",
+      "inputChars": 4184,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "glm-5.3-flashx",
+      "caseId": "en_summary",
+      "status": "pass",
+      "criteria": {
+        "architecture": true,
+        "reported_results": true,
+        "scope": true
+      },
+      "durationMs": 3906,
+      "firstContentMs": 2261,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 215,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 8039,
+        "reasoningTokens": 19,
+        "totalTokens": 8254
+      },
+      "answerSha256": "08dea468b17fcaae1ddb20149463ba12570c692dd7ddc423b8ed10d6bdfda1cf",
+      "inputChars": 39353,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "glm-5.3-flashx",
+      "caseId": "en_formula",
+      "status": "pass",
+      "criteria": {
+        "denominator": true,
+        "variance": true,
+        "gradient": true,
+        "citation": true
+      },
+      "durationMs": 2263,
+      "firstContentMs": 981,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 177,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 847,
+        "reasoningTokens": 0,
+        "totalTokens": 1024
+      },
+      "answerSha256": "ad2777efe14c4a4c5604d5f2f2fa26e59dd5ee24097f9b45a09a2a6d2080dbad",
+      "inputChars": 3775,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "issue",
+        "notes": [
+          "把点积 magnitude 随 d_k 的增长称为线性，混淆了方差与典型幅度；随后又正确写出标准差 sqrt(d_k)，解释内部不一致。"
+        ],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "glm-5.3-flashx",
+      "caseId": "en_table",
+      "status": "pass",
+      "criteria": {
+        "values": true,
+        "difference": true,
+        "citation": true
+      },
+      "durationMs": 1349,
+      "firstContentMs": 1043,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 37,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 1167,
+        "reasoningTokens": 0,
+        "totalTokens": 1204
+      },
+      "answerSha256": "96d676c63eea5f66f05c000b361abb9edea9a5faee8993fb30130f3e3874a9e7",
+      "inputChars": 4303,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "glm-5.3-flashx",
+      "caseId": "en_followup",
+      "status": "review",
+      "criteria": {
+        "relative_calculation": false,
+        "missing_interval": true,
+        "citation": true
+      },
+      "durationMs": 1935,
+      "firstContentMs": 1314,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 116,
+        "promptCacheHitTokens": 128,
+        "promptTokens": 1270,
+        "reasoningTokens": 47,
+        "totalTokens": 1386
+      },
+      "answerSha256": "53a8bda7cd13d4ca20a0eb192948f022c6c22d58a527c773549e1be9b638e0c8",
+      "inputChars": 4600,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [
+          "原自动检查为保守提示；逐条复核，舍入 4.0% / 342 万及译成等同义表述均可接受。"
+        ],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "glm-5.3-flashx",
+      "caseId": "zh_summary",
+      "status": "pass",
+      "criteria": {
+        "survey": true,
+        "directions": true,
+        "challenges": true
+      },
+      "durationMs": 2932,
+      "firstContentMs": 1192,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 253,
+        "promptCacheHitTokens": 0,
+        "promptTokens": 14355,
+        "reasoningTokens": 33,
+        "totalTokens": 14608
+      },
+      "answerSha256": "c25b63e3d718193934787959a8b4970deafd5b7173b04ed67d73093d9a082885",
+      "inputChars": 27982,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "issue",
+        "notes": [
+          "将 MAPO 等一概称为他人成果；MAPO 作者与综述作者有重合。"
+        ],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "glm-5.3-flashx",
+      "caseId": "zh_evidence",
+      "status": "pass",
+      "criteria": {
+        "natural": true,
+        "programming": true,
+        "citation": true
+      },
+      "durationMs": 1525,
+      "firstContentMs": 1067,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 85,
+        "promptCacheHitTokens": 128,
+        "promptTokens": 1538,
+        "reasoningTokens": 22,
+        "totalTokens": 1623
+      },
+      "answerSha256": "aed0984695f59dc83d6a79d3cdae6e0a708d317082a5a2331e286d70078164a7",
+      "inputChars": 3495,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "kimi-k3",
+      "caseId": "en_summary",
+      "status": "pass",
+      "criteria": {
+        "architecture": true,
+        "reported_results": true,
+        "scope": true
+      },
+      "durationMs": 23346,
+      "firstContentMs": 21139,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 759,
+        "promptTokens": 8124,
+        "reasoningTokens": 614,
+        "totalTokens": 8883
+      },
+      "answerSha256": "4417c27bf34056e8291a073279f4b51f11f48fffb0a42641f67f01a55252ca1e",
+      "inputChars": 39353,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "glm-5.3-flashx",
+      "caseId": "zh_data",
+      "status": "pass",
+      "criteria": {
+        "human": true,
+        "synthetic": true,
+        "noise": true,
+        "unsupported_comparison": true,
+        "citation": true
+      },
+      "durationMs": 2843,
+      "firstContentMs": 1289,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 202,
+        "promptCacheHitTokens": 128,
+        "promptTokens": 1539,
+        "reasoningTokens": 0,
+        "totalTokens": 1741
+      },
+      "answerSha256": "f0978c7ff5e42f7d1367c3296ef0af7150ba87ec328eb880ac968148e353ea04",
+      "inputChars": 3501,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": [
+          "仅汉字已有 204 字，超过要求 200 字。"
+        ]
+      }
+    },
+    {
+      "model": "glm-5.3-flashx",
+      "caseId": "zh_followup",
+      "status": "pass",
+      "criteria": {
+        "per_language": true,
+        "total": true,
+        "quality_limit": true,
+        "citation": true
+      },
+      "durationMs": 2023,
+      "firstContentMs": 919,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 154,
+        "promptCacheHitTokens": 128,
+        "promptTokens": 1816,
+        "reasoningTokens": 0,
+        "totalTokens": 1970
+      },
+      "answerSha256": "3f08621326519f2059d5b5d8fd968e3a249f3e1f0cfe4994c49ff1ea895c82ea",
+      "inputChars": 4089,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "kimi-k3",
+      "caseId": "en_formula",
+      "status": "pass",
+      "criteria": {
+        "denominator": true,
+        "variance": true,
+        "gradient": true,
+        "citation": true
+      },
+      "durationMs": 8147,
+      "firstContentMs": 4291,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 166,
+        "promptTokens": 926,
+        "reasoningTokens": 13,
+        "totalTokens": 1092
+      },
+      "answerSha256": "0e5864ff507723b9c2d5fcfa98cb6142cf71abe61a589d1b5e777429a5dc5bae",
+      "inputChars": 3775,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "kimi-k3",
+      "caseId": "en_table",
+      "status": "pass",
+      "criteria": {
+        "values": true,
+        "difference": true,
+        "citation": true
+      },
+      "durationMs": 13308,
+      "firstContentMs": 12478,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 224,
+        "promptTokens": 1252,
+        "reasoningTokens": 173,
+        "totalTokens": 1476
+      },
+      "answerSha256": "54fc7b3510793c7809dfa93a6d1631fe36baa0b7ca52c9941fb5eefd44d36f77",
+      "inputChars": 4303,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "kimi-k3",
+      "caseId": "en_followup",
+      "status": "review",
+      "criteria": {
+        "relative_calculation": false,
+        "missing_interval": true,
+        "citation": true
+      },
+      "durationMs": 16905,
+      "firstContentMs": 14712,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 406,
+        "promptTokens": 1356,
+        "reasoningTokens": 308,
+        "totalTokens": 1762
+      },
+      "answerSha256": "87191b235e771782a0f3e34dc1afefd32ee3379dbcff4ba3a7620447584f1bca",
+      "inputChars": 4579,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [
+          "原自动检查为保守提示；逐条复核，舍入 4.0% / 342 万及译成等同义表述均可接受。"
+        ],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "kimi-k3",
+      "caseId": "zh_summary",
+      "status": "pass",
+      "criteria": {
+        "survey": true,
+        "directions": true,
+        "challenges": true
+      },
+      "durationMs": 10344,
+      "firstContentMs": 5198,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 264,
+        "promptCacheHitTokens": 256,
+        "promptTokens": 14036,
+        "reasoningTokens": 34,
+        "totalTokens": 14300
+      },
+      "answerSha256": "b8fa2c2e18a0c16851b14f76ea578e7c5e572a5431ef1b157127224fda8b7d35",
+      "inputChars": 27982,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "kimi-k3",
+      "caseId": "zh_evidence",
+      "status": "pass",
+      "criteria": {
+        "natural": true,
+        "programming": true,
+        "citation": true
+      },
+      "durationMs": 9675,
+      "firstContentMs": 7385,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 288,
+        "promptTokens": 1619,
+        "reasoningTokens": 191,
+        "totalTokens": 1907
+      },
+      "answerSha256": "5fffffe9d30728a4ca47435ec260771d62b5a4cd0c29fae53da1ecc3d012c5a4",
+      "inputChars": 3495,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "kimi-k3",
+      "caseId": "zh_data",
+      "status": "review",
+      "criteria": {
+        "human": true,
+        "synthetic": false,
+        "noise": true,
+        "unsupported_comparison": true,
+        "citation": true
+      },
+      "durationMs": 19081,
+      "firstContentMs": 17196,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 546,
+        "promptTokens": 1618,
+        "reasoningTokens": 437,
+        "totalTokens": 2164
+      },
+      "answerSha256": "af577dbca4398f62bdce8bf1b57a5ca8c1ca2ac5ef9ddfb513e8e06cad123208",
+      "inputChars": 3501,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [
+          "原自动检查为保守提示；逐条复核，舍入 4.0% / 342 万及译成等同义表述均可接受。"
+        ],
+        "instructionWarnings": []
+      }
+    },
+    {
+      "model": "kimi-k3",
+      "caseId": "zh_followup",
+      "status": "review",
+      "criteria": {
+        "per_language": true,
+        "total": false,
+        "quality_limit": true,
+        "citation": true
+      },
+      "durationMs": 15420,
+      "firstContentMs": 13096,
+      "finishReason": "stop",
+      "usage": {
+        "completionTokens": 503,
+        "promptCacheHitTokens": 256,
+        "promptTokens": 1795,
+        "reasoningTokens": 381,
+        "totalTokens": 2298
+      },
+      "answerSha256": "c7d771f4cba8aca8f8154949f71dd170b2093c15c764018bd75a7cb037ce9654",
+      "inputChars": 3920,
+      "manualReview": {
+        "reviewer": "Codex, source-checked (not independent human review)",
+        "factualStatus": "pass",
+        "notes": [
+          "原自动检查为保守提示；逐条复核，舍入 4.0% / 342 万及译成等同义表述均可接受。"
+        ],
+        "instructionWarnings": []
+      }
+    }
+  ],
+  "finishedAt": "2026-09-22T06:27:38.256Z",
+  "summary": [
+    {
+      "model": "deepseek-flash",
+      "completed": 8,
+      "factualPass": 8,
+      "warningCases": 1,
+      "meanDurationMs": 2755,
+      "meanFirstContentMs": 2402,
+      "promptTokens": 30430,
+      "completionTokens": 3725,
+      "reasoningTokens": 2948
+    },
+    {
+      "model": "qwen3.8-max",
+      "completed": 8,
+      "factualPass": 8,
+      "warningCases": 0,
+      "meanDurationMs": 8086,
+      "meanFirstContentMs": 5732,
+      "promptTokens": 32162,
+      "completionTokens": 2744,
+      "reasoningTokens": 1839
+    },
+    {
+      "model": "qwen3.8-flash",
+      "completed": 8,
+      "factualPass": 8,
+      "warningCases": 1,
+      "meanDurationMs": 6401,
+      "meanFirstContentMs": 4693,
+      "promptTokens": 32133,
+      "completionTokens": 2533,
+      "reasoningTokens": 1656
+    },
+    {
+      "model": "glm-5.3",
+      "completed": 8,
+      "factualPass": 7,
+      "warningCases": 0,
+      "meanDurationMs": 5815,
+      "meanFirstContentMs": 2636,
+      "promptTokens": 30574,
+      "completionTokens": 1269,
+      "reasoningTokens": 239
+    },
+    {
+      "model": "glm-5.3-flash",
+      "completed": 8,
+      "factualPass": 8,
+      "warningCases": 2,
+      "meanDurationMs": 5627,
+      "meanFirstContentMs": 1517,
+      "promptTokens": 30633,
+      "completionTokens": 1349,
+      "reasoningTokens": 103
+    },
+    {
+      "model": "glm-5.3-flashx",
+      "completed": 8,
+      "factualPass": 6,
+      "warningCases": 1,
+      "meanDurationMs": 2347,
+      "meanFirstContentMs": 1258,
+      "promptTokens": 30571,
+      "completionTokens": 1239,
+      "reasoningTokens": 121
+    },
+    {
+      "model": "kimi-k3",
+      "completed": 8,
+      "factualPass": 8,
+      "warningCases": 0,
+      "meanDurationMs": 14528,
+      "meanFirstContentMs": 11937,
+      "promptTokens": 30726,
+      "completionTokens": 3156,
+      "reasoningTokens": 2151
+    }
+  ],
+  "reviewNote": "All 56 final answers inspected by Codex against the selected source pages. This is an exploratory two-paper evaluation, not independent blind grading. Nine initial regex review flags are equivalent wording/rounding. Scripts now accept those forms; no paid rerun was made.",
+  "rawAnswersLocalPath": "/tmp/pdf-public-paper-evaluation-20260922.json",
+  "limitations": [
+    "Two computer-science papers, one sample per question per model, no statistical ranking.",
+    "Curated evidence pages and extracted full text; does not evaluate production retrieval, MathPix, browser or database.",
+    "No multi-domain or million-token stress test; provider token counts/prices are not directly interchangeable."
+  ]
+}
