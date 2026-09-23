@@ -35,23 +35,102 @@ QA_ENV_FILE=.env.qa.local npm run dev:qa
 QA_PORT=8789
 ```
 
-## 需要凭据的部分
+## 建立独立的 Supabase 测试项目
 
-`.env.qa.example` 里这些是空的，必须填。前四项决定能不能登录和落库，后两项决定能不能检索：
+### 1. 创建项目
 
-| 变量 | 用途 | 缺失时的表现 |
+Supabase Dashboard 新建项目：独立名称（如 `pdf-reader-qa-test`）、独立数据库密码、就近区域。
+**不要复用主应用的项目**——测试数据、Auth 用户和模型额度都要分开。
+
+### 2. 取三个凭据
+
+Settings → API Keys（老项目在 Settings → API）。需要：
+
+| 值 | 用途 | 环境变量 |
 | --- | --- | --- |
-| `SUPABASE_URL` | 测试项目地址 | `supabase_not_configured` |
-| `SUPABASE_ANON_KEY` | 校验登录 token | 401 / 配置错误 |
-| `SUPABASE_SERVICE_ROLE_KEY` | 索引任务、步骤与工具调用落库 | 落库失败，循环中断 |
-| `DEEPSEEK_API_KEY` | 控制器与 `queryRouter` 调用 | 控制器调用失败，抛 `QaAgentRunnerError` |
-| `VOYAGE_API_KEY` | 语义检索 embedding | 退化为纯文本检索 |
-| `MATHPIX_APP_ID` / `MATHPIX_APP_KEY` | 论文解析，索引的上游 | 无法建索引 |
+| Project URL | 服务端与前端都要 | `SUPABASE_URL` |
+| anon / publishable key | 校验登录 token | `SUPABASE_ANON_KEY` |
+| service_role / secret key | 索引任务、步骤与工具调用落库 | `SUPABASE_SERVICE_ROLE_KEY` |
 
-**必须用独立的 Supabase 测试项目和测试账号**：不复用 `.env.local` 里的生产凭据，模型额度也宜分开设置。
-表结构用测试项目自己的 SQL editor 执行 `supabase/schema.sql`（增量用 `supabase/migrations/`），步骤与主应用一致，见 README 的 "Supabase setup"。
-QA 依赖的表：`user_documents`、`user_paper_chunks`、`user_paper_references`、`user_mathpix_documents`、
-`user_qa_threads`、`user_qa_messages`、`user_qa_citations`、`user_qa_agent_steps`、`user_qa_tool_calls`、`user_qa_index_jobs`、`user_qa_api_logs`。
+Supabase 正在用 `sb_publishable_*` / `sb_secret_*` 取代 `anon` / `service_role`，两者目前并存可用
+（[迁移说明](https://supabase.com/docs/guides/getting-started/migrating-to-new-api-keys)）。
+本仓库锁定的 `@supabase/supabase-js@2.49.8` 早于新格式；本机实测**用两种格式构造客户端都不报错**，
+但没有对真实项目做过往返验证。若出现鉴权异常，先回退到旧的 `anon` / `service_role` 两个 JWT 键。
+另外 `supabase/schema.sql` 的钩子是 Postgres 函数、不使用 `pg_net`，
+所以"新 secret 键会被数据库 Webhook 拒绝"那个限制在这里不适用。
+
+### 3. 建表
+
+在测试项目的 SQL editor 执行 `supabase/schema.sql`。它建出 QA 依赖的全部表：
+`user_documents`、`user_paper_chunks`、`user_paper_references`、`user_mathpix_documents`、`user_qa_threads`、
+`user_qa_messages`、`user_qa_citations`、`user_qa_agent_steps`、`user_qa_tool_calls`、`user_qa_index_jobs`、`user_qa_api_logs`。
+
+### 4. 注册限制：schema 只定义函数，不启用钩子
+
+`schema.sql` 定义了**两个** Before User Created 钩子函数，但**默认都不生效**——必须在
+Dashboard → Authentication → Hooks 里显式启用其中一个：
+
+- `public.hook_restrict_signup_by_invite_ticket`（README 记录的邀请码流程）
+- `public.hook_restrict_signup_by_email_allowlist`（邮件白名单）
+
+测试项目最省事的做法是**两个都不启用**，直接建号。要复刻生产的邀请制再启用邀请码钩子。
+
+### 5. 建测试账号
+
+未启用钩子时：Dashboard → Authentication → Users → Add user，勾选 auto confirm；
+或关闭 Authentication → Sign In / Providers → Email 的 Confirm email 后走普通注册。
+
+若启用了邀请码钩子，必须走完整流程，否则建号会被钩子拒绝：
+
+```sql
+insert into public.signup_invites (code_hash, note, max_uses, expires_at)
+values (public.hash_signup_invite_code('QA-TEST-2026'), 'qa test', 5, now() + interval '30 days');
+```
+
+然后 `POST /api/auth/invite-ticket`（带 email 与 inviteCode）换一张 10 分钟 ticket，注册时消费它。
+注意这个接口在**主应用**（`server/index.mjs`）上，不在 QA 服务里——QA 服务只服务 `/api/qa/*`。
+
+### 其余变量
+
+`DEEPSEEK_API_KEY` 与 `VOYAGE_API_KEY` 决定控制器调用与语义检索，缺失时表现为控制器调用失败、
+或退化为纯文本检索；模型额度建议与生产分开，避免共享额度被翻译任务耗尽。
+`MATHPIX_APP_ID` / `MATHPIX_APP_KEY` 是索引的上游，缺失时无法建索引。
+
+## 关键：整条栈必须指向同一个测试项目
+
+这是最容易踩的坑。规范里"测试项目需要匹配的前端登录会话"说的是它，但没说清楚要牵连多少东西。
+
+前端用 `VITE_SUPABASE_URL` 登录拿 token，QA 服务用 `SUPABASE_URL` 校验同一个 token；两者不同项目 → QA 请求全部 401。
+
+更麻烦的是第二层：前端一旦登录测试项目，所有 `/api/`（翻译、文库、MathPix）请求仍转到主应用，
+而主应用按**它自己**的 `SUPABASE_URL` 校验同一个 token。主应用若还指着生产项目，这些请求同样 401。
+
+所以完整联调要三个进程一起指向测试项目：
+
+| 进程 | 指向测试项目的方式 |
+| --- | --- |
+| 主应用 API | 用进程环境变量另起一个实例，不动 `.env.local` |
+| QA 服务 | `QA_ENV_FILE=.env.qa.local` |
+| 开发前端 | `vite --mode qa`，Vite 叠加加载 `.env.qa.local` |
+
+主应用支持这么做：`server/index.mjs` 先备份 `process.env`，加载完 `.env` / `.env.local` 后再覆盖回去，
+因此**命令行传入的变量优先级高于 `.env.local`**。同一个 `.env.qa.local` 也能喂给前端，
+因为 `server/supabase/config.mjs` 同时接受 `SUPABASE_URL` 与 `VITE_SUPABASE_URL` 两套名字。
+
+```bash
+# 主应用第二个实例（8790），不修改 .env.local
+SUPABASE_URL=<测试项目> SUPABASE_ANON_KEY=<测试 anon> SUPABASE_SERVICE_ROLE_KEY=<测试 service_role> \
+  DEEPSEEK_API_KEY=<独立额度> PORT=8790 node server/index.mjs
+
+# QA 服务（8789）
+QA_ENV_FILE=.env.qa.local npm run dev:qa
+
+# 前端：加载 .env.qa.local，/api/qa/ → 8789，/api/ → 8790
+npm run dev:web -- --mode qa
+```
+
+不这样做也能跑：只让前端登录测试项目、用它看 QA 面板，代价是翻译与文库功能 401。
+学习 Agent 流程够用，但别误判成"升级把主应用弄坏了"。
 
 ## 建索引：循环能不能跑起来的前提
 
@@ -72,14 +151,9 @@ curl -X POST http://127.0.0.1:8789/api/qa/index-jobs \
 
 ## 前端：看实时 SSE
 
-```bash
-# 开发前端环境
-VITE_QA_API_PROXY_TARGET=http://127.0.0.1:8789
-```
-
-`vite.config.ts` 只把 `/api/qa/` 转到测试服务，其余 `/api/` 仍走主应用。
-这个开关只解决代理转发，**不解决登录**：测试项目需要匹配的前端登录会话，
-不要用生产登录 token 去访问另一个 Supabase 项目。
+前端配置见上一节"整条栈必须指向同一个测试项目"，要点是 `VITE_QA_API_PROXY_TARGET` 只影响
+`vite.config.ts` 里 `/api/qa/` 这一条代理规则，**不解决登录**；登录由 `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`
+决定，且必须与 QA 服务校验 token 用的项目一致。
 
 联调时主应用建议设 `QA_EMBEDDED_ENABLED=false`，避免两个索引 worker 同时运行。
 
@@ -95,9 +169,11 @@ VITE_QA_API_PROXY_TARGET=http://127.0.0.1:8789
 
 - [x] `.env.qa.local` 建立并避让端口冲突（本机已验证）
 - [x] 无凭据启动、健康检查、路由隔离（本机已验证）
-- [ ] 独立 Supabase 测试项目与测试账号
-- [ ] 用测试项目执行 `supabase/schema.sql`
-- [ ] 填入 6 个凭据变量
+- [ ] 新建独立 Supabase 测试项目
+- [ ] 测试项目执行 `supabase/schema.sql`（含两个钩子函数，但先不启用钩子）
+- [ ] 取 Project URL / anon / service_role 三个凭据填入 `.env.qa.local`
+- [ ] 建测试账号（Dashboard → Users → Add user，或关掉 Confirm email 后注册）
+- [ ] 指向同一测试项目启动三个进程：主应用 8790、QA 8789、前端 `--mode qa`
 - [ ] 完成一篇论文的 MathPix 解析并请求建索引
-- [ ] 前端测试项目登录会话，跑通一次真实问答
+- [ ] 跑通一次真实问答，确认 SSE 与落库
 - [ ] 分别验证 `detail` 与 `global` 两条路径的实际事件差异
