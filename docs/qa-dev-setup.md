@@ -281,6 +281,8 @@ curl -X POST http://127.0.0.1:8789/api/qa/index-jobs \
 
 ## 观察点
 
+两条路径的完整逻辑图见 [一次 QA 请求的逻辑图](qa-request-flow.md)。
+
 进入前端问答后，按 [执行内核说明](qa-agent-runtime.md) 的分流图先确认问题类型：
 
 - 问"总结这篇论文"→ 走长上下文路径，**看不到 `tool_call`**，这是预期。
