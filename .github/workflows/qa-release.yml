@@ -1,0 +1,86 @@
+name: QA release
+on:
+  push:
+    tags: ['qa-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Immutable QA tag (qa-vX.Y.Z[-rc.N])'
+        required: true
+        type: string
+      sha:
+        description: 'Expected full source commit SHA'
+        required: true
+        type: string
+      environment:
+        description: 'Dedicated QA deployment environment'
+        required: true
+        type: choice
+        options: [qa-staging, qa-production]
+permissions:
+  contents: read
+concurrency:
+  group: qa-release-${{ inputs.environment || github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      sha: ${{ steps.identity.outputs.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - id: identity
+        env:
+          QA_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          QA_RELEASE_ENVIRONMENT: ${{ inputs.environment }}
+          EXPECTED_SHA: ${{ inputs.sha }}
+        run: |
+          [[ "$QA_RELEASE_TAG" =~ ^qa-v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+          actual_sha=$(git rev-parse HEAD)
+          test "$(git rev-parse "refs/tags/$QA_RELEASE_TAG^{commit}")" = "$actual_sha"
+          if [ -n "$EXPECTED_SHA" ]; then test "$EXPECTED_SHA" = "$actual_sha"; fi
+          node scripts/check-release.mjs
+          echo "sha=$actual_sha" >> "$GITHUB_OUTPUT"
+      - run: npm ci
+      - run: npm run ci
+      - run: npm run package:qa
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qa-${{ steps.identity.outputs.sha }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30
+  deploy:
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: qa-${{ needs.build.outputs.sha }}
+          path: artifacts
+      - name: Deploy only the dedicated QA service
+        env:
+          QA_CD_ENABLED: ${{ vars.QA_CD_ENABLED }}
+          QA_DEPLOY_HOST: ${{ secrets.QA_DEPLOY_HOST }}
+          QA_DEPLOY_USER: ${{ secrets.QA_DEPLOY_USER }}
+          QA_DEPLOY_KEY: ${{ secrets.QA_DEPLOY_KEY }}
+          QA_KNOWN_HOSTS: ${{ secrets.QA_KNOWN_HOSTS }}
+          QA_DEPLOY_ROOT: ${{ vars.QA_DEPLOY_ROOT }}
+          QA_PORT: ${{ vars.QA_PORT }}
+          QA_ENVIRONMENT: ${{ inputs.environment }}
+          SOURCE_SHA: ${{ needs.build.outputs.sha }}
+        run: bash scripts/dispatch-qa-deploy.sh

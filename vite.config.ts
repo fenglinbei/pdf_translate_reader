@@ -6,6 +6,7 @@ import { generateSelfSignedCert } from "./scripts/devCert.mjs";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const apiTarget = process.env.VITE_API_PROXY_TARGET ?? env.VITE_API_PROXY_TARGET ?? "http://localhost:8787";
+  const qaTarget = process.env.VITE_QA_API_PROXY_TARGET ?? env.VITE_QA_API_PROXY_TARGET;
 
   return {
     plugins: [react()],
@@ -13,6 +14,7 @@ export default defineConfig(({ mode }) => {
       https: generateSelfSignedCert(),
       port: 5173,
       proxy: {
+        ...(qaTarget ? { "/api/qa/": { target: qaTarget, changeOrigin: true } } : {}),
         "/api": {
           target: apiTarget,
           changeOrigin: true,

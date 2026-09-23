@@ -6,9 +6,7 @@ import { handleHealth } from "./routes/health.mjs";
 import { handleLibraryRoute } from "./routes/library.mjs";
 import { startMetadataWorker } from "./library/worker.mjs";
 import { handleMathpixRoute } from "./routes/mathpix.mjs";
-import { handleQaRoute } from "./routes/qa.mjs";
 import { handleTranslateStream } from "./routes/translate.mjs";
-import { recoverQaIndexJobs } from "./qa/indexJobRunner.mjs";
 import { requireAuthenticatedUser, SupabaseAuthError } from "./supabase/auth.mjs";
 
 const processEnvOverrides = { ...process.env };
@@ -92,6 +90,10 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname.startsWith("/api/qa/")) {
+    if (process.env.QA_EMBEDDED_ENABLED === "false") {
+      writeJson(response, 503, { error: { code: "qa_disabled", message: "QA is served separately." } });
+      return;
+    }
     let user;
 
     try {
@@ -108,7 +110,13 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    await handleQaRoute(request, response, url, user);
+    try {
+      const { handleQaRoute } = await import("./routes/qa.mjs");
+      await handleQaRoute(request, response, url, user);
+    } catch {
+      if (!response.headersSent) writeJson(response, 503, { error: { code: "qa_unavailable", message: "QA is unavailable." } });
+      else response.end();
+    }
     return;
   }
 
@@ -121,9 +129,9 @@ const server = createServer(async (request, response) => {
 });
 
 server.listen(port, () => {
-  console.log(`API proxy listening on http://localhost:${port}`);
+  console.log(`API proxy listening on http://localhost:${server.address().port}`);
   startMetadataWorker();
-  recoverQaIndexJobs().catch((error) => {
+  if (process.env.QA_EMBEDDED_ENABLED !== "false") import("./qa/indexJobRunner.mjs").then(({ recoverQaIndexJobs }) => recoverQaIndexJobs()).catch((error) => {
     console.warn(
       "QA index job recovery skipped:",
       error instanceof Error ? error.message : error,
