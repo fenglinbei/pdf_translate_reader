@@ -22,4 +22,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run ci
-      - run: bash -n scripts/deploy-qa.sh scripts/deploy-linux-nginx.sh
+      - run: |
+          for script in scripts/deploy-qa.sh scripts/dispatch-qa-deploy.sh scripts/deploy-linux-nginx.sh; do
+            bash -n "$script"
+          done

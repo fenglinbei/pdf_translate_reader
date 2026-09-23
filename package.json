@@ -8,6 +8,7 @@
     "dev:web": "vite --host 0.0.0.0",
     "dev:api": "node server/index.mjs",
     "dev:qa": "node server/qa-service.mjs",
+    "demo:qa": "node scripts/demo-qa-agent.mjs",
     "test": "node --test tests/*/*.test.mjs",
     "check:release": "node scripts/check-release.mjs",
     "ci": "npm run check:release && npm test && npm run build",

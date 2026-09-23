@@ -1,3 +1,5 @@
+import { createQueryPlan, normalizeQuestion } from "./queryPlan.mjs";
+export { createQueryPlan } from "./queryPlan.mjs";
 import { embedTexts } from "../embedding/client.mjs";
 import { getEmbeddingRuntimeConfig } from "../embedding/config.mjs";
 import { SupabaseServiceError, requireSupabaseServiceClient } from "../supabase/service.mjs";
@@ -11,7 +13,6 @@ import {
 } from "./reranker.mjs";
 
 const DEFAULT_MATCH_COUNT = 12;
-const MAX_QUERY_CHARS = 2000;
 const MAX_TEXT_PREVIEW_CHARS = 520;
 
 export async function retrieveCurrentPaperEvidence({
@@ -63,30 +64,6 @@ export async function retrieveCurrentPaperEvidence({
     rerankerVersion: rerankResult.diagnostics?.model,
     retrieverVersion: QA_RETRIEVER_VERSION,
     warnings: [...rerankResult.warnings],
-  };
-}
-
-export function createQueryPlan(question) {
-  const lowerQuestion = String(question ?? "").toLocaleLowerCase();
-  const isComparison = /\b(compare|difference|versus|vs\.?|对比|比较|区别)\b/.test(lowerQuestion);
-  const isSummary = /\b(summary|summarize|overview|总结|概括)\b/.test(lowerQuestion);
-  const isResult = /\b(result|experiment|accuracy|性能|结果|实验)\b/.test(lowerQuestion);
-  const isMethod = /\b(method|approach|algorithm|模型|方法|算法)\b/.test(lowerQuestion);
-  const intent = isComparison
-    ? "comparison"
-    : isSummary
-      ? "summary"
-      : isResult
-        ? "result"
-        : isMethod
-          ? "method"
-          : "question";
-
-  return {
-    answerFormat: isComparison ? "table" : isSummary ? "bullets" : "paragraph",
-    intent,
-    requiredEvidence: isComparison ? "comparison" : isSummary ? "multi" : "single",
-    rewrittenQueries: [normalizeQuestion(question)],
   };
 }
 
@@ -297,10 +274,6 @@ function truncateForLongContext(text, maxChars) {
     text: `${head}\n\n[... content truncated ...]\n\n${tail}`,
     truncated: true,
   };
-}
-
-function normalizeQuestion(value) {
-  return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, MAX_QUERY_CHARS);
 }
 
 function formatVector(vector) {
