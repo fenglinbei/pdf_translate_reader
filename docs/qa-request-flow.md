@@ -216,6 +216,28 @@ await events.recordStep(state, "gap_check", { ... });                        // 
 [qa-stream] -> long context path        ← 有这行才是真的走了长上下文
 ```
 
+#### 实测案例：路由判对了，但长上下文失败了
+
+一次真实运行里，`「这篇文章主要讲了什么？」` 的日志是：
+
+```
+[query-router] {..."normalizedType":"global","confidence":"high"...}
+[qa-stream] questionType = global | question: 这篇文章主要讲了什么？
+[qa-stream] -> long context path
+[qa-stream] evidence lineRegions check: [ ...C1..C10... ]     ← 这行属于 agent 路径
+```
+
+路由**判对了**（global，high 置信度），也确实进了长上下文路径，但随后出现了属于 agent 路径的日志
+——说明长上下文抛错并静默回落了。数据库里只看得到 agent 循环的痕迹，看不出发生过回落。
+
+**失败原因是不可观测的**：回落处既没有 `console.error`，也没有写库，
+`errorMessage` 只存在于那一刻的 SSE 流里（渲染时前端只显示 `summary`，所以界面上也看不到）。
+要当场看到它，只能开浏览器 DevTools → Network → `/api/qa/stream` 的 EventStream。
+
+还有一个可推断的信号：该请求的 `chatContext.carryoverEvidenceIds = ["C1","C2"]`。
+长上下文路径写入的快照是 `evidence: []`，所以**上一轮只要走了长上下文，这一轮就不会有带入证据**。
+带入证据存在，说明上一轮同样走的是 agent 循环——**两轮都回落了，这是系统性失败，不是偶发**。
+
 ### 4. agent 路径的 `questionType` 不落库
 
 `questionType` 只出现在两处：`console.log`，以及长上下文路径的步骤 payload / diagnostics。
