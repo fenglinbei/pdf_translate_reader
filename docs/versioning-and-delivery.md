@@ -33,8 +33,11 @@
 
 ## QA 开发环境
 
+逐步操作见 [QA 开发环境：跑通一次真实问答](qa-dev-setup.md)。
+
 复制 `.env.qa.example` 为 `.env.qa.local`，填写独立 Supabase 测试项目及测试账号。
-`QA_ENV_FILE=.env.qa.local npm run dev:qa` 启动 loopback QA API，默认端口 8788。
+`QA_ENV_FILE=.env.qa.local npm run dev:qa` 启动 loopback QA API，默认端口 8788；
+该端口可能与机器上的其他服务冲突，启动前先确认空闲，冲突时改 `QA_PORT`。
 它不加载 `.env` / `.env.local`，不启动文库元数据 worker，默认不恢复索引任务。
 测试索引需要显式请求；`QA_INDEX_WORKER_ENABLED=true` 只控制启动时的恢复，不是禁写开关。
 开发凭据和真实生产数据必须隔离；模型额度也宜分开设置，避免共享额度耗尽影响翻译。
