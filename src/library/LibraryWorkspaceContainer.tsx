@@ -37,8 +37,6 @@ import { applyMetadataSuggestions, queueMetadataRecognition } from "./metadataCl
 import { metadataIsPending } from "./MetadataRecognition";
 
 type LibraryWorkspaceContainerProps = {
-  metadataAiEnabled: boolean;
-  onMetadataAiChange: (enabled: boolean) => Promise<void>;
   activeDocumentId?: string;
   isImporting: boolean;
   onClose: () => void;
@@ -55,8 +53,6 @@ const DEFAULT_QUERY = libraryScopeToQuery(DEFAULT_SCOPE, {
 });
 
 export function LibraryWorkspaceContainer({
-  metadataAiEnabled,
-  onMetadataAiChange,
   activeDocumentId,
   isImporting,
   onClose,
@@ -459,8 +455,6 @@ export function LibraryWorkspaceContainer({
 
   return (
     <LibraryWorkbench
-      metadataAiEnabled={metadataAiEnabled}
-      onMetadataAiChange={onMetadataAiChange}
       onRecognizeMetadata={handleRecognizeMetadata}
       onApplyMetadata={handleApplyMetadata}
       activeDocumentId={activeDocumentId}

@@ -3241,8 +3241,6 @@ export function ReaderShell() {
       </main>
       {isLibraryWorkbenchOpen ? (
         <LibraryWorkspaceContainer
-          metadataAiEnabled={settings.libraryMetadataAiEnabled}
-          onMetadataAiChange={enabled => handleSettingsChange({ libraryMetadataAiEnabled: enabled })}
           activeDocumentId={currentEntry?.cloudDocumentId}
           isImporting={isImporting}
           onClose={closeLibraryWorkbench}

@@ -19,7 +19,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n/I18nProvider";
 import { PdfImportDropzone } from "../pdf/PdfImportDropzone";
 import type {
@@ -37,7 +37,7 @@ import type {
   LibraryTagUpdateInput,
 } from "../types/domain";
 import "./libraryWorkbench.css";
-import { MetadataRecognition, MetadataStatus } from "./MetadataRecognition";
+import { MetadataRecognition, MetadataRecognitionAction, MetadataStatus } from "./MetadataRecognition";
 import { parseMetadataAuthors } from "../../shared/pdfMetadata.mjs";
 
 export type LibraryWorkbenchScope =
@@ -64,8 +64,6 @@ export type LibraryDocumentSaveInput = {
 };
 
 type LibraryWorkbenchProps = {
-  metadataAiEnabled: boolean;
-  onMetadataAiChange: (enabled: boolean) => Promise<void>;
   onRecognizeMetadata: (documentIds: string[]) => Promise<void>;
   onApplyMetadata: (document: LibraryDocument, fields: LibraryMetadataField[]) => Promise<void>;
   activeDocumentId?: string;
@@ -148,8 +146,6 @@ const SORT_VALUES: Array<NonNullable<LibraryDocumentQuery["sort"]>> = [
 ];
 
 export function LibraryWorkbench({
-  metadataAiEnabled,
-  onMetadataAiChange,
   onRecognizeMetadata,
   onApplyMetadata,
   activeDocumentId,
@@ -196,6 +192,8 @@ export function LibraryWorkbench({
   const [shouldFocusInspector, setShouldFocusInspector] = useState(false);
   const documentRowRefs = useRef(new Map<string, HTMLElement>());
   const inspectorRef = useRef<HTMLElement>(null);
+  const inspectorBodyRef = useRef<HTMLDivElement>(null);
+  const editMetadataRef = useRef<HTMLButtonElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const workbenchRef = useRef<HTMLElement>(null);
 
@@ -297,7 +295,7 @@ export function LibraryWorkbench({
   };
 
   const handleSaveDocument = () => {
-    if (!focusedDocument) {
+    if (!focusedDocument || isMutating) {
       return;
     }
 
@@ -317,7 +315,23 @@ export function LibraryWorkbench({
         tagIds: draft.tagIds,
       });
       setIsEditing(false);
+      window.requestAnimationFrame(() => editMetadataRef.current?.focus());
     });
+  };
+
+  const startEditingMetadata = () => {
+    if (!focusedDocument) return;
+    setDraftRevision(focusedDocument.metadataRevision ?? 0);
+    setIsEditing(true);
+    setMutationError(undefined);
+    inspectorBodyRef.current?.scrollTo({ top: 0 });
+  };
+
+  const cancelEditingMetadata = () => {
+    setDraft(createMetadataDraft(focusedDocument));
+    setIsEditing(false);
+    setMutationError(undefined);
+    window.requestAnimationFrame(() => editMetadataRef.current?.focus());
   };
 
   const openCollectionEditor = (parentId = "") => {
@@ -446,7 +460,7 @@ export function LibraryWorkbench({
       const row = closingDocumentId
         ? documentRowRefs.current.get(closingDocumentId)
         : undefined;
-      (row ?? workbenchRef.current)?.focus();
+      (row?.querySelector<HTMLButtonElement>("[data-library-inspect]") ?? workbenchRef.current)?.focus();
     });
   };
 
@@ -731,11 +745,6 @@ export function LibraryWorkbench({
         ) : null}
 
         <main className="library-workbench__content">
-          <label className="library-metadata-ai-toggle">
-            <input type="checkbox" checked={metadataAiEnabled} disabled={isMutating}
-              onChange={event => { const enabled = event.target.checked; void runMutation(() => onMetadataAiChange(enabled)); }} />
-            <span>{t("library.recognition.aiToggle")}<small>{t("library.recognition.aiHint")}</small></span>
-          </label>
           <div className="library-workbench__toolbar">
             <label className="library-workbench__search">
               <Search aria-hidden="true" size={17} />
@@ -941,7 +950,7 @@ export function LibraryWorkbench({
             </div>
           ) : null}
 
-          {mutationError && !isSidebarOpen ? (
+          {mutationError && !isSidebarOpen && !focusedDocument ? (
             <div
               className="library-workbench__notice library-workbench__notice--error"
               role="alert"
@@ -1090,40 +1099,61 @@ export function LibraryWorkbench({
           {focusedDocument ? (
             <>
               <div className="library-workbench__inspector-heading">
-                <div>
-                  <span>{t("library.metadata")}</span>
-                  <strong>
-                    {focusedDocument.bibliographicMetadata.title || focusedDocument.fileName}
-                  </strong>
+                <div className="library-workbench__inspector-toolbar">
+                  <span className="library-workbench__inspector-label">
+                    {t(isEditing ? "library.editMetadata" : "library.metadata")}
+                  </span>
+                  <div className="library-workbench__inspector-tools">
+                    {!isEditing ? (
+                      <>
+                        <MetadataRecognitionAction state={focusedDocument.metadataState} disabled={isMutating}
+                          onRecognize={() => void runMutation(() => onRecognizeMetadata([focusedDocument.cloudDocumentId]))} />
+                        <button aria-label={t("library.editMetadata")} className="library-workbench__quiet-icon"
+                          disabled={isMutating} onClick={startEditingMetadata} ref={editMetadataRef}
+                          title={t("library.editMetadata")} type="button">
+                          <Pencil aria-hidden="true" size={16} strokeWidth={1.7} />
+                        </button>
+                      </>
+                    ) : null}
+                    <button
+                      aria-label={t("common.close")}
+                      className="library-workbench__quiet-icon library-workbench__inspector-close"
+                      disabled={isMutating}
+                      onClick={closeInspector}
+                      title={t("common.close")}
+                      type="button"
+                    >
+                      <X aria-hidden="true" size={18} strokeWidth={1.7} />
+                    </button>
+                  </div>
                 </div>
-                <button
-                  aria-label={t("common.close")}
-                  className="library-workbench__inspector-close"
-                  onClick={closeInspector}
-                  title={t("common.close")}
-                  type="button"
-                >
-                  <X aria-hidden="true" size={16} />
-                </button>
+                {!isEditing ? <h2 className="library-workbench__inspector-title">
+                  {focusedDocument.bibliographicMetadata.title || focusedDocument.fileName}
+                </h2> : null}
               </div>
 
-              {isEditing ? (
-                <MetadataEditor
-                  collections={collections}
-                  draft={draft}
-                  disabled={isMutating}
-                  onChange={setDraft}
-                  tags={tags}
-                  t={t}
-                />
-              ) : (
-                <>
-                  <MetadataRecognition document={focusedDocument} disabled={isMutating}
-                    onRecognize={() => void runMutation(() => onRecognizeMetadata([focusedDocument.cloudDocumentId]))}
-                    onApply={fields => void runMutation(() => onApplyMetadata(focusedDocument, fields))} />
-                  <MetadataSummary document={focusedDocument} formatDate={formatDate} t={t} />
-                </>
-              )}
+              {mutationError && !isSidebarOpen ? (
+                <div className="library-workbench__inspector-error" role="alert">{mutationError}</div>
+              ) : null}
+              <div className="library-workbench__inspector-body" ref={inspectorBodyRef}>
+                {isEditing ? (
+                  <MetadataEditor
+                    collections={collections}
+                    draft={draft}
+                    disabled={isMutating}
+                    onChange={setDraft}
+                    onSave={handleSaveDocument}
+                    tags={tags}
+                    t={t}
+                  />
+                ) : (
+                  <>
+                    <MetadataRecognition document={focusedDocument} disabled={isMutating}
+                      onApply={fields => void runMutation(() => onApplyMetadata(focusedDocument, fields))} />
+                    <MetadataSummary document={focusedDocument} formatDate={formatDate} t={t} />
+                  </>
+                )}
+              </div>
 
               <div className="library-workbench__inspector-actions">
                 {isEditing ? (
@@ -1131,8 +1161,8 @@ export function LibraryWorkbench({
                     <button
                       className="library-workbench__primary-button"
                       disabled={isMutating}
-                      onClick={handleSaveDocument}
-                      type="button"
+                      form="library-metadata-editor"
+                      type="submit"
                     >
                       {isMutating ? (
                         <LoaderCircle
@@ -1147,10 +1177,7 @@ export function LibraryWorkbench({
                     </button>
                     <button
                       disabled={isMutating}
-                      onClick={() => {
-                        setDraft(createMetadataDraft(focusedDocument));
-                        setIsEditing(false);
-                      }}
+                      onClick={cancelEditingMetadata}
                       type="button"
                     >
                       {t("common.cancel")}
@@ -1165,9 +1192,6 @@ export function LibraryWorkbench({
                     >
                       <BookOpen aria-hidden="true" size={15} />
                       {t("library.openDocument")}
-                    </button>
-                    <button onClick={() => { setDraftRevision(focusedDocument.metadataRevision ?? 0); setIsEditing(true); }} type="button">
-                      {t("library.editMetadata")}
                     </button>
                   </>
                 )}
@@ -1520,7 +1544,6 @@ function LibraryDocumentRow({
         <span className="sr-only">{t("library.selectPaper")}</span>
       </label>
       <div className="library-workbench__document-main">
-        <MetadataStatus state={document.metadataState} />
         <div className="library-workbench__document-title-line">
           <strong>{metadata.title || document.fileName}</strong>
           {active ? <span>{t("library.openNow")}</span> : null}
@@ -1530,15 +1553,18 @@ function LibraryDocumentRow({
           {metadata.publicationYear ? ` · ${metadata.publicationYear}` : ""}
           {metadata.publicationVenue ? ` · ${metadata.publicationVenue}` : ""}
         </p>
-        <small>
-          {t("library.lastOpened", {
-            date: formatDate(document.lastOpenedAt, {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            }),
-          })}
-        </small>
+        <div className="library-workbench__document-meta-line">
+          <small>
+            {t("library.lastOpened", {
+              date: formatDate(document.lastOpenedAt, {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              }),
+            })}
+          </small>
+          <MetadataStatus state={document.metadataState} />
+        </div>
       </div>
       <div className="library-workbench__document-organization">
         <div>
@@ -1586,6 +1612,7 @@ function LibraryDocumentRow({
         </button>
         <button
           aria-label={t("library.metadata")}
+          data-library-inspect=""
           onClick={onInspect}
           title={t("library.metadata")}
           type="button"
@@ -1621,7 +1648,7 @@ function MetadataSummary({
       <MetadataValue label={t("library.metadata.authors")}>
         {metadata.authors.join(", ") || t("library.notSet")}
       </MetadataValue>
-      <div className="library-workbench__metadata-grid">
+      <div className="library-workbench__metadata-grid library-workbench__publication-grid">
         <MetadataValue label={t("library.metadata.year")}>
           {metadata.publicationYear || t("library.notSet")}
         </MetadataValue>
@@ -1629,20 +1656,24 @@ function MetadataSummary({
           {metadata.publicationVenue || t("library.notSet")}
         </MetadataValue>
       </div>
-      <MetadataValue label={t("library.metadata.doi")}>
-        {metadata.doi || t("library.notSet")}
-      </MetadataValue>
-      <MetadataValue label={t("library.metadata.arxiv")}>
-        {metadata.arxivId || t("library.notSet")}
-      </MetadataValue>
-      <MetadataValue label={t("library.status")}>
-        {getStatusLabel(document.readingStatus, t)}
-      </MetadataValue>
-      <MetadataValue label={t("library.collections")}>
-        {document.collections.length > 0
-          ? document.collections.map((collection) => collection.name).join(", ")
-          : t("library.notSet")}
-      </MetadataValue>
+      <div className="library-workbench__metadata-grid">
+        <MetadataValue label={t("library.metadata.doi")}>
+          {metadata.doi || t("library.notSet")}
+        </MetadataValue>
+        <MetadataValue label={t("library.metadata.arxiv")}>
+          {metadata.arxivId || t("library.notSet")}
+        </MetadataValue>
+      </div>
+      <div className="library-workbench__metadata-grid">
+        <MetadataValue label={t("library.status")}>
+          {getStatusLabel(document.readingStatus, t)}
+        </MetadataValue>
+        <MetadataValue label={t("library.collections")}>
+          {document.collections.length > 0
+            ? document.collections.map((collection) => collection.name).join(", ")
+            : t("library.notSet")}
+        </MetadataValue>
+      </div>
       <MetadataValue label={t("library.tags")}>
         {document.tags.length > 0
           ? document.tags.map((tag) => tag.name).join(", ")
@@ -1683,6 +1714,7 @@ function MetadataEditor({
   disabled,
   draft,
   onChange,
+  onSave,
   tags,
   t,
 }: {
@@ -1690,6 +1722,7 @@ function MetadataEditor({
   disabled: boolean;
   draft: MetadataDraft;
   onChange: (draft: MetadataDraft) => void;
+  onSave: () => void;
   tags: LibraryTag[];
   t: ReturnType<typeof useI18n>["t"];
 }) {
@@ -1697,129 +1730,103 @@ function MetadataEditor({
     key: Key,
     value: MetadataDraft[Key],
   ) => onChange({ ...draft, [key]: value });
+  const titleInputRef = useRef<HTMLTextAreaElement>(null);
+  const authorsInputRef = useRef<HTMLTextAreaElement>(null);
+
+  useLayoutEffect(() => {
+    for (const field of [titleInputRef.current, authorsInputRef.current]) {
+      if (!field) continue;
+      field.style.height = "auto";
+      field.style.height = `${Math.min(200, Math.max(88, field.scrollHeight + 2))}px`;
+    }
+  }, [draft.title, draft.authors]);
 
   return (
-    <div className="library-workbench__metadata-form">
-      <label>
-        <span>{t("library.metadata.title")}</span>
-        <input
-          disabled={disabled}
-          onChange={(event) => update("title", event.target.value)}
-          value={draft.title}
-        />
-      </label>
-      <label>
-        <span>{t("library.metadata.authors")}</span>
-        <textarea
-          disabled={disabled}
-          onChange={(event) => update("authors", event.target.value)}
-          placeholder={t("library.authorsPlaceholder")}
-          rows={3}
-          value={draft.authors}
-        />
-      </label>
-      <div className="library-workbench__metadata-grid">
+    <form className="library-workbench__metadata-form" id="library-metadata-editor"
+      onSubmit={event => { event.preventDefault(); onSave(); }}
+      onKeyDown={event => {
+        if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && !event.nativeEvent.isComposing) {
+          event.preventDefault();
+          event.currentTarget.requestSubmit();
+        }
+      }}>
+      <fieldset disabled={disabled} className="library-workbench__metadata-section">
+        <legend>{t("library.metadata.bibliography")}</legend>
         <label>
-          <span>{t("library.metadata.year")}</span>
-          <input
-            disabled={disabled}
-            max="3000"
-            min="1"
-            onChange={(event) => update("publicationYear", event.target.value)}
-            type="number"
-            value={draft.publicationYear}
-          />
+          <span>{t("library.metadata.title")}</span>
+          <textarea autoFocus className="library-workbench__title-input" ref={titleInputRef} rows={3}
+            onChange={event => update("title", event.target.value)} value={draft.title} />
         </label>
-        <label>
-          <span>{t("library.metadata.venue")}</span>
-          <input
-            disabled={disabled}
-            onChange={(event) => update("publicationVenue", event.target.value)}
-            value={draft.publicationVenue}
-          />
-        </label>
-      </div>
-      <div className="library-workbench__metadata-grid">
+        <div className="library-workbench__author-field">
+          <label>
+            <span>{t("library.metadata.authors")}</span>
+            <textarea aria-describedby="library-authors-hint" ref={authorsInputRef} rows={3}
+              onChange={event => update("authors", event.target.value)}
+              placeholder={t("library.authorsPlaceholder")} value={draft.authors} />
+          </label>
+          <small id="library-authors-hint" className="library-workbench__field-hint">{t("library.authorsHint")}</small>
+        </div>
+        <div className="library-workbench__metadata-grid library-workbench__publication-grid">
+          <label>
+            <span>{t("library.metadata.year")}</span>
+            <input min="1" max="3000" type="number" inputMode="numeric"
+              onChange={event => update("publicationYear", event.target.value)} value={draft.publicationYear} />
+          </label>
+          <label>
+            <span>{t("library.metadata.venue")}</span>
+            <input onChange={event => update("publicationVenue", event.target.value)} value={draft.publicationVenue} />
+          </label>
+        </div>
+      </fieldset>
+      <label>
+        <span>{t("library.metadata.abstract")}</span>
+        <textarea disabled={disabled} rows={6} onChange={event => update("abstract", event.target.value)} value={draft.abstract} />
+      </label>
+      <fieldset disabled={disabled} className="library-workbench__metadata-section">
+        <legend>{t("library.metadata.identifiers")}</legend>
         <label>
           <span>{t("library.metadata.doi")}</span>
-          <input
-            disabled={disabled}
-            onChange={(event) => update("doi", event.target.value)}
-            value={draft.doi}
-          />
+          <input autoCapitalize="none" spellCheck={false}
+            onChange={event => update("doi", event.target.value)} value={draft.doi} />
         </label>
         <label>
           <span>{t("library.metadata.arxiv")}</span>
-          <input
-            disabled={disabled}
-            onChange={(event) => update("arxivId", event.target.value)}
-            value={draft.arxivId}
-          />
+          <input autoCapitalize="none" spellCheck={false}
+            onChange={event => update("arxivId", event.target.value)} value={draft.arxivId} />
         </label>
-      </div>
-      <label>
-        <span>{t("library.status")}</span>
-        <select
-          disabled={disabled}
-          onChange={(event) =>
-            update("readingStatus", event.target.value as LibraryReadingStatus)
-          }
-          value={draft.readingStatus}
-        >
-          {STATUS_VALUES.map((status) => (
-            <option key={status} value={status}>
-              {getStatusLabel(status, t)}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        <span>{t("library.metadata.abstract")}</span>
-        <textarea
-          disabled={disabled}
-          onChange={(event) => update("abstract", event.target.value)}
-          rows={7}
-          value={draft.abstract}
-        />
-      </label>
-      <fieldset disabled={disabled}>
-        <legend>{t("library.collections")}</legend>
-        <div className="library-workbench__check-list">
-          {collections.map((collection) => (
-            <label key={collection.id}>
-              <input
-                checked={draft.collectionIds.includes(collection.id)}
-                onChange={() =>
-                  update(
-                    "collectionIds",
-                    toggleArrayValue(draft.collectionIds, collection.id),
-                  )
-                }
-                type="checkbox"
-              />
+      </fieldset>
+      <fieldset disabled={disabled} className="library-workbench__metadata-section">
+        <legend>{t("library.metadata.organization")}</legend>
+        <label>
+          <span>{t("library.status")}</span>
+          <select onChange={event => update("readingStatus", event.target.value as LibraryReadingStatus)} value={draft.readingStatus}>
+            {STATUS_VALUES.map(status => <option key={status} value={status}>{getStatusLabel(status, t)}</option>)}
+          </select>
+        </label>
+        <fieldset>
+          <legend>{t("library.collections")}</legend>
+          <div className="library-workbench__check-list">
+            {collections.map(collection => <label key={collection.id}>
+              <input type="checkbox" checked={draft.collectionIds.includes(collection.id)}
+                onChange={() => update("collectionIds", toggleArrayValue(draft.collectionIds, collection.id))} />
               <span>{collection.name}</span>
-            </label>
-          ))}
-          {collections.length === 0 ? <span>{t("library.noCollections")}</span> : null}
-        </div>
-      </fieldset>
-      <fieldset disabled={disabled}>
-        <legend>{t("library.tags")}</legend>
-        <div className="library-workbench__check-list">
-          {tags.map((tag) => (
-            <label key={tag.id}>
-              <input
-                checked={draft.tagIds.includes(tag.id)}
-                onChange={() => update("tagIds", toggleArrayValue(draft.tagIds, tag.id))}
-                type="checkbox"
-              />
+            </label>)}
+            {collections.length === 0 ? <span>{t("library.noCollections")}</span> : null}
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>{t("library.tags")}</legend>
+          <div className="library-workbench__check-list">
+            {tags.map(tag => <label key={tag.id}>
+              <input type="checkbox" checked={draft.tagIds.includes(tag.id)}
+                onChange={() => update("tagIds", toggleArrayValue(draft.tagIds, tag.id))} />
               <span>{tag.name}</span>
-            </label>
-          ))}
-          {tags.length === 0 ? <span>{t("library.noTags")}</span> : null}
-        </div>
+            </label>)}
+            {tags.length === 0 ? <span>{t("library.noTags")}</span> : null}
+          </div>
+        </fieldset>
       </fieldset>
-    </div>
+    </form>
   );
 }
 

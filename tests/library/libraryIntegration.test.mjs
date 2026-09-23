@@ -89,7 +89,7 @@ describe("literature library integration", () => {
     );
     assert.match(
       workbench,
-      /\{mutationError && !isSidebarOpen \? \(/,
+      /\{mutationError && !isSidebarOpen && !focusedDocument \? \(/,
     );
     assert.match(
       importDropzone,
