@@ -10,6 +10,10 @@ yarn-error.log*
 pnpm-debug.log*
 .DS_Store
 
+# Browser automation output (screenshots, page snapshots, console logs)
+output/
+.playwright-cli/
+
 # Local MedFact submission artifacts
 medfact_*.zip
 medfact_submission_*/
