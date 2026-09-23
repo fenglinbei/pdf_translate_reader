@@ -2,8 +2,19 @@ import { requireSupabaseServiceClient } from "../supabase/service.mjs";
 
 const MATHPIX_BUCKET = "user-mathpix";
 
-export async function loadMathpixStructuredDocument({ job }) {
-  const record = await getCompletedMathpixRecord(job);
+/**
+ * Callers supply the authorized document scope explicitly. Index workers read
+ * database rows, while question answering reads mapped application objects.
+ * @param {{ userId: string, userDocumentId: string, contentSha256: string }} input
+ */
+export async function loadMathpixStructuredDocument({ userId, userDocumentId, contentSha256 } = {}) {
+  for (const [field, value] of Object.entries({ userId, userDocumentId, contentSha256 })) {
+    if (typeof value !== "string" || !value.trim()) {
+      throw new TypeError(`MathPix document input requires a non-empty ${field}.`);
+    }
+  }
+
+  const record = await getCompletedMathpixRecord({ userId, userDocumentId, contentSha256 });
   const pagesPayload = await downloadStorageJson(record.pages_storage_path);
   const pages = normalizeStoredPages(pagesPayload);
   const bodyPages = createBodyPages(pages);
@@ -23,7 +34,7 @@ export async function loadMathpixStructuredDocument({ job }) {
   };
 }
 
-async function getCompletedMathpixRecord(job) {
+async function getCompletedMathpixRecord({ userId, userDocumentId, contentSha256 }) {
   const { data, error } = await requireSupabaseServiceClient()
     .from("user_mathpix_documents")
     .select([
@@ -32,9 +43,9 @@ async function getCompletedMathpixRecord(job) {
       "status",
       "updated_at",
     ].join(","))
-    .eq("user_id", job.user_id)
-    .eq("user_document_id", job.user_document_id)
-    .eq("content_sha256", job.content_sha256)
+    .eq("user_id", userId)
+    .eq("user_document_id", userDocumentId)
+    .eq("content_sha256", contentSha256)
     .eq("status", "completed")
     .is("deleted_at", null)
     .not("pages_storage_path", "is", null)

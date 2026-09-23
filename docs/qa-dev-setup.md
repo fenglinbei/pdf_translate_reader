@@ -2,6 +2,7 @@
 
 状态（2026-09-23 更新）：已完成两轮本地真实问答并核对落库；Agent 路径已跑通，长上下文成功路径尚未通过验收。
 具体结果、证据范围和待修复问题见 [两轮真实运行核验](qa-local-runs-2026-09-23.md)，文末清单已同步。
+全文读取缺陷已在 `0.1.1-alpha.1` 修复，独立测试文档的实际读取及合成路由回归通过；重新启动 QA 后仍需完成真实模型与浏览器验收。
 规范约束见 [版本、CI/CD 与 QA 隔离规范](versioning-and-delivery.md)，本文只是操作步骤。
 
 离线学习（`npm run demo:qa`）不需要本文任何一步。需要看真实检索、真实模型决策和真实 SSE 时才需要。
@@ -93,7 +94,7 @@ QA_ENV_FILE=.env.qa.local npm run dev:qa
 
 | 检查 | 结果 |
 | --- | --- |
-| `GET /api/qa/health` | `{"status":"ok","service":"pdf-reader-qa","version":"0.1.0-alpha.1","sha":"development","environment":"development"}` |
+| `GET /api/qa/health` | `{"status":"ok","service":"pdf-reader-qa","version":"0.1.1-alpha.1","sha":"development","environment":"development"}`（重启到当前代码后） |
 | `/api/health`、`/api/translate/stream`、`/api/library/documents`、`/api/mathpix/jobs` | 全部 `404`（独立进程不服务主应用路由） |
 | `GET /api/qa/threads` | `500 supabase_not_configured`（凭据为空时失败关闭，不崩溃） |
 
@@ -339,4 +340,6 @@ psql -p 5432 -d postgres -v msg_id=<uuid> -f scripts/qa-trace.sql
 - [x] 论文 MathPix 解析来源的索引为 `ready`，真实使用语义检索与重排
 - [x] 两轮真实问答均成功落库，Agent 搜索与 `open_chunk` 已执行
 - [ ] 浏览器 / SSE 逐事件复验（本次未重放历史流，5173/5174 当前未响应）
-- [ ] 长上下文成功路径验收（第二轮 global 尝试失败后回落 Agent，原因待追踪）
+- [x] 全文读取字段契约修复；原测试文档的实际只读加载通过
+- [x] global 完整路由合成回归：全文输入模型、答案保存、没有回落
+- [ ] 长上下文真实模型与浏览器成功路径验收（需重启 QA 到修复版本；历史第二轮失败异常未保存）

@@ -2,6 +2,8 @@
 
 状态：代码已实现，独立 QA 服务已完成 [两轮本地真实运行](qa-local-runs-2026-09-23.md)；长上下文成功路径与生产部署尚未验收。
 版本与发布按 [交付规范](versioning-and-delivery.md) 执行。
+`0.1.1-alpha.1` 已修复全文读取的字段契约，实际文档读取与合成路由测试通过；
+下一步的 [失败记录与回落边界方案](qa-execution-observability-plan.md) 已准备，尚未实施。
 
 本阶段沿用现有手写执行器，学习重点是一次 Agent 运行如何调用模型、执行工具、累积证据与停止。
 保持现有 JSON 控制协议、提示词、预算、引用编号策略和 HTTP/SSE 契约，不引入新的 Agent 框架。
@@ -15,11 +17,11 @@ Agent 检索结束后，答案生成、引用校验、消息落库仍由原 QA �
 flowchart TD
     Q["提问 /api/qa/stream"] --> R["queryRouter.classifyQuestionType<br/>独立模型调用 temperature=0"]
     R -->|global| LC["handleLongContextAnswer<br/>全文长上下文"]
-    LC -->|成功| D[答案生成与引用校验]
+    LC -->|成功| LCEND[全文回答保存并返回；无检索式引用]
     LC -->|失败| FB["发出 kind=fallback 的 agent_step"] --> L
     R -->|"detail / follow_up"| L["执行循环<br/>runCurrentPaperReasoningRetrieval"]
     R -->|chitchat| L
-    L --> D
+    L --> D[基于证据回答与引用校验]
 ```
 
 - `global`（总结全文、核心贡献、论证链）**不进入执行循环**：先走全文长上下文路径并直接返回，失败才回落到循环。

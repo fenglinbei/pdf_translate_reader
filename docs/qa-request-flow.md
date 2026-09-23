@@ -2,6 +2,8 @@
 
 对着 `server/routes/qa.mjs`、`server/qa/agent/loop.mjs` 和 `server/qa/queryRouter.mjs` 画的实际流程。
 这是**逻辑**（任何一次运行都成立），不是某次运行的数据；具体查询词、证据编号、轮数因问题而异。
+全文读取字段已在 `0.1.1-alpha.1` 修复。下面的事件持久化缺口仍是现状，
+[顺序 2 实施准备](qa-execution-observability-plan.md) 描述下一阶段，不能当作已实现行为。
 
 `detail` 与 `global` 是两条完全不同的路径，差别在第 6 步那一个分支。
 
@@ -47,8 +49,10 @@ sequenceDiagram
         L->>M: 当前证据 + 已打开证据 + 工具历史 + 剩余预算
         M-->>L: JSON 动作
         Note over L: normalizeControllerAction()<br/>白名单：两个工具 + finish + direct_answer<br/>非法动作 → 抛错终止
-        L->>E: recordStep(gap_check)<br/>payload.action = 归一化后的模型决定
-        E-->>B: SSE gap_check
+        opt 工具动作（finish/direct_answer 会先退出，不记录 gap_check）
+            L->>E: recordStep(gap_check)<br/>payload.action = 归一化后的模型决定
+            E-->>B: SSE gap_check
+        end
 
         alt search_current_paper
             L->>T: {query, matchCount}
@@ -85,8 +89,9 @@ sequenceDiagram
     R-->>B: SSE done
 ```
 
-**这次请求的模型调用次数** = 1（路由）+ 循环轮数（≤ `maxControllerCalls`）+ 1（答案生成）。
-一次 `deep` 提问最多 7 轮控制器，所以单次提问可以接近 10 次模型调用。
+**正常检索回答的模型调用次数** = 1（路由）+ 循环轮数（≤ `maxControllerCalls`）+ 1（答案生成）。
+一次 `deep` 提问最多 7 轮控制器，对应最多 9 次调用；无证据时可以直接返回固定说明，省去答案模型。
+若全文生成已经调用过模型再回落，还需计入失败尝试，不能用此公式推算所有请求。
 
 ## 路径 B：`global` 问题 —— 绕过循环
 
@@ -102,7 +107,7 @@ sequenceDiagram
     Note over R: questionType.type === "global"
     R->>R: 打日志 [qa-stream] -> long context path
     R->>F: loadCurrentPaperFullText(userDocumentId, userId, model)
-    F-->>R: 整篇正文（上限 QA_LONG_CONTEXT_MAX_CHARS，默认 240000）
+    F-->>R: 整篇正文（按所选模型的全文字符预算截断）
     R->>R: createRetrievalSnapshot({ evidence: [] })<br/>retrieverVersion = "long-context"
     R->>R: 本地构造 planStep + outlineStep
     Note over R: 这两个步骤是直接构造的：<br/>没有经过模型决策，<br/>也**不写 user_qa_agent_steps**（没有 id / createdAt）
@@ -111,10 +116,9 @@ sequenceDiagram
 
     R->>M: streamQaChatCompletion(全文 + 问题)<br/>★ 第 2 次模型调用，也是最后一次
     M-->>B: SSE delta / thinking / usage / finish
-    R->>R: verifyAnswerCitations(answerText, evidence = [])
-    Note over R: evidence 为空 → 答案里任何 [C1] 都会被<br/>判为 rejected（citation_not_in_retrieval），<br/>所以这条路径**给不出可点回的引用**
-    R->>P: insert user_qa_citations（通常为空）
-    R-->>B: SSE verifier
+    R->>P: updateQaMessage(status=success, retrieval_snapshot)<br/>写 answer-stream 成功日志
+    Note over R: 本分支不调用 verifyAnswerCitations，<br/>不写引用表，done 的 citations 固定为空
+    R-->>B: SSE verifier（rejected / warnings 均为空）
     R-->>B: SSE done
 
     Note over R: 失败时才回落：<br/>发一个 kind=fallback 的 agent_step，<br/>然后走路径 A
@@ -129,10 +133,10 @@ sequenceDiagram
 | 触发条件 | `questionType.type !== "global"` | `=== "global"` |
 | 进入执行循环 | 是 | **否** |
 | `tool_call` 事件 | 有（≤ `maxRetrievalCalls` 次检索 + ≤ `maxOpenCalls` 次打开） | **没有** |
-| `gap_check` 事件 | 有，每轮一个 | 没有 |
-| 额外 SSE 事件 | — | 多一个 `retrieval` |
+| `gap_check` 事件 | 工具动作有；finish/direct_answer 没有 | 没有 |
+| `retrieval` 事件 | 有，包含证据快照 | 有，evidence 为空 |
 | 证据来源 | 向量检索 + 重排，逐轮累积 | 无（`evidence: []`） |
-| 可点回的引用 | 有，`citationVerifier` 逐条校验 | **没有**，引用一律 rejected |
+| 可点回的引用 | 有，`citationVerifier` 逐条校验 | **没有**；本分支不执行引用校验 |
 | 模型调用次数 | 1 + 循环轮数 + 1 | 2 |
 | **步骤是否落库** | **是**，每步写 `user_qa_agent_steps` | **否**，只走 SSE |
 | 失败行为 | 抛 `QaAgentRunnerError`，带已完成步骤 | 回落到路径 A |
@@ -233,7 +237,9 @@ await events.recordStep(state, "gap_check", { ... });                        // 
 
 **失败原因是不可观测的**：回落处既没有 `console.error`，也没有写库，
 `errorMessage` 只存在于那一刻的 SSE 流里（渲染时前端只显示 `summary`，所以界面上也看不到）。
-要当场看到它，只能开浏览器 DevTools → Network → `/api/qa/stream` 的 EventStream。
+要当场看到它，可以开浏览器 DevTools → Network → `/api/qa/stream` 的 EventStream。
+后续已通过同文档只读复现定位到全文读取的字段不匹配，并在 `0.1.1-alpha.1` 修复；
+这不等于找回了该历史请求的异常。新版本的持久化回落记录仍待顺序 2 实施。
 
 该请求的 `chatContext.carryoverEvidenceIds = ["C1","C2"]` 只能证明加载过历史非空证据。
 `findLatestCarryoverEvidence()` 会跳过空快照，向前找同一文档最近一次非空证据，因此即使紧邻上一轮

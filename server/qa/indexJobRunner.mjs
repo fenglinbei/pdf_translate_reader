@@ -123,7 +123,11 @@ async function runQaIndexJob(jobId) {
       status: "extracting",
     });
 
-    const document = await loadMathpixStructuredDocument({ job });
+    const document = await loadMathpixStructuredDocument({
+      userId: job.user_id,
+      userDocumentId: job.user_document_id,
+      contentSha256: job.content_sha256,
+    });
 
     await updateJob(job.id, {
       payload: mergePayload(job.payload, {

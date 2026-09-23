@@ -230,7 +230,11 @@ function normalizeLineRegions(value) {
 
 export async function loadCurrentPaperFullText({ userDocumentId, userId, model }) {
   const job = await requireUsableIndexJob({ userDocumentId, userId });
-  const document = await loadMathpixStructuredDocument({ job });
+  const document = await loadMathpixStructuredDocument({
+    userId,
+    userDocumentId: job.cloudDocumentId,
+    contentSha256: job.contentSha256,
+  });
 
   const rawText = document.fullMmd
     ? document.fullMmd
