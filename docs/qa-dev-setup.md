@@ -287,6 +287,43 @@ curl -X POST http://127.0.0.1:8789/api/qa/index-jobs \
 - 问一个具体事实 → 进入执行循环，SSE 依次出现 `agent_step`(plan) → `gap_check` → `tool_call` → `observation` → … → `agent_step`(answer_outline)。
 - 服务端日志里 `[query-router]` 打出了分类原始返回，`[qa-stream] questionType =` 打出了最终分流结果，两者对照可以看清决策过程。
 
+## 想看清每次交互和工具参数：查库，不要靠界面
+
+界面的「检索过程」面板只渲染 `summary` 和证据编号，**看不到工具入参和 payload**。完整数据都在数据库里：
+
+| 想看什么 | 存在哪 |
+| --- | --- |
+| 每一步的类型、摘要、证据编号 | `user_qa_agent_steps` |
+| **每一步的完整 payload** | `user_qa_agent_steps.payload`（jsonb） |
+| **模型每轮的决定** | `gap_check` 步骤的 `payload->'action'`（归一化后的动作） |
+| **工具调用的完整入参** | `user_qa_tool_calls.input`（jsonb） |
+| **工具返回了什么证据** | `user_qa_tool_calls.result_evidence_ids` |
+| 工具耗时、报错 | `user_qa_tool_calls.started_at/finished_at/error_message` |
+| **证据正文（C 编号 → chunk）** | `user_qa_messages.retrieval_snapshot->'evidence'` |
+| 引用校验结果 | `user_qa_citations` |
+
+`scripts/qa-trace.sql` 把这七块一次性打出来（本机用合成数据验证过全部语句）：
+
+```bash
+# 最近一次问答
+psql -p 5432 -d postgres -f scripts/qa-trace.sql
+
+# 指定某次
+psql -p 5432 -d postgres -v msg_id=<uuid> -f scripts/qa-trace.sql
+```
+
+连接参数沿用前面那套 `PGHOST` / `PGUSER` / `PGPASSWORD`。第 0 节会回显取到的消息，先确认目标对了再往下看。
+
+其中第 2 节最贴近"模型每次交互"：`turn` 是循环第几轮，`model_action` 是模型选了哪个动作，`rewritten_query` 是**模型自己改写的检索词**（通常不等于你的原话）。
+
+### 有一层是查不到的
+
+**发给模型的消息**和**模型返回的原始文本**都不落库，这是有意为之（`qa-agent-runtime.md`：不新增模型私有推理文本的存储）。
+`gap_check` 里存的只是**归一化之后**的动作。
+
+所以要看到逐字的 prompt 和原始响应，需要另加一个调试开关——目前代码里没有任何 debug 设施。要的话得改
+`agent/controller.mjs`，在 `complete()` 前后各打一行。
+
 ## 待办清单
 
 - [x] `.env.qa.local` 建立并避让端口冲突（本机已验证）
