@@ -1,0 +1,168 @@
+{
+  "release": {
+    "sha": "2840e952f9b381a0ea2c3c6aee0a32b41b14af9d",
+    "branch": "codex/library-metadata-enrichment",
+    "serviceStartedAt": "2026-09-23T05:01:51Z",
+    "deployedAt": "2026-09-23T05:01:54Z",
+    "backupDirectory": "/opt/backups/pdf_translate_reader/20260923T050008Z-library-ui",
+    "databaseMigrationRequired": false,
+    "protectedFilesUnchanged": true,
+    "temporarySwapRemoved": true
+  },
+  "validation": {
+    "commands": [
+      "npm run test:library",
+      "npm run test:mathpix",
+      "npm run build",
+      "git diff --check"
+    ],
+    "allPassed": true
+  },
+  "localBrowser": {
+    "checks": [
+      "ai_setting_removed_from_library",
+      "recognize_icon_has_no_visible_text",
+      "provenance_collapsed_by_default",
+      "provenance_can_be_expanded",
+      "title_multiline_and_focused",
+      "keyboard_save_preserves_author_commas",
+      "cancel_restores_saved_values",
+      "cancel_restores_focus_to_edit",
+      "failed_save_notice_visible_while_scrolled",
+      "failed_save_keeps_draft_and_visible_error",
+      "background_refresh_preserves_draft",
+      "revision_conflict_keeps_draft",
+      "pending_recognition_disables_repeat_clicks",
+      "recognition_shows_progress",
+      "suggestions_require_selection",
+      "only_selected_suggestion_applied",
+      "remaining_suggestions_preserved",
+      "batch_recognition_kept",
+      "closing_inspector_does_not_reopen_on_focus",
+      "ai_toggle_present_in_settings",
+      "settings_ai_toggle_updates_preference",
+      "no_overflow_320",
+      "visible_actions_320",
+      "save_stays_visible_320",
+      "inspector_closes_320",
+      "no_overflow_390",
+      "visible_actions_390",
+      "save_stays_visible_390",
+      "inspector_closes_390",
+      "no_overflow_1024",
+      "visible_actions_1024",
+      "save_stays_visible_1024",
+      "inspector_closes_1024",
+      "no_browser_errors"
+    ],
+    "errors": []
+  },
+  "production": {
+    "verifiedAt": "2026-09-23T05:03:34.412Z",
+    "sha": "2840e952f9b381a0ea2c3c6aee0a32b41b14af9d",
+    "service": "NRestarts=0\nExecMainStartTimestamp=Wed 2026-09-23 05:01:51 UTC\nActiveState=active\nSubState=running",
+    "assets": [
+      {
+        "path": "/index.html",
+        "sha256": "2b822496a14757de9d89a07c7c9cdb2be6604302ab59c2b6709af438dd2b518c",
+        "bytes": 425
+      },
+      {
+        "path": "/assets/index-BuBVV2qF.js",
+        "sha256": "4378a5d5812dc55daee85179f436ca1722164bd0fd47f8d54ba6d1df83157f7a",
+        "bytes": 1929145
+      },
+      {
+        "path": "/assets/index-DL0DZdRy.css",
+        "sha256": "26a2cb241972a1b83db0654a07c340ff50cfd76c900f16386619e5690bcbd38d",
+        "bytes": 149877
+      }
+    ],
+    "privateConfigurationAbsentFromAssets": true,
+    "apiHealthStatus": 200,
+    "apiProcessId": 2215538
+  },
+  "publicHosts": {
+    "checkedAt": "2026-09-23T05:04:22.484Z",
+    "hosts": [
+      {
+        "host": "https://pdf-translate-reader.xyz",
+        "assets": [
+          {
+            "path": "/index.html",
+            "status": 200,
+            "sha256": "2b822496a14757de9d89a07c7c9cdb2be6604302ab59c2b6709af438dd2b518c"
+          },
+          {
+            "path": "/assets/index-BuBVV2qF.js",
+            "status": 200,
+            "sha256": "4378a5d5812dc55daee85179f436ca1722164bd0fd47f8d54ba6d1df83157f7a"
+          },
+          {
+            "path": "/assets/index-DL0DZdRy.css",
+            "status": 200,
+            "sha256": "26a2cb241972a1b83db0654a07c340ff50cfd76c900f16386619e5690bcbd38d"
+          }
+        ],
+        "healthStatus": 200,
+        "unauthenticatedMetadataStatus": 401
+      },
+      {
+        "host": "https://pdf.fenglin.pro",
+        "assets": [
+          {
+            "path": "/index.html",
+            "status": 200,
+            "sha256": "2b822496a14757de9d89a07c7c9cdb2be6604302ab59c2b6709af438dd2b518c"
+          },
+          {
+            "path": "/assets/index-BuBVV2qF.js",
+            "status": 200,
+            "sha256": "4378a5d5812dc55daee85179f436ca1722164bd0fd47f8d54ba6d1df83157f7a"
+          },
+          {
+            "path": "/assets/index-DL0DZdRy.css",
+            "status": 200,
+            "sha256": "26a2cb241972a1b83db0654a07c340ff50cfd76c900f16386619e5690bcbd38d"
+          }
+        ],
+        "healthStatus": 200,
+        "unauthenticatedMetadataStatus": 401
+      }
+    ]
+  },
+  "productionBrowser": {
+    "checks": [
+      "library_has_no_ai_toggle",
+      "recognize_is_icon_only",
+      "provenance_starts_collapsed",
+      "metadata_edit_saved",
+      "settings_loaded_disabled_ai_preference",
+      "settings_enable_reaches_cloud",
+      "settings_disable_reaches_cloud",
+      "settings_opt_out_survives_reload",
+      "metadata_title_survives_reload",
+      "recognize_icon_queues_live_job",
+      "recognition_keeps_manual_title",
+      "live_suggestions_require_selection",
+      "production_mobile_editor_fits_and_save_visible",
+      "production_inspector_close_keeps_focus_outside",
+      "no_production_browser_errors"
+    ],
+    "errors": []
+  },
+  "productionPersistenceAndCleanup": {
+    "checkedAt": "2026-09-23T05:07:39.871Z",
+    "checks": [
+      "settings_ai_opt_out_saved",
+      "title_and_author_edits_persisted",
+      "manual_title_and_authors_protected",
+      "recognition_preserves_manual_edits_and_respects_ai_off"
+    ],
+    "cleanup": {
+      "storage": true,
+      "documents": true,
+      "account": true
+    }
+  }
+}

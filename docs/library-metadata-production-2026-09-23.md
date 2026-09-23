@@ -2,6 +2,8 @@
 
 **已部署并完成生产合成文献验证。** 服务于 2026-09-23 11:52:30（Asia/Shanghai）切换到 `1af6a233ac043bc0a1f7abefdfd87640e91b7125`，功能提交已推送至 `codex/library-metadata-enrichment`。本记录随后单独提交，运行代码版本以上述 SHA 为准。
 
+这是首次识别功能发布的历史记录；同日后续发布的设置入口与编辑界面调整见[文献页 UI 优化发布记录](library-metadata-ui-production-2026-09-23.md)。
+
 入口：[pdf.fenglin.pro](https://pdf.fenglin.pro)、[pdf-translate-reader.xyz](https://pdf-translate-reader.xyz)。
 
 ## 发布范围
