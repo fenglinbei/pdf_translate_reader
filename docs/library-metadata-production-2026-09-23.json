@@ -1,0 +1,163 @@
+{
+  "deployedCodeSha": "1af6a233ac043bc0a1f7abefdfd87640e91b7125",
+  "deployedAt": "2026-09-23T03:52:30Z",
+  "migration": {
+    "executedBy": "owner",
+    "columnsVerified": true,
+    "rpcCountVerified": 5
+  },
+  "server": {
+    "verifiedAt": "2026-09-23T03:53:21.976Z",
+    "sha": "1af6a233ac043bc0a1f7abefdfd87640e91b7125",
+    "service": "NRestarts=0\nExecMainStartTimestamp=Wed 2026-09-23 03:52:30 UTC\nActiveState=active\nSubState=running",
+    "assets": [
+      {
+        "path": "/index.html",
+        "sha256": "f831fa32c647138d465c30c794baf741aea8d31e0fcd12dda4bee60bde54f43d",
+        "bytes": 425
+      },
+      {
+        "path": "/assets/index-DtIAwzSf.js",
+        "sha256": "14996579c9e5cadb093c108e4967808d425b58afd2fbb0027624aba536b35eea",
+        "bytes": 1924878
+      },
+      {
+        "path": "/assets/index-B4ZFYm1g.css",
+        "sha256": "8074758ba82d4e5d9a16d7a10a910b2a9a8400daeb03e9cb538b74519460bbe0",
+        "bytes": 147395
+      }
+    ],
+    "privateConfigurationAbsentFromAssets": true,
+    "apiHealthStatus": 200
+  },
+  "public": {
+    "checkedAt": "2026-09-23T03:54:23.011Z",
+    "hosts": [
+      {
+        "host": "https://pdf-translate-reader.xyz",
+        "assets": [
+          {
+            "path": "/index.html",
+            "status": 200,
+            "sha256": "f831fa32c647138d465c30c794baf741aea8d31e0fcd12dda4bee60bde54f43d"
+          },
+          {
+            "path": "/assets/index-DtIAwzSf.js",
+            "status": 200,
+            "sha256": "14996579c9e5cadb093c108e4967808d425b58afd2fbb0027624aba536b35eea"
+          },
+          {
+            "path": "/assets/index-B4ZFYm1g.css",
+            "status": 200,
+            "sha256": "8074758ba82d4e5d9a16d7a10a910b2a9a8400daeb03e9cb538b74519460bbe0"
+          }
+        ],
+        "healthStatus": 200,
+        "unauthenticatedMetadataStatus": 401
+      },
+      {
+        "host": "https://pdf.fenglin.pro",
+        "assets": [
+          {
+            "path": "/index.html",
+            "status": 200,
+            "sha256": "f831fa32c647138d465c30c794baf741aea8d31e0fcd12dda4bee60bde54f43d"
+          },
+          {
+            "path": "/assets/index-DtIAwzSf.js",
+            "status": 200,
+            "sha256": "14996579c9e5cadb093c108e4967808d425b58afd2fbb0027624aba536b35eea"
+          },
+          {
+            "path": "/assets/index-B4ZFYm1g.css",
+            "status": 200,
+            "sha256": "8074758ba82d4e5d9a16d7a10a910b2a9a8400daeb03e9cb538b74519460bbe0"
+          }
+        ],
+        "healthStatus": 200,
+        "unauthenticatedMetadataStatus": 401
+      }
+    ]
+  },
+  "syntheticProductionFlow": {
+    "startedAt": "2026-09-23T03:53:17.587Z",
+    "checks": [
+      {
+        "check": "ai_opt_out_survives_legacy_settings_save",
+        "passed": true
+      },
+      {
+        "check": "new_import_queued_ai_off",
+        "passed": true
+      },
+      {
+        "check": "embedded_title_and_ordered_authors",
+        "passed": true
+      },
+      {
+        "check": "ai_off_skips_model",
+        "passed": true
+      },
+      {
+        "check": "authenticated_batch_queue",
+        "passed": true
+      },
+      {
+        "check": "manual_edit_preserved_after_batch",
+        "passed": true
+      },
+      {
+        "check": "conflict_becomes_review_suggestion",
+        "passed": true
+      },
+      {
+        "check": "selected_suggestion_applied_and_protected",
+        "passed": true
+      },
+      {
+        "check": "new_import_queued_ai_on",
+        "passed": true
+      },
+      {
+        "check": "missing_metadata_uses_model",
+        "passed": true
+      },
+      {
+        "check": "model_title_authors_and_year",
+        "passed": true
+      },
+      {
+        "check": "model_provenance_saved",
+        "passed": true
+      }
+    ],
+    "cleanup": {
+      "storage": true,
+      "documents": true,
+      "account": true
+    },
+    "model": {
+      "model": "deepseek-flash",
+      "usage": {
+        "totalTokens": 292,
+        "promptTokens": 184,
+        "completionTokens": 108,
+        "promptCacheHitTokens": 0,
+        "promptCacheMissTokens": 184
+      },
+      "status": "completed"
+    },
+    "finishedAt": "2026-09-23T03:53:31.217Z"
+  },
+  "browser": {
+    "scope": "isolated unauthenticated Chromium sessions on both public domains",
+    "loginFormsVisible": true,
+    "consoleErrors": 0,
+    "consoleWarnings": 0,
+    "pageErrors": 0,
+    "failedRequests": 0
+  },
+  "protectedFilesUnchanged": true,
+  "temporarySwapRemoved": true,
+  "realPaperBrowserAcceptance": "not_executed"
+}
