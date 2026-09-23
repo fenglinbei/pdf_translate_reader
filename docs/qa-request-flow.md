@@ -163,3 +163,63 @@ psql -p 5432 -d postgres -v msg_id=<uuid> -f scripts/qa-trace.sql
 
 再确认一次：这份文档写的是**逻辑**，不是你那两次运行的具体数据。要我把真实值填进图里，
 把 trace 的输出贴给我就行（那个脚本不打印密钥）。
+
+## 读真实轨迹时的四个陷阱
+
+下面四条是拿一次真实运行核对这张图时才发现的，光读代码不容易注意到。
+
+### 1. `C1` 在不同步骤里可能指不同的证据
+
+`mergeEvidence()` 最后一步是**按分数降序重新编号**：
+
+```js
+return deduped
+  .sort((left, right) => Number(right.score) - Number(left.score))
+  .map((item, index) => ({ ...item, evidenceId: `C${index + 1}` }));
+```
+
+所以 `plan` 步骤 `evidence_ids` 里的是**上一轮的编号**（带入的证据，沿用上轮 message 的快照），
+而 `observation` 之后的是**本次合并重排后的新编号**。同一个 `C1`，在两个步骤里未必是同一条 chunk。
+比对时要认 `chunk_id`，不要认 `C` 号。
+
+### 2. `finish_retrieval` 不留任何步骤
+
+`loop.mjs` 里判断在记录之前：
+
+```js
+if (action.action === "finish_retrieval") { finishAction = action; break; }  // ← 先跳出
+await events.recordStep(state, "gap_check", { ... });                        // ← 走不到
+```
+
+于是**模型"决定收工"这个动作在步骤时间线里是查不到的**，只能从 `answer_outline` 的
+`payload.answerOutline` 反推（它就是 finish 动作带回来的大纲）。
+
+推论：`gap_check` 的数量 **等于**实际控制器轮数减一。有 1 个 `gap_check` 就说明跑了 2 轮控制器
+（最后一轮是 finish）。想看准确轮数，得看 `diagnostics`（api_logs 里）或服务端日志。
+
+### 3. 光看数据库分不清路由选了哪条路
+
+一个问题走**路径 A**，有两种可能：
+
+- router 判成 `detail` / `follow_up` / `chitchat`，直接进循环
+- router 判成 `global`，但长上下文失败，**回落**进循环
+
+两者的数据库痕迹**完全一样**。因为回落的那个 `kind: "fallback"` 步骤只 `writeSse`，
+从不落库——而且它写的是 `stepIndex: 0`，与循环的 plan 步骤撞 `unique (message_id, step_index)`，
+这也反证了它没落库。
+
+唯一判据在服务端日志：
+
+```
+[query-router] {"normalizedType":"global", ...}
+[qa-stream] questionType = global | question: ...
+[qa-stream] -> long context path        ← 有这行才是真的走了长上下文
+```
+
+### 4. agent 路径的 `questionType` 不落库
+
+`questionType` 只出现在两处：`console.log`，以及长上下文路径的步骤 payload / diagnostics。
+`user_qa_api_logs` 的 payload 只有 `chatContext` / `diagnostics` / `evidenceCount` / `queryPlan` / `warnings`。
+
+所以"这个问题为什么没走长上下文"**事后无法从数据库回答**，必须翻服务端日志。
+这是当前的一个可观测性缺口。
