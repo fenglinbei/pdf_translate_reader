@@ -33,9 +33,11 @@ Phase 1 delivers:
 - an archive workflow that hides a document without deleting its PDF or reader
   state.
 
-Automatic metadata enrichment, duplicate merging, recoverable trash, saved
-custom searches, cross-paper full-text search, and AI classification remain
-later phases.
+Automatic metadata enrichment is implemented as a follow-up to phase 1. See
+[metadata recognition](library-metadata-recognition.md) for its triggers,
+field protection rules, AI preference, required migration, and release boundary.
+Duplicate merging, recoverable trash, saved custom searches, cross-paper
+full-text search, and AI classification remain later phases.
 
 ## Implementation status
 

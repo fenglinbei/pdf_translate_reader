@@ -11,6 +11,8 @@ import type {
   LibraryDocumentPage,
   LibraryDocumentQuery,
   LibraryReadingStatus,
+  LibraryMetadataSources,
+  LibraryMetadataState,
   LibraryTag,
   LibraryTagCreateInput,
   LibraryTagUpdateInput,
@@ -28,10 +30,14 @@ import {
 import { requireSupabaseClient } from "../auth/supabaseClient";
 import { requireCurrentUserId } from "./currentUser";
 import { deleteCloudDocumentState } from "./documentStateRepository";
+import { parseMetadataAuthors } from "../../shared/pdfMetadata.mjs";
 
 const PDF_BUCKET = "user-pdfs";
 
 type UserDocumentRow = {
+  metadata_sources?: LibraryMetadataSources;
+  metadata_state?: LibraryMetadataState;
+  metadata_revision?: number;
   abstract?: string | null;
   archived_at?: string | null;
   arxiv_id?: string | null;
@@ -185,9 +191,17 @@ export async function saveLibraryDocument(
   documentId: string,
   patch: LibraryDocumentMetadataPatch,
   organization: Required<LibraryDocumentOrganizationUpdate>,
+  expectedRevision?: number,
 ): Promise<LibraryDocument> {
   const client = requireSupabaseClient();
-  const { error } = await client.rpc("save_user_library_document", {
+  const { error } = expectedRevision !== undefined
+    ? await client.rpc("save_user_library_document_checked", {
+      p_document_id: documentId, p_revision: expectedRevision,
+      p_patch: mapLibraryDocumentPatch(patch),
+      p_collection_ids: normalizeIds(organization.collectionIds) ?? [],
+      p_tag_ids: normalizeIds(organization.tagIds) ?? [],
+    })
+    : await client.rpc("save_user_library_document", {
     p_abstract: normalizeOptionalText(patch.abstract),
     p_arxiv_id: normalizeOptionalText(patch.arxivId),
     p_authors: normalizeAuthors(patch.authors ?? []),
@@ -206,6 +220,17 @@ export async function saveLibraryDocument(
   }
 
   return getLibraryDocument(documentId);
+}
+
+export async function refreshLibraryDocumentMetadata(documents: LibraryDocument[]) {
+  if (!documents.length) return [];
+  const { data, error } = await requireSupabaseClient().from("user_documents")
+    .select(getUserDocumentColumns()).in("id", documents.map(document => document.cloudDocumentId)).is("deleted_at", null);
+  if (error) throw error;
+  return (data as unknown as UserDocumentRow[]).flatMap(row => {
+    const previous = documents.find(document => document.cloudDocumentId === row.id);
+    return previous ? [mapLibraryDocument(row, previous.collections, previous.tags, previous.localCached)] : [];
+  });
 }
 
 export async function batchUpdateLibraryDocuments(
@@ -788,6 +813,9 @@ function mapCloudLibraryEntry(row: UserDocumentRow): CloudPdfLibraryEntry {
   const bibliographicMetadata = mapBibliographicMetadata(row);
 
   return {
+    metadataState: row.metadata_state ?? {},
+    metadataSources: row.metadata_sources ?? {},
+    metadataRevision: row.metadata_revision ?? 0,
     archivedAt: parseOptionalTimestamp(row.archived_at),
     bibliographicMetadata,
     cloudDocumentId: row.id,
@@ -816,6 +844,9 @@ function mergeCloudFields(entry: PdfLibraryEntry, row: UserDocumentRow): PdfLibr
 
   return {
     ...entry,
+    metadataState: row.metadata_state ?? {},
+    metadataSources: row.metadata_sources ?? {},
+    metadataRevision: row.metadata_revision ?? 0,
     archivedAt: parseOptionalTimestamp(row.archived_at),
     bibliographicMetadata,
     cloudDocumentId: row.id,
@@ -848,6 +879,9 @@ function rowToFingerprint(row: UserDocumentRow): PdfFingerprint {
 
 function getUserDocumentColumns() {
   return [
+    "metadata_state",
+    "metadata_sources",
+    "metadata_revision",
     "abstract",
     "archived_at",
     "arxiv_id",
@@ -946,6 +980,7 @@ function getEffectivePdfMetadata(
   return {
     ...(fallback ?? {}),
     ...(row.pdf_metadata ?? {}),
+    authors: bibliography.authors,
     author: author || undefined,
     title: title || undefined,
   };
@@ -957,7 +992,9 @@ function createDefaultBibliographicMetadata(
   const author = normalizeOptionalText(identity.pdfMetadata?.author);
 
   return {
-    authors: author ? [author] : [],
+    authors: identity.pdfMetadata?.authors?.length
+      ? normalizeAuthors(identity.pdfMetadata.authors)
+      : author ? normalizeAuthors(author.split(/[;\n]+/u)) : [],
     title: normalizeOptionalText(identity.pdfMetadata?.title)
       ?? stripPdfExtension(identity.fileName)
       ?? undefined,
@@ -1088,22 +1125,7 @@ function normalizeReadingStatuses(
 }
 
 function normalizeAuthors(values: string[]) {
-  const authors: string[] = [];
-  const seen = new Set<string>();
-
-  for (const value of values) {
-    const author = value.trim();
-    const key = author.toLocaleLowerCase();
-
-    if (!author || seen.has(key)) {
-      continue;
-    }
-
-    seen.add(key);
-    authors.push(author);
-  }
-
-  return authors;
+  return parseMetadataAuthors(values);
 }
 
 function normalizeIds(values: string[] | undefined): string[] | null {

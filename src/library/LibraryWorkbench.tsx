@@ -13,6 +13,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Sparkles,
   Star,
   Tag,
   Trash2,
@@ -28,6 +29,7 @@ import type {
   LibraryDocument,
   LibraryDocumentBatchUpdate,
   LibraryDocumentMetadataPatch,
+  LibraryMetadataField,
   LibraryDocumentQuery,
   LibraryReadingStatus,
   LibraryTag,
@@ -35,6 +37,8 @@ import type {
   LibraryTagUpdateInput,
 } from "../types/domain";
 import "./libraryWorkbench.css";
+import { MetadataRecognition, MetadataStatus } from "./MetadataRecognition";
+import { parseMetadataAuthors } from "../../shared/pdfMetadata.mjs";
 
 export type LibraryWorkbenchScope =
   | {
@@ -60,6 +64,10 @@ export type LibraryDocumentSaveInput = {
 };
 
 type LibraryWorkbenchProps = {
+  metadataAiEnabled: boolean;
+  onMetadataAiChange: (enabled: boolean) => Promise<void>;
+  onRecognizeMetadata: (documentIds: string[]) => Promise<void>;
+  onApplyMetadata: (document: LibraryDocument, fields: LibraryMetadataField[]) => Promise<void>;
   activeDocumentId?: string;
   collections: LibraryCollection[];
   documents: LibraryDocument[];
@@ -140,6 +148,10 @@ const SORT_VALUES: Array<NonNullable<LibraryDocumentQuery["sort"]>> = [
 ];
 
 export function LibraryWorkbench({
+  metadataAiEnabled,
+  onMetadataAiChange,
+  onRecognizeMetadata,
+  onApplyMetadata,
   activeDocumentId,
   collections,
   documents,
@@ -175,6 +187,7 @@ export function LibraryWorkbench({
   );
   const [searchValue, setSearchValue] = useState(query.query ?? "");
   const [isEditing, setIsEditing] = useState(false);
+  const [draftRevision, setDraftRevision] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [collectionEditor, setCollectionEditor] = useState<CollectionEditorState>();
   const [tagEditor, setTagEditor] = useState<TagEditorState>();
@@ -215,7 +228,11 @@ export function LibraryWorkbench({
   useEffect(() => {
     setDraft(createMetadataDraft(focusedDocument));
     setIsEditing(false);
-  }, [focusedDocument?.cloudDocumentId, focusedDocument?.libraryUpdatedAt]);
+  }, [focusedDocument?.cloudDocumentId]);
+
+  useEffect(() => {
+    if (!isEditing) setDraft(createMetadataDraft(focusedDocument));
+  }, [focusedDocument?.libraryUpdatedAt, isEditing]);
 
   useEffect(() => {
     if (!focusedDocument || !shouldFocusInspector) {
@@ -285,7 +302,7 @@ export function LibraryWorkbench({
     }
 
     void runMutation(async () => {
-      await onSaveDocument(focusedDocument, {
+      await onSaveDocument({ ...focusedDocument, metadataRevision: draftRevision }, {
         collectionIds: draft.collectionIds,
         metadata: {
           abstract: draft.abstract || null,
@@ -714,6 +731,11 @@ export function LibraryWorkbench({
         ) : null}
 
         <main className="library-workbench__content">
+          <label className="library-metadata-ai-toggle">
+            <input type="checkbox" checked={metadataAiEnabled} disabled={isMutating}
+              onChange={event => { const enabled = event.target.checked; void runMutation(() => onMetadataAiChange(enabled)); }} />
+            <span>{t("library.recognition.aiToggle")}<small>{t("library.recognition.aiHint")}</small></span>
+          </label>
           <div className="library-workbench__toolbar">
             <label className="library-workbench__search">
               <Search aria-hidden="true" size={17} />
@@ -912,6 +934,10 @@ export function LibraryWorkbench({
               >
                 {t("library.clearSelection")}
               </button>
+              <button type="button" disabled={isMutating || selectedCount > 100}
+                onClick={() => void runMutation(() => onRecognizeMetadata(selectedIds))}>
+                <Sparkles aria-hidden="true" size={15} />{t("library.recognition.batch")}
+              </button>
             </div>
           ) : null}
 
@@ -1091,11 +1117,12 @@ export function LibraryWorkbench({
                   t={t}
                 />
               ) : (
-                <MetadataSummary
-                  document={focusedDocument}
-                  formatDate={formatDate}
-                  t={t}
-                />
+                <>
+                  <MetadataRecognition document={focusedDocument} disabled={isMutating}
+                    onRecognize={() => void runMutation(() => onRecognizeMetadata([focusedDocument.cloudDocumentId]))}
+                    onApply={fields => void runMutation(() => onApplyMetadata(focusedDocument, fields))} />
+                  <MetadataSummary document={focusedDocument} formatDate={formatDate} t={t} />
+                </>
               )}
 
               <div className="library-workbench__inspector-actions">
@@ -1139,7 +1166,7 @@ export function LibraryWorkbench({
                       <BookOpen aria-hidden="true" size={15} />
                       {t("library.openDocument")}
                     </button>
-                    <button onClick={() => setIsEditing(true)} type="button">
+                    <button onClick={() => { setDraftRevision(focusedDocument.metadataRevision ?? 0); setIsEditing(true); }} type="button">
                       {t("library.editMetadata")}
                     </button>
                   </>
@@ -1493,6 +1520,7 @@ function LibraryDocumentRow({
         <span className="sr-only">{t("library.selectPaper")}</span>
       </label>
       <div className="library-workbench__document-main">
+        <MetadataStatus state={document.metadataState} />
         <div className="library-workbench__document-title-line">
           <strong>{metadata.title || document.fileName}</strong>
           {active ? <span>{t("library.openNow")}</span> : null}
@@ -2077,10 +2105,7 @@ function createMetadataDraft(document?: LibraryDocument): MetadataDraft {
 }
 
 function splitAuthors(value: string) {
-  return value
-    .split(/[\n;,]+/)
-    .map((author) => author.trim())
-    .filter(Boolean);
+  return parseMetadataAuthors(value);
 }
 
 function parseYear(value: string) {

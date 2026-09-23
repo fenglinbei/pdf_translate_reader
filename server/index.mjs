@@ -3,6 +3,8 @@ import { config as loadDotenv } from "dotenv";
 import { writeJson } from "./http/json.mjs";
 import { handleInviteTicket } from "./routes/auth.mjs";
 import { handleHealth } from "./routes/health.mjs";
+import { handleLibraryRoute } from "./routes/library.mjs";
+import { startMetadataWorker } from "./library/worker.mjs";
 import { handleMathpixRoute } from "./routes/mathpix.mjs";
 import { handleQaRoute } from "./routes/qa.mjs";
 import { handleTranslateStream } from "./routes/translate.mjs";
@@ -30,6 +32,19 @@ const server = createServer(async (request, response) => {
 
   if (request.method === "GET" && url.pathname === "/api/health") {
     handleHealth(response);
+    return;
+  }
+
+  if (url.pathname.startsWith("/api/library/")) {
+    try {
+      const user = await requireAuthenticatedUser(request);
+      await handleLibraryRoute(request, response, url, user);
+    } catch (error) {
+      writeJson(response, error instanceof SupabaseAuthError ? error.statusCode : 503, {
+        error: { code: error instanceof SupabaseAuthError ? error.code : "metadata_unavailable",
+          message: error instanceof SupabaseAuthError ? error.message : "Metadata recognition is unavailable." },
+      });
+    }
     return;
   }
 
@@ -107,6 +122,7 @@ const server = createServer(async (request, response) => {
 
 server.listen(port, () => {
   console.log(`API proxy listening on http://localhost:${port}`);
+  startMetadataWorker();
   recoverQaIndexJobs().catch((error) => {
     console.warn(
       "QA index job recovery skipped:",

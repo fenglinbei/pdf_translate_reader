@@ -48,13 +48,24 @@ export async function ensurePaperContextForEntry(entry: PdfLibraryEntry) {
   const existing = await getPaperContextRecord(entry.fingerprint);
 
   if (existing) {
+    const bibliography = entry.bibliographicMetadata;
+    if (!existing.userEditedAt && bibliography && entry.metadataSources?.title?.source !== "filename") {
+      const draft = {
+        ...existing,
+        title: bibliography.title || existing.title,
+        abstract: bibliography.abstract || existing.abstract,
+      };
+      if (normalizePaperContext(draft).contextHash !== existing.contextHash) {
+        return putPaperContextRecord(entry.fingerprint, draft, { previousRecord: existing, cloudDocumentId: entry.cloudDocumentId });
+      }
+    }
     return existing;
   }
 
   return putPaperContextRecord(entry.fingerprint, {
-    abstract: undefined,
+    abstract: entry.bibliographicMetadata?.abstract,
     terminology: [],
-    title: cleanOptionalText(entry.pdfMetadata?.title),
+    title: entry.metadataSources?.title?.source === "filename" ? undefined : cleanOptionalText(entry.pdfMetadata?.title),
     translationStyle: DEFAULT_TRANSLATION_STYLE,
   }, {
     cloudDocumentId: entry.cloudDocumentId,

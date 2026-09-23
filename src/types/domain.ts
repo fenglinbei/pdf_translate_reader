@@ -53,7 +53,26 @@ export type PdfFingerprint = {
 export type PdfMetadata = {
   title?: string;
   author?: string;
+  authors?: string[];
 };
+
+export type LibraryMetadataField = "title" | "authors" | "publication_year" | "publication_venue" | "doi" | "arxiv_id" | "abstract";
+export type LibraryMetadataSource = "pdf" | "pdf_text" | "filename" | "crossref" | "arxiv" | "ai" | "user";
+export type LibraryMetadataCandidate = {
+  value: string | string[] | number;
+  source: LibraryMetadataSource;
+  evidence?: string;
+};
+export type LibraryMetadataState = {
+  status?: "queued" | "running" | "completed" | "needs_review" | "needs_ocr" | "not_found" | "partial" | "failed";
+  jobId?: string;
+  suggestions?: Partial<Record<LibraryMetadataField, LibraryMetadataCandidate>>;
+  warnings?: string[];
+  error?: string | null;
+  aiUsed?: boolean;
+  completedAt?: string;
+};
+export type LibraryMetadataSources = Partial<Record<LibraryMetadataField, { source: LibraryMetadataSource; locked: boolean }>>;
 
 export type LibraryReadingStatus = "inbox" | "to-read" | "reading" | "finished";
 
@@ -68,6 +87,9 @@ export type BibliographicMetadata = {
 };
 
 export type PdfLibraryEntry = {
+  metadataState?: LibraryMetadataState;
+  metadataSources?: LibraryMetadataSources;
+  metadataRevision?: number;
   cloudDocumentId?: string;
   contentSha256?: string;
   fingerprint: string;
@@ -676,6 +698,7 @@ export type QaAnswerStreamRequest = {
 };
 
 export type AppSettings = {
+  libraryMetadataAiEnabled: boolean;
   contextWindowN: 0 | 1 | 2 | 3 | 5;
   defaultModel: TranslationModel;
   longContextEnabled: boolean;

@@ -5,10 +5,12 @@ import {
   createLibraryTag,
   deleteLibraryCollection,
   deleteLibraryTag,
+  getLibraryDocument,
   listLibraryCollections,
   listLibraryDocuments,
   listLibraryTags,
   saveLibraryDocument,
+  refreshLibraryDocumentMetadata,
   updateLibraryCollection,
   updateLibraryTag,
 } from "../cloud/pdfCloudRepository";
@@ -19,6 +21,7 @@ import type {
   LibraryDocument,
   LibraryDocumentBatchUpdate,
   LibraryDocumentQuery,
+  LibraryMetadataField,
   LibraryTag,
   LibraryTagCreateInput,
   LibraryTagUpdateInput,
@@ -30,8 +33,12 @@ import {
   type LibraryDocumentSaveInput,
   type LibraryWorkbenchScope,
 } from "./LibraryWorkbench";
+import { applyMetadataSuggestions, queueMetadataRecognition } from "./metadataClient";
+import { metadataIsPending } from "./MetadataRecognition";
 
 type LibraryWorkspaceContainerProps = {
+  metadataAiEnabled: boolean;
+  onMetadataAiChange: (enabled: boolean) => Promise<void>;
   activeDocumentId?: string;
   isImporting: boolean;
   onClose: () => void;
@@ -48,6 +55,8 @@ const DEFAULT_QUERY = libraryScopeToQuery(DEFAULT_SCOPE, {
 });
 
 export function LibraryWorkspaceContainer({
+  metadataAiEnabled,
+  onMetadataAiChange,
   activeDocumentId,
   isImporting,
   onClose,
@@ -68,6 +77,30 @@ export function LibraryWorkspaceContainer({
   const requestIdRef = useRef(0);
   const queryRef = useRef(query);
   const scopeRef = useRef(scope);
+  const documentsRef = useRef(documents);
+  useEffect(() => { documentsRef.current = documents; }, [documents]);
+
+  useEffect(() => {
+    let disposed = false;
+    let timer: number;
+    const poll = async () => {
+      try {
+        const pending = documentsRef.current.filter(document => metadataIsPending(document.metadataState)).slice(0, 100);
+        const requestId = requestIdRef.current;
+        const updated = await refreshLibraryDocumentMetadata(pending);
+        if (disposed || requestId !== requestIdRef.current) return;
+        setDocuments(current => current.map(document => {
+          const next = updated.find(item => item.cloudDocumentId === document.cloudDocumentId);
+          return next && (next.metadataRevision ?? 0) >= (document.metadataRevision ?? 0) ? next : document;
+        }));
+        const completed = updated.filter(document => !metadataIsPending(document.metadataState));
+        if (completed.length) await onLibraryChanged?.(completed.find(document => document.cloudDocumentId === activeDocumentId));
+      } catch { /* A temporary background read failure must not close an open editor. */ }
+      finally { if (!disposed) timer = window.setTimeout(poll, 3000); }
+    };
+    timer = window.setTimeout(poll, 3000);
+    return () => { disposed = true; window.clearTimeout(timer); };
+  }, [activeDocumentId, onLibraryChanged]);
 
   useEffect(() => {
     queryRef.current = query;
@@ -251,6 +284,7 @@ export function LibraryWorkspaceContainer({
           collectionIds: input.collectionIds,
           tagIds: input.tagIds,
         },
+        document.metadataRevision ?? 0,
       );
 
       await refreshAfterMutation(
@@ -400,8 +434,35 @@ export function LibraryWorkspaceContainer({
     [onClose, onOpenDocument],
   );
 
+  const handleRecognizeMetadata = useCallback(async (documentIds: string[]) => {
+    await queueMetadataRecognition(documentIds);
+    setDocuments(current => current.map(document => documentIds.includes(document.cloudDocumentId) && !metadataIsPending(document.metadataState)
+      ? { ...document, metadataState: { ...document.metadataState, status: "queued" } }
+      : document));
+    await settleWorkspaceRefresh([(async () => {
+      const updated = await refreshLibraryDocumentMetadata(documentsRef.current.filter(document => documentIds.includes(document.cloudDocumentId)));
+      setDocuments(current => current.map(document => updated.find(next => next.cloudDocumentId === document.cloudDocumentId) ?? document));
+    })()]);
+  }, [settleWorkspaceRefresh]);
+
+  const handleApplyMetadata = useCallback(async (document: LibraryDocument, fields: LibraryMetadataField[]) => {
+    try {
+      await applyMetadataSuggestions(document, fields);
+    } finally {
+      await settleWorkspaceRefresh([(async () => {
+        const updated = await getLibraryDocument(document.cloudDocumentId);
+        setDocuments(current => current.map(item => item.cloudDocumentId === updated.cloudDocumentId ? updated : item));
+        await onLibraryChanged?.(updated);
+      })()]);
+    }
+  }, [onLibraryChanged, settleWorkspaceRefresh]);
+
   return (
     <LibraryWorkbench
+      metadataAiEnabled={metadataAiEnabled}
+      onMetadataAiChange={onMetadataAiChange}
+      onRecognizeMetadata={handleRecognizeMetadata}
+      onApplyMetadata={handleApplyMetadata}
       activeDocumentId={activeDocumentId}
       collections={collections}
       documents={documents}

@@ -33,6 +33,7 @@ import {
 import { useAuth } from "../auth/AuthProvider";
 import {
   deleteCloudPdfDocument,
+  getLibraryDocument,
   importPdfToCloud,
   listCloudPdfLibraryEntries,
   openCloudPdfDocument,
@@ -60,6 +61,7 @@ import type { DocumentArchiveDocument } from "../importExport/archiveTypes";
 import { PdfImportDropzone } from "../pdf/PdfImportDropzone";
 import { PdfLibrary } from "../pdf/PdfLibrary";
 import { LibraryWorkspaceContainer } from "../library/LibraryWorkspaceContainer";
+import { metadataIsPending } from "../library/MetadataRecognition";
 import { createPdfFingerprint } from "../pdf/pdfFingerprint";
 import { PdfViewer, type PinLocateRequest } from "../pdf/PdfViewer";
 import { PaperQaPanel } from "../qa/PaperQaPanel";
@@ -550,7 +552,8 @@ export function ReaderShell() {
   const freeTranslationSeedIdRef = useRef(0);
   const activeFingerprint = currentEntry?.fingerprint;
   const currentFileName = currentEntry?.fileName;
-  const currentMetadataTitle = currentEntry?.pdfMetadata?.title;
+  const currentMetadataTitle = currentEntry?.metadataSources?.title?.source === "filename"
+    ? undefined : currentEntry?.pdfMetadata?.title;
   const paperContextPageTextsRef = useRef(new Map<number, string>());
   const visibleCloudSyncStatus: VisibleCloudSyncStatus =
     health.status === "checking"
@@ -678,7 +681,7 @@ export function ReaderShell() {
 
     void updatePaperContextFromPageTexts({
       fileName: entry.fileName,
-      metadataTitle: entry.pdfMetadata?.title,
+      metadataTitle: entry.metadataSources?.title?.source === "filename" ? undefined : entry.pdfMetadata?.title,
       pageTexts,
       cloudDocumentId: entry.cloudDocumentId,
       pdfFingerprint: entry.fingerprint,
@@ -2258,6 +2261,9 @@ export function ReaderShell() {
               bibliographicMetadata: updatedDocument.bibliographicMetadata,
               libraryUpdatedAt: updatedDocument.libraryUpdatedAt,
               pdfMetadata: updatedDocument.pdfMetadata,
+              metadataState: updatedDocument.metadataState,
+              metadataSources: updatedDocument.metadataSources,
+              metadataRevision: updatedDocument.metadataRevision,
               readingStatus: updatedDocument.readingStatus,
               starredAt: updatedDocument.starredAt,
             }
@@ -2275,6 +2281,32 @@ export function ReaderShell() {
     });
     setMobilePanel(null);
   }, []);
+
+  useEffect(() => {
+    const documentId = currentEntry?.cloudDocumentId;
+    if (!documentId || !metadataIsPending(currentEntry?.metadataState) || isLibraryWorkbenchOpen) return;
+    let disposed = false;
+    let timer: number;
+    const poll = async () => {
+      try {
+        const updated = await getLibraryDocument(documentId);
+        if (disposed) return;
+        await handleLibraryWorkbenchChanged(updated);
+      } catch { /* Retry temporary metadata sync failures without interrupting reading. */ }
+      finally { if (!disposed) timer = window.setTimeout(poll, 3000); }
+    };
+    timer = window.setTimeout(poll, 3000);
+    return () => { disposed = true; window.clearTimeout(timer); };
+  }, [currentEntry?.cloudDocumentId, currentEntry?.metadataState?.status, handleLibraryWorkbenchChanged, isLibraryWorkbenchOpen]);
+
+  useEffect(() => {
+    if (!currentEntry?.bibliographicMetadata || metadataIsPending(currentEntry.metadataState)) return;
+    let disposed = false;
+    void ensurePaperContextForEntry(currentEntry).then(record => {
+      if (!disposed && record.pdfFingerprint === activeFingerprintRef.current) setPaperContext(record);
+    }).catch(() => undefined);
+    return () => { disposed = true; };
+  }, [currentEntry?.cloudDocumentId, currentEntry?.metadataRevision, currentEntry?.metadataState?.status]);
 
   const handleLocateQaCitation = useCallback((citation: QaCitation) => {
     if (!currentEntry?.cloudDocumentId || citation.cloudDocumentId !== currentEntry.cloudDocumentId) {
@@ -3209,6 +3241,8 @@ export function ReaderShell() {
       </main>
       {isLibraryWorkbenchOpen ? (
         <LibraryWorkspaceContainer
+          metadataAiEnabled={settings.libraryMetadataAiEnabled}
+          onMetadataAiChange={enabled => handleSettingsChange({ libraryMetadataAiEnabled: enabled })}
           activeDocumentId={currentEntry?.cloudDocumentId}
           isImporting={isImporting}
           onClose={closeLibraryWorkbench}

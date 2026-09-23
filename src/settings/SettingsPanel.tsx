@@ -286,6 +286,15 @@ export function SettingsPanel({
           </label>
         </section>
 
+        <section className="settings-section" aria-label={t("library.recognition.title")}>
+          <div className="settings-section-heading">{t("library.recognition.title")}</div>
+          <label className="settings-toggle">
+            <input type="checkbox" checked={settings.libraryMetadataAiEnabled}
+              onChange={event => void updateSettings({ libraryMetadataAiEnabled: event.currentTarget.checked })} />
+            <span>{t("library.recognition.aiToggle")}<small>{t("library.recognition.aiHint")}</small></span>
+          </label>
+        </section>
+
         <section className="settings-section" aria-label={t("settings.selectionSettings")}>
           <div className="settings-section-heading">{t("settings.selection")}</div>
           <label className="settings-toggle">

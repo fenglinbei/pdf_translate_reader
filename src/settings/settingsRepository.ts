@@ -25,6 +25,7 @@ export const MAX_DRAGGED_WORDS_LIMIT = PROJECT_CONFIG.selection.maxDraggedWordsL
 export const MIN_DRAGGED_WORDS_LIMIT = PROJECT_CONFIG.selection.minDraggedWordsLimit;
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
+  libraryMetadataAiEnabled: true,
   contextWindowN: 2,
   defaultModel: DEFAULT_TRANSLATION_MODEL,
   longContextEnabled: true,
@@ -86,17 +87,32 @@ export async function getAppSettings() {
 export async function putAppSettings(input: Partial<AppSettings>) {
   const db = await getAppDb();
   const currentSettings = normalizeAppSettings(await db.get("settings", APP_SETTINGS_KEY));
-  const nextSettings = normalizeAppSettings({
+  let nextSettings = normalizeAppSettings({
     ...currentSettings,
     ...input,
   });
 
-  await db.put("settings", nextSettings, APP_SETTINGS_KEY);
-  await runCloudSync(() => putCloudSettings(nextSettings), {
-    error: "Saved settings locally, but cloud sync failed.",
+  // An AI opt-out must reach the worker before the UI reports it as saved.
+  const requireCloudSync = input.libraryMetadataAiEnabled !== undefined;
+  if (!requireCloudSync) await db.put("settings", nextSettings, APP_SETTINGS_KEY);
+  const sync = runCloudSync(() => putCloudSettings(nextSettings, { writeMetadataAi: requireCloudSync }), {
+    error: requireCloudSync
+      ? "Could not sync settings. Your AI preference was not changed."
+      : "Saved settings locally, but cloud sync failed.",
     started: "Syncing settings.",
     success: "Settings synced.",
-  }).catch(() => undefined);
+  });
+  if (requireCloudSync) {
+    const synced = await sync;
+    if (synced) nextSettings = normalizeAppSettings(synced);
+    await db.put("settings", nextSettings, APP_SETTINGS_KEY);
+  } else {
+    const synced = await sync.catch(() => undefined);
+    if (synced) {
+      nextSettings = normalizeAppSettings(synced);
+      await db.put("settings", nextSettings, APP_SETTINGS_KEY);
+    }
+  }
 
   return nextSettings;
 }
@@ -145,6 +161,8 @@ export function normalizeAppSettings(input: unknown): AppSettings {
 
   return {
     contextWindowN,
+    libraryMetadataAiEnabled: typeof value.libraryMetadataAiEnabled === "boolean"
+      ? value.libraryMetadataAiEnabled : DEFAULT_APP_SETTINGS.libraryMetadataAiEnabled,
     defaultModel,
     longContextEnabled:
       typeof value.longContextEnabled === "boolean"

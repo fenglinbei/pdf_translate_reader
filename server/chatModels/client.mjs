@@ -116,6 +116,7 @@ export async function streamQaChatCompletion({
 }
 
 export async function createQaChatCompletion({
+  maxTokens,
   messages,
   model,
   signal,
@@ -136,7 +137,7 @@ export async function createQaChatCompletion({
   // Router/controller calls use each model's lightest supported mode. Always-
   // thinking providers must not receive a disabled thinking flag here.
   const body = createChatCompletionBody({
-    messages, model: normalizedModel, stream: false, temperature,
+    messages, model: normalizedModel, stream: false, temperature, maxTokens,
     thinkingConfig: resolveThinkingConfig(normalizedModel, reasoningEffort),
   });
 
@@ -207,6 +208,7 @@ function assertProviderBaseUrl(config) {
 }
 
 function createChatCompletionBody({
+  maxTokens,
   messages,
   model,
   stream = true,
@@ -215,7 +217,7 @@ function createChatCompletionBody({
 }) {
   return createModelChatBody({
     messages, model, stream, temperature,
-    thinking: thinkingConfig, maxTokens: getModelMaxTokens(model),
+    thinking: thinkingConfig, maxTokens: maxTokens ?? getModelMaxTokens(model),
   });
 }
 

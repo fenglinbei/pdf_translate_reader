@@ -36,6 +36,14 @@ function captureRequest({stream = false, content = "你好", finish = "stop"} = 
   return request;
 }
 
+test("metadata extraction can cap output without changing the normal QA default", async () => {
+  const request = captureRequest();
+  await createQaChatCompletion({model:"deepseek-flash",messages,maxTokens:2200});
+  assert.equal(request.body.max_tokens,2200);
+  await createQaChatCompletion({model:"deepseek-flash",messages});
+  assert.notEqual(request.body.max_tokens,2200);
+});
+
 for (const model of getModelIds().filter(id => !["deepseek-v4-flash","deepseek-v4-pro","glm-5.2"].includes(id))) {
   test(`${model}: translation and router use the selected provider and supported parameters`, async () => {
     const request = captureRequest();

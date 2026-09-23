@@ -1,5 +1,6 @@
 import { pdfjsLib } from "./pdfjs";
 import type { PdfFingerprint, PdfMetadata } from "../types/domain";
+import { readEmbeddedMetadata } from "../../shared/pdfMetadata.mjs";
 
 type PdfInfoDictionary = {
   Title?: unknown;
@@ -42,39 +43,17 @@ async function readPdfMetadata(
   try {
     const { info, metadata } = await pdfDocument.getMetadata();
     const infoDictionary = info as PdfInfoDictionary;
-    const title = firstTextValue(
-      metadata?.get("dc:title"),
-      metadata?.get("title"),
-      infoDictionary.Title,
-    );
-    const author = firstTextValue(
-      metadata?.get("dc:creator"),
-      metadata?.get("author"),
-      infoDictionary.Author,
-    );
+    const { title, authors } = readEmbeddedMetadata(infoDictionary, metadata);
+    const author = authors.join("; ") || undefined;
 
     if (!title && !author) {
       return undefined;
     }
 
-    return { title, author };
+    return { title, author, authors };
   } catch {
     return undefined;
   }
-}
-
-function firstTextValue(...values: unknown[]) {
-  for (const value of values) {
-    if (typeof value === "string") {
-      const normalized = value.trim();
-
-      if (normalized) {
-        return normalized;
-      }
-    }
-  }
-
-  return undefined;
 }
 
 async function hashArrayBuffer(arrayBuffer: ArrayBuffer) {
