@@ -5,6 +5,79 @@
 
 离线学习（`npm run demo:qa`）不需要本文任何一步。需要看真实检索、真实模型决策和真实 SSE 时才需要。
 
+## 启动流程
+
+一次性准备只做一次；之后日常就是"三个终端 + 验收"。
+
+### 一次性准备
+
+1. 建独立 Supabase 测试项目、执行 `supabase/schema.sql`、建测试账号 → 见 [建立独立的 Supabase 测试项目](#建立独立的-supabase-测试项目)。
+2. 填 `.env.qa.local`（含 `VITE_` 那几个前端变量）→ 见 [配置文件](#配置文件)。
+3. 在测试项目里完成一篇论文的 MathPix 解析 → 见 [建索引](#建索引循环能不能跑起来的前提)。
+
+### 每个终端各起一个进程
+
+三个进程必须指向**同一个**测试项目，否则会出现 401——原因见 [关键：整条栈必须指向同一个测试项目](#关键整条栈必须指向同一个测试项目)。
+
+**终端 1 — 主应用（8790，指向测试项目）**
+
+```bash
+cd /home/fenglin/project/pdf_translate_reader
+PORT=8790 QA_EMBEDDED_ENABLED=false node --env-file=.env.qa.local server/index.mjs
+```
+
+`--env-file` 把 `.env.qa.local` 注入 `process.env`，而命令行变量优先级高于文件，
+所以 `PORT` / `QA_EMBEDDED_ENABLED` 由命令行决定，Supabase 与模型凭据来自测试文件——**不会动到 `.env.local`**
+（`server/index.mjs` 在加载 `.env` / `.env.local` 之后会把 `process.env` 恢复回去）。
+`QA_EMBEDDED_ENABLED=false` 关掉内嵌 QA 路由与索引恢复，避免两个索引 worker 同时跑。
+
+⚠️ **`--env-file` 会把文件里的空值也一并注入，并遮蔽 `.env.local` 的同名变量。**
+模板里 `DEEPSEEK_API_KEY=` 和 `VOYAGE_API_KEY=` 是空的，所以在你填之前，这个测试实例**没有任何模型可用**。
+本机实测未填时的表现：`deepseek.apiKeyConfigured=false`、`embedding.configured=false`。
+只有 `.env.qa.local` 里**没有出现**的变量（如 GLM / Kimi / Qwen 的 key）才会从 `.env.local` 继承。
+
+验证：
+
+```bash
+curl -s localhost:8790/api/health
+```
+
+- `supabase.configured` 必须是 `true`——是 `false` 就说明凭据没读到，别继续往下走。
+- `embedding.configured` 必须是 `true`，否则 QA 检索会退化成纯文本检索。
+- `curl -s localhost:8790/api/qa/threads` 应返回 `503 qa_disabled`，证明内嵌 QA 已按预期关闭。
+
+**终端 2 — QA 服务（8789）**
+
+```bash
+cd /home/fenglin/project/pdf_translate_reader
+QA_ENV_FILE=.env.qa.local npm run dev:qa
+```
+
+验证：`curl -s localhost:8789/api/qa/health`
+
+**终端 3 — 前端（5173，`--mode qa`）**
+
+```bash
+cd /home/fenglin/project/pdf_translate_reader
+npm run dev:web -- --mode qa
+```
+
+`--mode qa` 让 Vite 加载 `.env.qa.local` 并**覆盖** `.env.local`；不加这个参数前端会继续连生产项目。
+本机已实测：`mode=qa` 命中 `.env.qa.local`，默认 `development` 模式不受影响。
+
+⚠️ **如果你已经有一个开发前端在跑，5173 会被占用，Vite 不会报错，而是静默改用 5174。**
+本机实测：启动时提示 `Port 5173 is in use, trying another one...` 然后监听 5174。
+两个前端长得一模一样，但一个连生产项目、一个连测试项目——**开错窗口会在生产项目里登录**，
+然后看到一堆莫名其妙的 401。启动后务必确认日志里的端口，并按那个端口打开。
+
+### 验收顺序
+
+1. **三个健康检查**：`localhost:8789/api/qa/health`、`localhost:8790/api/health`、`localhost:5173` 都能打开。
+2. **确认前端连的是测试项目**：浏览器登录测试账号。若此时翻译/文库报 401，就是终端 1 或终端 3 没指向测试项目。
+3. **建索引**：`POST localhost:8789/api/qa/index-jobs`，等状态到完成。
+4. **提一个具体事实问题** → 看到 `agent_step`(plan) → `gap_check` → `tool_call` → `observation` → … → `agent_step`(answer_outline)。
+5. **提"总结这篇论文"** → 走长上下文路径，看不到 `tool_call`，这是预期。
+
 ## 已验证的部分：不需要任何凭据
 
 复制模板、改端口、启动服务、检查健康与路由隔离——这些在本机已经跑通：
@@ -34,6 +107,33 @@ QA_ENV_FILE=.env.qa.local npm run dev:qa
 # .env.qa.local
 QA_PORT=8789
 ```
+
+## 配置文件
+
+一个 `.env.qa.local` 同时喂三个进程：QA 服务直接用（`QA_ENV_FILE`），主应用用 `--env-file`，
+前端用 `--mode qa`（[已验证](#每个终端各起一个进程)）。它被 `.gitignore` 的 `.env.*.local` 覆盖，不会进版本库。
+
+需要填的值：
+
+```bash
+QA_ENVIRONMENT=development
+QA_PORT=8789                  # 必须避开本机已被占用的 8788
+QA_INDEX_WORKER_ENABLED=false # 保持 false：只控制启动恢复，不打开就不会认领别人的任务
+SUPABASE_URL=https://<测试项目>.supabase.co
+SUPABASE_ANON_KEY=<测试 anon>
+SUPABASE_SERVICE_ROLE_KEY=<测试 service_role>
+DEEPSEEK_API_KEY=<建议用独立额度>
+VOYAGE_API_KEY=<建议用独立额度>
+
+# 前端（--mode qa 时生效）
+VITE_SUPABASE_URL=https://<同一个测试项目>.supabase.co
+VITE_SUPABASE_ANON_KEY=<同一个测试 anon>
+VITE_QA_API_PROXY_TARGET=http://127.0.0.1:8789
+VITE_API_PROXY_TARGET=http://127.0.0.1:8790
+```
+
+两处必须**指向同一个测试项目**：`SUPABASE_URL` 与 `VITE_SUPABASE_URL`。
+前端拿哪个项目的 token，QA 服务就用哪个项目校验——不一致的表现是全部 401。
 
 ## 建立独立的 Supabase 测试项目
 
