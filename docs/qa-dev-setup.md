@@ -1,6 +1,7 @@
 # QA 开发环境：跑通一次真实问答
 
-状态：无凭据部分已在本机验证；带凭据的步骤尚未执行，见文末清单。
+状态（2026-09-23 更新）：已完成两轮本地真实问答并核对落库；Agent 路径已跑通，长上下文成功路径尚未通过验收。
+具体结果、证据范围和待修复问题见 [两轮真实运行核验](qa-local-runs-2026-09-23.md)，文末清单已同步。
 规范约束见 [版本、CI/CD 与 QA 隔离规范](versioning-and-delivery.md)，本文只是操作步骤。
 
 离线学习（`npm run demo:qa`）不需要本文任何一步。需要看真实检索、真实模型决策和真实 SSE 时才需要。
@@ -176,8 +177,8 @@ Settings → API Keys（老项目在 Settings → API）。需要：
 
 Supabase 正在用 `sb_publishable_*` / `sb_secret_*` 取代 `anon` / `service_role`，两者目前并存可用
 （[迁移说明](https://supabase.com/docs/guides/getting-started/migrating-to-new-api-keys)）。
-本仓库锁定的 `@supabase/supabase-js@2.49.8` 早于新格式；本机实测**用两种格式构造客户端都不报错**，
-但没有对真实项目做过往返验证。若出现鉴权异常，先回退到旧的 `anon` / `service_role` 两个 JWT 键。
+本仓库锁定的 `@supabase/supabase-js@2.49.8` 早于新格式；此前实测**用两种格式构造客户端都不报错**。
+现有测试项目凭据已通过真实问答与本次只读查询；这不等于两种 key 格式均完成了完整往返验证。
 另外 `supabase/schema.sql` 的钩子是 Postgres 函数、不使用 `pg_net`，
 所以"新 secret 键会被数据库 Webhook 拒绝"那个限制在这里不适用。
 
@@ -330,11 +331,12 @@ psql -p 5432 -d postgres -v msg_id=<uuid> -f scripts/qa-trace.sql
 
 - [x] `.env.qa.local` 建立并避让端口冲突（本机已验证）
 - [x] 无凭据启动、健康检查、路由隔离（本机已验证）
-- [ ] 新建独立 Supabase 测试项目
-- [ ] 测试项目执行 `supabase/schema.sql`（含两个钩子函数，但先不启用钩子）
-- [ ] 取 Project URL / anon / service_role 三个凭据填入 `.env.qa.local`
-- [ ] 建测试账号（Dashboard → Users → Add user，或关掉 Confirm email 后注册）
-- [ ] 指向同一测试项目启动三个进程：主应用 8790、QA 8789、前端 `--mode qa`
-- [ ] 完成一篇论文的 MathPix 解析并请求建索引
-- [ ] 跑通一次真实问答，确认 SSE 与落库
-- [ ] 分别验证 `detail` 与 `global` 两条路径的实际事件差异
+- [x] 独立 Supabase 测试项目已配置（与主应用配置的项目不同）
+- [x] 本轮所需 QA 表与数据可查询（不据此宣称完整 schema / 钩子配置全部验收）
+- [x] 测试凭据已填入 `.env.qa.local`；前后端项目配置一致
+- [x] 测试账号完成真实提问，消息、步骤、工具和引用已落库
+- [x] 本地 QA 8789 与测试主应用 8790 健康检查通过，主应用内嵌 QA 已关闭
+- [x] 论文 MathPix 解析来源的索引为 `ready`，真实使用语义检索与重排
+- [x] 两轮真实问答均成功落库，Agent 搜索与 `open_chunk` 已执行
+- [ ] 浏览器 / SSE 逐事件复验（本次未重放历史流，5173/5174 当前未响应）
+- [ ] 长上下文成功路径验收（第二轮 global 尝试失败后回落 Agent，原因待追踪）

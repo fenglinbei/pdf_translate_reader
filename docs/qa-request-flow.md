@@ -161,8 +161,8 @@ psql -p 5432 -d postgres -v msg_id=<uuid> -f scripts/qa-trace.sql
 | 第 4、5 节 | 证据 C 编号 → chunk → 正文 |
 | 第 6 节 | 收尾的引用校验产物 |
 
-再确认一次：这份文档写的是**逻辑**，不是你那两次运行的具体数据。要我把真实值填进图里，
-把 trace 的输出贴给我就行（那个脚本不打印密钥）。
+这份文档描述代码逻辑；两轮的实际步骤数、工具调用、耗时与引用已在
+[2026-09-23 本地真实运行核验](qa-local-runs-2026-09-23.md) 中按数据库记录核对。
 
 ## 读真实轨迹时的四个陷阱
 
@@ -178,8 +178,8 @@ return deduped
   .map((item, index) => ({ ...item, evidenceId: `C${index + 1}` }));
 ```
 
-所以 `plan` 步骤 `evidence_ids` 里的是**上一轮的编号**（带入的证据，沿用上轮 message 的快照），
-而 `observation` 之后的是**本次合并重排后的新编号**。同一个 `C1`，在两个步骤里未必是同一条 chunk。
+`plan` 之前，`normalizeCarryoverEvidence()` 已先对带入证据排序并从 C1 重新编号，并非保证沿用上轮编号；
+`observation` 之后又变为**本次合并重排后的新编号**。同一个 `C1`，在两个步骤里未必是同一条 chunk。
 比对时要认 `chunk_id`，不要认 `C` 号。
 
 ### 2. `finish_retrieval` 不留任何步骤
@@ -194,8 +194,9 @@ await events.recordStep(state, "gap_check", { ... });                        // 
 于是**模型"决定收工"这个动作在步骤时间线里是查不到的**，只能从 `answer_outline` 的
 `payload.answerOutline` 反推（它就是 finish 动作带回来的大纲）。
 
-推论：`gap_check` 的数量 **等于**实际控制器轮数减一。有 1 个 `gap_check` 就说明跑了 2 轮控制器
-（最后一轮是 finish）。想看准确轮数，得看 `diagnostics`（api_logs 里）或服务端日志。
+只有已确认最后一轮为 finish、且前面每个工具动作均留下 gap_check 时，才能按 `gap_check + 1` 推断轮数。
+预算耗尽、异常或其他终止条件不满足这个等式。当前 `diagnostics` 有 retrievalCalls / stepCount，
+但没有实际 controllerCalls，不能从中直接读取精确控制器次数。
 
 ### 3. 光看数据库分不清路由选了哪条路
 
@@ -234,9 +235,11 @@ await events.recordStep(state, "gap_check", { ... });                        // 
 `errorMessage` 只存在于那一刻的 SSE 流里（渲染时前端只显示 `summary`，所以界面上也看不到）。
 要当场看到它，只能开浏览器 DevTools → Network → `/api/qa/stream` 的 EventStream。
 
-还有一个可推断的信号：该请求的 `chatContext.carryoverEvidenceIds = ["C1","C2"]`。
-长上下文路径写入的快照是 `evidence: []`，所以**上一轮只要走了长上下文，这一轮就不会有带入证据**。
-带入证据存在，说明上一轮同样走的是 agent 循环——**两轮都回落了，这是系统性失败，不是偶发**。
+该请求的 `chatContext.carryoverEvidenceIds = ["C1","C2"]` 只能证明加载过历史非空证据。
+`findLatestCarryoverEvidence()` 会跳过空快照，向前找同一文档最近一次非空证据，因此即使紧邻上一轮
+成功走了长上下文，仍可能从更早的回答带入证据。本次查库确认两条证据来自第一轮，
+且两轮最终均为 Agent 路径；但没有第一轮的路由日志，**不能断言第一轮也发生回落**。
+原先“两轮都回落、系统性失败”的结论已撤回，详见 [实际核验记录](qa-local-runs-2026-09-23.md)。
 
 ### 4. agent 路径的 `questionType` 不落库
 

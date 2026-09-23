@@ -1,6 +1,7 @@
 # QA Agent 第一阶段：可阅读、可测试的执行内核
 
-状态：代码已实现；不代表独立 QA 服务已部署。版本与发布按 [交付规范](versioning-and-delivery.md) 执行。
+状态：代码已实现，独立 QA 服务已完成 [两轮本地真实运行](qa-local-runs-2026-09-23.md)；长上下文成功路径与生产部署尚未验收。
+版本与发布按 [交付规范](versioning-and-delivery.md) 执行。
 
 本阶段沿用现有手写执行器，学习重点是一次 Agent 运行如何调用模型、执行工具、累积证据与停止。
 保持现有 JSON 控制协议、提示词、预算、引用编号策略和 HTTP/SSE 契约，不引入新的 Agent 框架。
@@ -95,7 +96,8 @@ sequenceDiagram
 循环只发出这 4 个事件；整条 SSE 流还有 `meta`、`retrieval`、`thinking`、`delta`、`citation`、`verifier`、`usage`、`finish`、`done`、`error`，
 由 `server/routes/qa.mjs` 直接发出，前端消费位置见 `src/qa/qaClient.ts`。
 注意三个注入端口并不对称：`insertStep` / `insertToolCall` 是必需项，`emit` 是可选调用（`emit?.(...)`）。
-落库是硬要求、SSE 是尽力而为，所以持久化失败会中断运行，而发布失败不会。
+落库是硬要求；`emit` 可以不提供，但已提供的回调若抛异常，事件层不会自行吞掉。
+因此不能把可选回调理解为“发布失败一定不会中断运行”；具体失败语义取决于 SSE 写入端口与调用方处理。
 
 **执行循环**：分别维护证据、已打开证据、工具历史与调用次数。
 工具返回后，证据会合并、重新编号，再进入下一次模型调用；模型不能直接执行任意函数。
