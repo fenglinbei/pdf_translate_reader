@@ -11,6 +11,7 @@
     "demo:qa": "node scripts/demo-qa-agent.mjs",
     "test": "node --test tests/*/*.test.mjs",
     "check:release": "node scripts/check-release.mjs",
+    "check:qa-env": "node scripts/check-qa-env.mjs",
     "check:agent-equivalence": "node scripts/check-agent-equivalence.mjs",
     "ci": "npm run check:release && npm test && npm run build",
     "package:qa": "node scripts/package-qa.mjs",

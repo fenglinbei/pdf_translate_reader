@@ -12,7 +12,7 @@
 ### 一次性准备
 
 1. 建独立 Supabase 测试项目、执行 `supabase/schema.sql`、建测试账号 → 见 [建立独立的 Supabase 测试项目](#建立独立的-supabase-测试项目)。
-2. 填 `.env.qa.local`（含 `VITE_` 那几个前端变量）→ 见 [配置文件](#配置文件)。
+2. 填 `.env.qa.local` 并跑 `npm run check:qa-env` 确认通过 → 见 [配置文件](#配置文件)。
 3. 在测试项目里完成一篇论文的 MathPix 解析 → 见 [建索引](#建索引循环能不能跑起来的前提)。
 
 ### 每个终端各起一个进程
@@ -134,6 +134,28 @@ VITE_API_PROXY_TARGET=http://127.0.0.1:8790
 
 两处必须**指向同一个测试项目**：`SUPABASE_URL` 与 `VITE_SUPABASE_URL`。
 前端拿哪个项目的 token，QA 服务就用哪个项目校验——不一致的表现是全部 401。
+
+填完先跑预检，它会替你抓出上面这些不一致，以及一个更危险的情况：
+
+```bash
+npm run check:qa-env
+```
+
+它读 `.env.qa.local`（可用 `QA_ENV_FILE` 覆盖），全部通过时退出 0。检查内容：
+
+| 检查 | 为什么 |
+| --- | --- |
+| 7 个凭据都已填 | `--env-file` 会注入空值并遮蔽 `.env.local`，空着不会自动回落 |
+| `SUPABASE_URL` 以 `https://` 开头 | 少协议头时 `createClient` 的报错很难懂 |
+| `SUPABASE_URL` == `VITE_SUPABASE_URL` | 不一致 → 全部 401 |
+| `SUPABASE_ANON_KEY` == `VITE_SUPABASE_ANON_KEY` | 同上 |
+| 两个 key 的 JWT `role` 归属正确 | 填反了的表现是权限错误，不是配置错误 |
+| `VITE_SUPABASE_ANON_KEY` 不是 `service_role` | **填错等于把 service_role 打包进浏览器**，它绕过所有 RLS |
+
+最后一条是唯一标 `FATAL` 的：`anon` 和 `service_role` 在 Dashboard 上长相接近，贴串位置不会有任何报错，
+但那个 key 会进前端产物。发现它是 `FATAL` 就立刻去 Dashboard 轮换该 key。
+
+新格式的 `sb_publishable_` / `sb_secret_` 不是 JWT，解析不出角色，脚本会标 `NOTE` 而不是报错。
 
 ## 建立独立的 Supabase 测试项目
 
