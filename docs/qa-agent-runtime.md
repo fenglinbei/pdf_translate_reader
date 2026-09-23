@@ -4,12 +4,36 @@
 
 本阶段沿用现有手写执行器，学习重点是一次 Agent 运行如何调用模型、执行工具、累积证据与停止。
 保持现有 JSON 控制协议、提示词、预算、引用编号策略和 HTTP/SSE 契约，不引入新的 Agent 框架。
-Agent 检索结束后，答案生成、引用校验、消息落库仍由原 `server/qa/service.mjs` 负责。
+Agent 检索结束后，答案生成、引用校验、消息落库仍由原 QA 路由层 `server/routes/qa.mjs` 负责。
+
+## 先看清楚：不是每个问题都会进入这个循环
+
+`server/routes/qa.mjs` 处理 `/api/qa/stream` 时，先调用 `server/qa/queryRouter.mjs` 做一次问题分类，再决定路径：
+
+```mermaid
+flowchart TD
+    Q["提问 /api/qa/stream"] --> R["queryRouter.classifyQuestionType<br/>独立模型调用 temperature=0"]
+    R -->|global| LC["handleLongContextAnswer<br/>全文长上下文"]
+    LC -->|成功| D[答案生成与引用校验]
+    LC -->|失败| FB["发出 kind=fallback 的 agent_step"] --> L
+    R -->|"detail / follow_up"| L["执行循环<br/>runCurrentPaperReasoningRetrieval"]
+    R -->|chitchat| L
+    L --> D
+```
+
+- `global`（总结全文、核心贡献、论证链）**不进入执行循环**：先走全文长上下文路径并直接返回，失败才回落到循环。
+  因此提问"总结这篇论文"时看不到 `tool_call` 事件是预期行为，不是环境故障。
+- `detail` / `follow_up` 进入循环，这是本阶段的学习对象。
+- `chitchat` 也进入循环，由控制器返回 `direct_answer` 动作处理。路由器单独分出 `chitchat` 目前只用于日志与诊断，不是分支条件。
+- 一次问答至少包含一次 `queryRouter` 模型调用，之后才是循环内的控制器调用；估算延迟和额度时要把这一次算进去。
 
 ## 建议阅读顺序
 
+先读第 0 行确认自己在整条链路中的位置，再读第 1-5 行的执行内核。
+
 | 顺序 | 文件 | 负责什么 | 主要边界 |
 | --- | --- | --- | --- |
+| 0 | `server/routes/qa.mjs` | 入口与出口：鉴权、线程/消息落库、问题分类分流、调用执行循环、答案生成与引用校验 | 检索不在这一层；长上下文路径也在这一层，循环只是其中一条分支 |
 | 1 | `server/qa/agentRunner.mjs` | 组装已有模型、检索、数据库实现 | 原有导出保留，调用方无需迁移 |
 | 2 | `server/qa/agent/loop.mjs` | 模型决策 → 工具 → 观察 → 下一轮 | 管理运行状态、预算、结束与错误 |
 | 3 | `server/qa/agent/controller.mjs` | 构建模型消息、解析和归一化动作 | 接收注入的 `complete`，不直接访问供应商 |
@@ -17,13 +41,14 @@ Agent 检索结束后，答案生成、引用校验、消息落库仍由原 `ser
 | 5 | `server/qa/agent/events.mjs` | 写入步骤/工具记录、更新时间线、发布事件 | 持久化成功后输出原 SSE 事件结构 |
 
 辅助模块：`policy.mjs` 放预算与已有策略，`context.mjs` 处理多轮上下文，
-`evidence.mjs` 合并/去重/选择证据，`queryPlan.mjs` 提供纯查询规划。
-`heuristicLoop.mjs` 保留原规则驱动执行路径。`errors.mjs` 保留原错误类型与已完成步骤。
+`evidence.mjs` 合并/去重/选择证据，`queryPlan.mjs` 提供纯查询规划。`errors.mjs` 保留原错误类型与已完成步骤。
+`heuristicLoop.mjs` 保留原规则驱动执行路径，但**生产已不可达**：`server/routes/qa.mjs` 只调用推理路径，
+引用它的只有 `tests/qa/agentRunner.test.mjs` 与离线示例，学习时可以最后再看或跳过。
 这些执行模块不导入 Supabase、HTTP 服务或供应商客户端；生产依赖集中在组装入口。
 
 ```mermaid
 sequenceDiagram
-    participant S as 原问答服务
+    participant S as routes/qa.mjs
     participant L as 执行循环
     participant M as 模型适配
     participant T as 工具注册表
@@ -67,6 +92,10 @@ sequenceDiagram
 `recordStep(state, eventName, input)` 写步骤，`recordToolCall(state, step, input)` 将工具结果关联到步骤。
 前端继续接收 `agent_step`、`gap_check`、`tool_call`、`observation` 等已有事件。
 发送的是行动摘要、输入和结果概要；不新增模型私有推理文本的展示或存储。
+循环只发出这 4 个事件；整条 SSE 流还有 `meta`、`retrieval`、`thinking`、`delta`、`citation`、`verifier`、`usage`、`finish`、`done`、`error`，
+由 `server/routes/qa.mjs` 直接发出，前端消费位置见 `src/qa/qaClient.ts`。
+注意三个注入端口并不对称：`insertStep` / `insertToolCall` 是必需项，`emit` 是可选调用（`emit?.(...)`）。
+落库是硬要求、SSE 是尽力而为，所以持久化失败会中断运行，而发布失败不会。
 
 **执行循环**：分别维护证据、已打开证据、工具历史与调用次数。
 工具返回后，证据会合并、重新编号，再进入下一次模型调用；模型不能直接执行任意函数。
@@ -97,9 +126,15 @@ npm run demo:qa -- heuristic-empty
 事件顺序、模型上下文和检索参数，全部一致。覆盖正常检索/打开/结束、直接回答、带入上轮证据、
 预算耗尽、非法动作、检索失败、规则检索为空。均不调用真实模型或数据库。
 
+这次比较现在可以复算：`npm run check:agent-equivalence` 会从 git 历史重建 `240a8fe^`（即 `23ddc3b`）
+的整棵树，把同一套场景同时喂给新旧两个实现，逐字段比较上述五个方面，不一致就报出具体字段并以非零码退出。
+它依赖完整 git 历史，因此**不在 `npm run ci` 里**（CI 默认浅克隆）。基线提交可由 `--baseline=<rev>` 覆盖；
+基线必须改到重构后的提交，才能把它当作"此后不许漂移"的快照，而不是"与重构前一致"的证明。
+
 持续回归在 `tests/qa/agentRunner.test.mjs` 和 `tests/qa/agentRuntime.test.mjs`；
 `tests/runtime/` 验证 QA 关闭时其他接口的可用性、独立服务路由，以及发布失败后的 QA 回滚。
 CI 还运行文库、翻译、MathPix、模型等全项目测试。
+注意提交的测试只断言"当前行为应该是什么"，无法发现契约被静默改变——那正是上面这个对照脚本的职责。
 
 后续阶段再引入可恢复运行状态、取消/超时的统一终止语义、工具参数 schema、真实问答评测。
 当前保留的 `maxSteps` 是记录上限；实际执行次数由 controller/search/open 的预算限制，
