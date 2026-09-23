@@ -4,6 +4,7 @@ Local-first web PDF reader scaffold for sentence-level translation workflows.
 
 ## Project docs
 
+- [Project introduction](docs/project-introduction.md)
 - [Implementation plan](docs/implementation-plan.md)
 - [Markdown reader adaptation plan](docs/markdown-adaptation-plan.md)
 - [Paper QA implementation plan](docs/paper-qa-implementation-plan.md)
