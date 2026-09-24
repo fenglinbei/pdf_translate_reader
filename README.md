@@ -8,6 +8,10 @@ Local-first web PDF reader scaffold for sentence-level translation workflows.
 - [Implementation plan](docs/implementation-plan.md)
 - [Markdown reader adaptation plan](docs/markdown-adaptation-plan.md)
 - [Paper QA implementation plan](docs/paper-qa-implementation-plan.md)
+- [QA Agent stage 1 closeout](docs/qa-agent-stage-1-closeout.md)
+- [QA Agent stage 2: native tools and document exploration (design only)](docs/qa-agent-stage-2-plan.md)
+- [QA Agent runtime and learning guide](docs/qa-agent-runtime.md)
+- [Versioning, CI/CD and QA isolation](docs/versioning-and-delivery.md)
 - [Literature library management](docs/library-management-plan.md)
 
 ## Runtime support

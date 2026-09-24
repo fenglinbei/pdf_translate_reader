@@ -3,7 +3,8 @@
 对着 `server/routes/qa.mjs`、`server/qa/agent/loop.mjs` 和 `server/qa/queryRouter.mjs` 画的实际流程。
 这是**逻辑**（任何一次运行都成立），不是某次运行的数据；具体查询词、证据编号、轮数因问题而异。
 全文读取字段已在 `0.1.1-alpha.1` 修复。下面的事件持久化缺口仍是现状，
-[顺序 2 实施准备](qa-execution-observability-plan.md) 描述下一阶段，不能当作已实现行为。
+[F02 失败记录方案](qa-execution-observability-plan.md) 描述这些缺口的后续处理，不能当作已实现行为。
+本文保留已验收旧路径的实际流程；[P2 工具自主查阅方案](qa-agent-stage-2-plan.md) 为尚未实施的新路径。
 
 `detail` 与 `global` 是两条完全不同的路径，差别在第 6 步那一个分支。
 
@@ -239,7 +240,7 @@ await events.recordStep(state, "gap_check", { ... });                        // 
 `errorMessage` 只存在于那一刻的 SSE 流里（渲染时前端只显示 `summary`，所以界面上也看不到）。
 要当场看到它，可以开浏览器 DevTools → Network → `/api/qa/stream` 的 EventStream。
 后续已通过同文档只读复现定位到全文读取的字段不匹配，并在 `0.1.1-alpha.1` 修复；
-这不等于找回了该历史请求的异常。新版本的持久化回落记录仍待顺序 2 实施。
+这不等于找回了该历史请求的异常。新版本的持久化回落记录仍待 F02 实施。
 
 该请求的 `chatContext.carryoverEvidenceIds = ["C1","C2"]` 只能证明加载过历史非空证据。
 `findLatestCarryoverEvidence()` 会跳过空快照，向前找同一文档最近一次非空证据，因此即使紧邻上一轮

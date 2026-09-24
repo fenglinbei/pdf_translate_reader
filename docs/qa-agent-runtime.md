@@ -3,7 +3,9 @@
 状态：代码已实现，独立 QA 服务已完成 [真实运行与全文路径本地人工验收](qa-local-runs-2026-09-23.md)；生产尚未部署。
 版本与发布按 [交付规范](versioning-and-delivery.md) 执行。
 `0.1.1-alpha.1` 已修复全文读取的字段契约，实际文档读取、合成路由测试和发布版 1cc80bd 的全文路径人工验收通过；
-下一步的 [失败记录与回落边界方案](qa-execution-observability-plan.md) 已准备，尚未实施。
+第一阶段已完成 [收尾核验](qa-agent-stage-1-closeout.md)。下一步以
+[第二阶段：工具协议与模型自主查阅文档](qa-agent-stage-2-plan.md) 为准，尚未实施；
+[失败记录与回落边界](qa-execution-observability-plan.md) 是其中的配套工作 F02，不再称作完整的“第二步”。
 
 本阶段沿用现有手写执行器，学习重点是一次 Agent 运行如何调用模型、执行工具、累积证据与停止。
 保持现有 JSON 控制协议、提示词、预算、引用编号策略和 HTTP/SSE 契约，不引入新的 Agent 框架。
@@ -45,7 +47,7 @@ flowchart TD
 
 辅助模块：`policy.mjs` 放预算与已有策略，`context.mjs` 处理多轮上下文，
 `evidence.mjs` 合并/去重/选择证据，`queryPlan.mjs` 提供纯查询规划。`errors.mjs` 保留原错误类型与已完成步骤。
-`heuristicLoop.mjs` 保留原规则驱动执行路径，但**生产已不可达**：`server/routes/qa.mjs` 只调用推理路径，
+`heuristicLoop.mjs` 保留原规则驱动执行路径，但**当前 QA 路由不调用它**：`server/routes/qa.mjs` 只调用推理路径，
 引用它的只有 `tests/qa/agentRunner.test.mjs` 与离线示例，学习时可以最后再看或跳过。
 这些执行模块不导入 Supabase、HTTP 服务或供应商客户端；生产依赖集中在组装入口。
 
