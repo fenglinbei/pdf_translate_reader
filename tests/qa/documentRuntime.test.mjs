@@ -74,6 +74,35 @@ test('natural answers have one correction opportunity and cannot silently bypass
   assert.equal(inputs.length, 2);
 });
 
+test('page parameter repair does not consume citation repair allowance and diagnostics omit quote text', async () => {
+  const quote = value => ({ mode: 'grounded', citationSelections: [{ kind: 'quote', sourceEvidenceIds: ['C1'], quote: value }], answerOutline: '' });
+  const { adapter, inputs } = fakeAdapter([
+    reply([call('a', 'read_document', { mode: 'pages', pageStart: 5, pageEnd: 9 })]),
+    reply([call('b', 'read_document', { mode: 'full' })]),
+    reply([call('c', 'finish_reading', quote('private invented quote one'))]),
+    reply([call('d', 'finish_reading', quote('private invented quote two'))]),
+    reply([call('e', 'finish_reading', quote('Gate weights fuse two branches.'))]),
+  ]);
+  const run = context(); const result = await plan(adapter, run);
+  assert.equal(result.stopReason, 'model_finish');
+  assert.equal(inputs.length, 5);
+  const failed = run.steps.filter(s => s.payload.citationDiagnostics);
+  assert.equal(failed.length, 2);
+  assert.equal(failed[0].payload.citationDiagnostics[0].reason, 'quote_text_not_found');
+  assert.equal(failed[0].payload.citationDiagnostics[0].selectionIndex, 0);
+  assert.equal(run.tools[2].input.selections[0].quoteHash.length, 64);
+  assert.equal(JSON.stringify([...run.steps, ...run.tools, ...run.logs]).includes('private invented quote'), false);
+});
+
+test('citation repair remains bounded after three failed attempts', async () => {
+  const bad = { mode: 'grounded', citationSelections: [{ kind: 'quote', sourceEvidenceIds: ['C1'], quote: 'missing' }], answerOutline: '' };
+  const { adapter } = fakeAdapter([reply([call('a', 'read_document', { mode: 'full' })]),
+    ...['b', 'c', 'd'].map(id => reply([call(id, 'finish_reading', bad)]))]);
+  const result = await plan(adapter);
+  assert.equal(result.stopReason, 'repair_budget');
+  assert.equal(result.prepared.citations[0].selectionOrigin, 'budget_stop');
+});
+
 test('repeated cached reads stop with explicit budget-origin source citations', async () => {
   const { adapter } = fakeAdapter(['a', 'b', 'c'].map(id => reply([call(id, 'read_document', { mode: 'full' })])));
   const result = await plan(adapter);

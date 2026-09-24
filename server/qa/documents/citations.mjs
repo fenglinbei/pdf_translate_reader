@@ -4,62 +4,81 @@ import { describeRange, mergeCoverage, normalizeText, normalizeWithMap } from '.
 export function resolveCitationSelections(store, selections, { selectionOrigin } = {}) {
   const view = store.view;
   // Stage all matches before assigning identifiers: failed finish calls are atomic.
-  const resolved = selections.map((selection) => {
-    const sources = selection.sourceEvidenceIds.map((id) => {
-      const source = store.byId.get(id);
-      requireCondition(source, 'UNKNOWN_EVIDENCE', `来源 ${id} 不属于本次已读资料。`);
-      return source;
-    });
-    const coverage = mergeCoverage(sources);
-    let start, end;
-    let kind = selection.kind === 'source' ? 'range' : 'lines';
-    if (selection.kind === 'source') {
-      requireCondition(coverage.length === 1, 'CITATION_OUTSIDE_READ_SCOPE', '资料存在未读缺口，请分别引用或补读。');
-      ({ start, end } = coverage[0]);
-      const fullSection = view.sections.filter((s) => s.start === start && s.end === end).sort((a, b) => b.level - a.level)[0];
-      if (fullSection) kind = 'section';
-    } else {
-      const needle = normalizeText(selection.quote);
-      const before = selection.contextBefore === undefined ? undefined : normalizeText(selection.contextBefore);
-      const after = selection.contextAfter === undefined ? undefined : normalizeText(selection.contextAfter);
-      requireCondition(needle && before !== '' && after !== '', 'INVALID_TOOL_ARGUMENTS', '摘录及已提供的上下文不能为空。');
-      const candidates = new Map();
-      for (const interval of coverage) {
-        const indexed = normalizeWithMap(view.text.slice(interval.start, interval.end));
-        let from = 0;
-        while (from < indexed.text.length) {
-          const index = indexed.text.indexOf(needle, from);
-          if (index < 0) break;
-          from = index + 1;
-          const prefix = indexed.text.slice(0, index).trimEnd();
-          const suffix = indexed.text.slice(index + needle.length).trimStart();
-          if ((before && !prefix.endsWith(before)) || (after && !suffix.startsWith(after))) continue;
-          const matchStart = interval.start + indexed.starts[index];
-          const matchEnd = interval.start + indexed.ends[index + needle.length - 1];
-          const contextStart = before ? interval.start + indexed.starts[index - (indexed.text.slice(0, index).length - prefix.length) - before.length] : matchStart;
-          const contextEnd = after ? interval.start + indexed.ends[index + needle.length + (indexed.text.slice(index + needle.length).length - suffix.length) + after.length - 1] : matchEnd;
-          candidates.set(`${matchStart}:${matchEnd}`, { start: matchStart, end: matchEnd, contextStart, contextEnd });
+  const failures = [];
+  const resolved = selections.map((selection, selectionIndex) => {
+    try {
+      const sources = selection.sourceEvidenceIds.map((id) => {
+        const source = store.byId.get(id);
+        requireCondition(source, 'UNKNOWN_EVIDENCE', `来源 ${id} 不属于本次已读资料。`);
+        return source;
+      });
+      const coverage = mergeCoverage(sources);
+      let start, end;
+      let kind = selection.kind === 'source' ? 'range' : 'lines';
+      if (selection.kind === 'source') {
+        requireCondition(coverage.length === 1, 'CITATION_OUTSIDE_READ_SCOPE', '资料存在未读缺口，请分别引用或补读。');
+        ({ start, end } = coverage[0]);
+        const fullSection = view.sections.filter((s) => s.start === start && s.end === end).sort((a, b) => b.level - a.level)[0];
+        if (fullSection) kind = 'section';
+      } else {
+        const needle = normalizeText(selection.quote);
+        const before = selection.contextBefore === undefined ? undefined : normalizeText(selection.contextBefore);
+        const after = selection.contextAfter === undefined ? undefined : normalizeText(selection.contextAfter);
+        requireCondition(needle && before !== '' && after !== '', 'INVALID_TOOL_ARGUMENTS', '摘录及已提供的上下文不能为空。');
+        const candidates = new Map();
+        let textMatches = 0;
+        for (const interval of coverage) {
+          const indexed = normalizeWithMap(view.text.slice(interval.start, interval.end));
+          let from = 0;
+          while (from < indexed.text.length) {
+            const index = indexed.text.indexOf(needle, from);
+            if (index < 0) break;
+            textMatches++;
+            from = index + 1;
+            const prefix = indexed.text.slice(0, index).trimEnd();
+            const suffix = indexed.text.slice(index + needle.length).trimStart();
+            if ((before && !prefix.endsWith(before)) || (after && !suffix.startsWith(after))) continue;
+            const matchStart = interval.start + indexed.starts[index];
+            const matchEnd = interval.start + indexed.ends[index + needle.length - 1];
+            const contextStart = before ? interval.start + indexed.starts[index - (indexed.text.slice(0, index).length - prefix.length) - before.length] : matchStart;
+            const contextEnd = after ? interval.start + indexed.ends[index + needle.length + (indexed.text.slice(index + needle.length).length - suffix.length) + after.length - 1] : matchEnd;
+            candidates.set(`${matchStart}:${matchEnd}`, { start: matchStart, end: matchEnd, contextStart, contextEnd });
+          }
         }
+        requireCondition(candidates.size, 'QUOTE_NOT_FOUND', textMatches
+          ? '摘录存在，但提供的紧邻上下文不匹配；请复制实际紧邻原文，或在摘录唯一时省略上下文。'
+          : '摘录不在指定的已读来源 text 中；请检查来源编号，并逐字复制连续原文或补读。',
+        { details: { reason: textMatches ? 'context_mismatch' : 'quote_text_not_found', textMatches } });
+        if (candidates.size !== 1) {
+          throw new DocumentToolError('AMBIGUOUS_QUOTE', '原文出现多次，请缩小来源或补充紧邻的已读上下文。', {
+            details: { candidates: [...candidates.values()].slice(0, 3).map((match) => {
+              const interval = coverage.find((r) => r.start <= match.start && r.end >= match.end);
+              return { sourceEvidenceIds: sources.filter((s) => s.start < match.end && s.end > match.start).map((s) => s.evidenceId),
+                contextBefore: view.text.slice(Math.max(interval.start, match.start - 100), match.start),
+                contextAfter: view.text.slice(match.end, Math.min(interval.end, match.end + 100)) };
+            }) },
+          });
+        }
+        const match = [...candidates.values()][0];
+        ({ start, end } = match);
+        requireCondition(sources.every((s) => s.start < match.contextEnd && s.end > match.contextStart), 'CITATION_OUTSIDE_READ_SCOPE', '来源集合包含与摘录及上下文无关的资料。');
       }
-      requireCondition(candidates.size, 'QUOTE_NOT_FOUND', '摘录或紧邻上下文不在这些已读资料中，请使用原文或补读。');
-      if (candidates.size !== 1) {
-        throw new DocumentToolError('AMBIGUOUS_QUOTE', '原文出现多次，请缩小来源或补充紧邻的已读上下文。', {
-          details: { candidates: [...candidates.values()].slice(0, 3).map((match) => {
-            const interval = coverage.find((r) => r.start <= match.start && r.end >= match.end);
-            return { sourceEvidenceIds: sources.filter((s) => s.start < match.end && s.end > match.start).map((s) => s.evidenceId),
-              contextBefore: view.text.slice(Math.max(interval.start, match.start - 100), match.start),
-              contextAfter: view.text.slice(match.end, Math.min(interval.end, match.end + 100)) };
-          }) },
-        });
-      }
-      const match = [...candidates.values()][0];
-      ({ start, end } = match);
-      requireCondition(sources.every((s) => s.start < match.contextEnd && s.end > match.contextStart), 'CITATION_OUTSIDE_READ_SCOPE', '来源集合包含与摘录及上下文无关的资料。');
+      const location = describeRange(view, start, end, kind);
+      return { start, end, kind, location, sourceEvidenceKeys: [...new Set(sources.map((s) => s.evidenceKey))],
+        selectionOrigin: selectionOrigin ?? (selection.kind === 'quote' ? 'model_quote' : 'model_source') };
+    } catch (error) {
+      if (!(error instanceof DocumentToolError)) throw error;
+      failures.push({ selectionIndex, sourceEvidenceIds: selection.sourceEvidenceIds, code: error.code,
+        message: error.message, ...error.details });
+      return undefined;
     }
-    const location = describeRange(view, start, end, kind);
-    return { start, end, kind, location, sourceEvidenceKeys: [...new Set(sources.map((s) => s.evidenceKey))],
-      selectionOrigin: selectionOrigin ?? (selection.kind === 'quote' ? 'model_quote' : 'model_source') };
   });
+  if (failures.length) {
+    throw new DocumentToolError(failures[0].code,
+      `第 ${failures.map((f) => f.selectionIndex + 1).join('、')} 项引用未通过。保留已通过项，仅修改失败项后重新完整提交。`,
+      { details: { failedSelections: failures,
+        matchedSelectionIndexes: resolved.flatMap((match, index) => match ? [index] : []), totalSelections: selections.length } });
+  }
   const byKey = new Map();
   const selectionMap = [];
   for (const [selectionIndex, match] of resolved.entries()) {

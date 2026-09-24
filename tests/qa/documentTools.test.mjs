@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createDocumentView, createEvidenceStore, normalizeWithMap } from '../../server/qa/documents/view.mjs';
 import { resolveCitationSelections, verifyDocumentAnswer } from '../../server/qa/documents/citations.mjs';
-import { createDocumentTools, validateDocumentTool } from '../../server/qa/documents/tools.mjs';
+import { DOCUMENT_TOOLS, createDocumentTools, validateDocumentTool } from '../../server/qa/documents/tools.mjs';
 
 const line = (text, y, coords = true) => ({ text, ...(coords ? { region: { x: 10, y, width: 80, height: 5 } } : {}) });
 function setup(overrides = {}) {
@@ -154,6 +154,44 @@ test('tool schemas reject coordinates, extra fields and coerced numbers', () => 
   }
   assert.throws(() => validateDocumentTool('finish_reading', { mode: 'grounded', citationSelections: [{ ...select('C1', 'text'), pageNumber: 4 }], answerOutline: '' }), { code: 'INVALID_TOOL_ARGUMENTS' });
   assert.throws(() => validateDocumentTool('__proto__', {}), { code: 'UNKNOWN_TOOL' });
+});
+
+test('page span contract is explicit and rejects five pages before source access', async () => {
+  const { source, store } = setup();
+  let checks = 0;
+  source.assertCurrent = async () => { checks++; };
+  const tools = createDocumentTools({ source, store });
+  await assert.rejects(tools.execute('read_document', { mode: 'pages', pageStart: 5, pageEnd: 9 }), error => {
+    assert.equal(error.code, 'INVALID_PAGE_RANGE');
+    assert.equal(error.details.maxPages, 4);
+    return true;
+  });
+  assert.equal(checks, 0);
+  assert.match(DOCUMENT_TOOLS.find(t => t.function.name === 'read_document').function.description, /最多四页/);
+});
+
+test('citation failure identifies every invalid selection and retains atomic successful matches', async () => {
+  const { tools, store } = setup();
+  const read = await tools.execute('read_document', { mode: 'full' });
+  const id = read.evidence[0].evidenceId, count = store.evidence.length;
+  assert.throws(() => resolveCitationSelections(store, [
+    select(id, 'Gate weights'), select(id, 'invented wording'),
+    select(id, 'Repeat this sentence.', { contextBefore: 'not adjacent' }),
+    select(id, 'Repeat this sentence.'), select('C999', 'Gate weights'),
+  ]), error => {
+    assert.equal(error.code, 'QUOTE_NOT_FOUND');
+    assert.deepEqual(error.details.matchedSelectionIndexes, [0]);
+    assert.deepEqual(error.details.failedSelections.map(f => f.selectionIndex), [1, 2, 3, 4]);
+    assert.equal(error.details.failedSelections[0].reason, 'quote_text_not_found');
+    assert.equal(error.details.failedSelections[1].reason, 'context_mismatch');
+    assert.equal(error.details.failedSelections[2].code, 'AMBIGUOUS_QUOTE');
+    assert.equal(error.details.failedSelections[2].candidates.length, 2);
+    assert.equal(error.details.failedSelections[3].code, 'UNKNOWN_EVIDENCE');
+    return true;
+  });
+  assert.equal(store.evidence.length, count);
+  const fixed = resolveCitationSelections(store, [select(id, 'Gate weights'), select(id, 'Repeat this sentence.', { contextBefore: 'Second context.' })]);
+  assert.equal(fixed.citations.length, 2);
 });
 
 test('memoization preserves source IDs and still rechecks permission/version', async () => {

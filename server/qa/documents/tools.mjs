@@ -12,7 +12,9 @@ const cursor = string(100);
 const stableJson = (value) => JSON.stringify(value, (_, item) => item && typeof item === 'object' && !Array.isArray(item)
   ? Object.fromEntries(Object.keys(item).sort().map((key) => [key, item[key]])) : item);
 const selection = { oneOf: [object({ kind: { const: 'quote', type: 'string' }, sourceEvidenceIds: sourceIds,
-  quote: string(2000), contextBefore: string(500), contextAfter: string(500) }, ['kind', 'sourceEvidenceIds', 'quote']),
+  quote: { ...string(2000), description: '复制这些来源 text 中连续的一段原文，保留大小写、标点与断词；不要复制 latexLines、翻译或拼接省略。' },
+  contextBefore: { ...string(500), description: '仅消歧时提供：quote 紧邻前方且已读的原文。' },
+  contextAfter: { ...string(500), description: '仅消歧时提供：quote 紧邻后方且已读的原文。' } }, ['kind', 'sourceEvidenceIds', 'quote']),
 object({ kind: { const: 'source', type: 'string' }, sourceEvidenceIds: sourceIds })] };
 const definitions = [
   { name: 'get_document_outline', description: '查看当前文档的软件生成目录、物理页范围和全文大小。目录不是已读正文。没有可靠标题时按页浏览。',
@@ -20,13 +22,13 @@ const definitions = [
   { name: 'search_document_text', description: '按原文字面搜索当前文档，可自行提出英文术语和同义词。没有命中不代表文中没有答案。返回的 C 编号预览可引用，句子截断需补读。',
     parameters: object({ queries: { type: 'array', minItems: 1, maxItems: 4, items: string(200) },
       matchMode: { type: 'string', enum: ['literal', 'all_terms', 'any_terms'] }, pageStart: integer(1, 10000), pageEnd: integer(1, 10000), limit: integer(1, 20), cursor }, ['queries', 'matchMode']) },
-  { name: 'read_document', description: '阅读原文，返回来源 C 编号。可选目录给出的 sectionId、页范围或全文；通过 cursor 续读时保持原参数。全文超预算时改读章节或页。',
+  { name: 'read_document', description: '阅读原文，返回来源 C 编号。可选目录 sectionId、物理页范围或全文。pages 包含起止页，每次最多四页（例如 5–8，不能 5–9）。返回 hasMore=true 时只读到部分范围，使用 cursor 并保持原参数续读。全文超预算时改读章节或页。',
     parameters: { type: 'object', oneOf: [
       object({ mode: { const: 'pages', type: 'string' }, pageStart: integer(1, 10000), pageEnd: integer(1, 10000), cursor }, ['mode', 'pageStart', 'pageEnd']),
       object({ mode: { const: 'section', type: 'string' }, sectionId: string(100), cursor }, ['mode', 'sectionId']),
       object({ mode: { const: 'full', type: 'string' } }),
     ] } },
-  { name: 'finish_reading', description: '结束查阅。只选择已读来源 C 编号和重要原文 quote（可用紧邻上下文消歧），或 source 表示整体已读资料。位置由软件映射，不填写页行坐标。工具结果会返回最终允许引用的 C 编号；本工具必须单独调用。',
+  { name: 'finish_reading', description: '结束查阅，必须单独调用。选择已读来源和重要原文 quote，或 source 表示整体已读资料；无需资料的交流用 direct 和空选择。位置由软件映射，不填写页行坐标。成功后使用返回的引用编号。失败时 matchedSelectionIndexes/failedSelections 的 selectionIndex 从 0 开始：保留已通过项，仅修正失败项后重新完整提交；没有成功前不能输出最终答案。',
     parameters: object({ mode: { type: 'string', enum: ['grounded', 'direct', 'insufficient'] },
       citationSelections: { type: 'array', maxItems: 12, items: selection }, answerOutline: { type: 'string', maxLength: 2000 } }) },
 ];
@@ -39,6 +41,11 @@ export function validateDocumentTool(name, input) {
   if (!validate) throw new DocumentToolError('UNKNOWN_TOOL', '只能使用当前注册的文档工具。');
   requireCondition(validate(input), 'INVALID_TOOL_ARGUMENTS', '工具参数不符合结构要求。', {
     details: validate.errors?.slice(0, 8).map((e) => ({ path: e.instancePath, reason: e.message })) });
+  if (name === 'read_document' && input.mode === 'pages') {
+    requireCondition(input.pageEnd >= input.pageStart && input.pageEnd - input.pageStart < 4,
+      'INVALID_PAGE_RANGE', '起止页均包含在内，一次最多请求四页，例如第 5–8 页；更大范围请分批阅读。',
+      { details: { pageStart: input.pageStart, pageEnd: input.pageEnd, maxPages: 4 } });
+  }
   if (name === 'finish_reading') {
     requireCondition(input.mode !== 'grounded' || input.citationSelections.length > 0, 'INVALID_TOOL_ARGUMENTS', '有依据回答至少选择一项来源。');
     requireCondition(input.mode !== 'direct' || input.citationSelections.length === 0, 'INVALID_TOOL_ARGUMENTS', '直接交流不选择论文证据。');
@@ -97,7 +104,6 @@ export function createDocumentTools({ source, store, maxReadChars = 16000, maxFu
       requireCondition(view.text.length <= maxFullChars && view.text.length <= maxTotalChars - totalChars, 'FULL_TEXT_TOO_LARGE', '全文超出剩余预算，请按目录章节或最多四页逐步阅读。');
       start = 0; end = view.text.length;
     } else if (args.mode === 'pages') {
-      requireCondition(args.pageEnd - args.pageStart < 4, 'INVALID_PAGE_RANGE', '一次最多请求四页。');
       [start, end] = bounds(args);
     } else {
       const section = view.sections.find((s) => s.sectionId === args.sectionId);

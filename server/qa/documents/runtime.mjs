@@ -1,5 +1,5 @@
 import { DOCUMENT_TOOLS, createDocumentTools } from './tools.mjs';
-import { createEvidenceStore } from './view.mjs';
+import { createEvidenceStore, hash } from './view.mjs';
 import { resolveCitationSelections } from './citations.mjs';
 import { DocumentToolError, requireCondition } from './errors.mjs';
 import { requireModelDefinition } from '../../../shared/modelRegistry.mjs';
@@ -30,12 +30,12 @@ export function createRuntimeMessages({ question, answerLanguage, chatContext, s
 
 export async function runDocumentPlanning({ source, adapter, model, question, answerLanguage, chatContext, signal,
   events, onModelCall, limits = {} }) {
-  const budget = { decisions: 8, tools: 12, batch: 4, repairs: 2, noProgress: 2, ...limits };
+  const budget = { decisions: 8, tools: 12, batch: 4, repairs: 4, parameterRepairs: 2, citationRepairs: 2, noProgress: 2, ...limits };
   const store = createEvidenceStore(source.view);
   const tools = createDocumentTools({ source, store, ...limits });
   const messages = createRuntimeMessages({ question, answerLanguage, chatContext, source });
   const seenCalls = new Set();
-  let calls = 0, repairs = 0, naturalCorrections = 0, noProgress = 0, stopReason = 'decision_budget';
+  let calls = 0, repairs = 0, parameterRepairs = 0, citationRepairs = 0, naturalCorrections = 0, noProgress = 0, stopReason = 'decision_budget';
   await events.step('plan', '模型将通过目录、文本查找和阅读工具查阅当前文档。', { runtime: DOCUMENT_RUNTIME_VERSION, phase: 'planning' });
   for (let turn = 0; turn < budget.decisions; turn++) {
     signal?.throwIfAborted();
@@ -55,7 +55,8 @@ export async function runDocumentPlanning({ source, adapter, model, question, an
     }
     const batchError = completion.calls.length > budget.batch || calls + completion.calls.length > budget.tools
       ? 'TOOL_BUDGET_EXHAUSTED' : completion.calls.length > 1 && completion.calls.some((c) => c.name === 'finish_reading') ? 'FINISH_MUST_BE_ALONE' : undefined;
-    let prepared, newEvidence = store.evidence.length, hadError = false, repeatedOnly = true;
+    let prepared, newEvidence = store.evidence.length, repeatedOnly = true;
+    const errorKinds = new Set();
     for (const call of completion.calls) {
       signal?.throwIfAborted();
       calls++;
@@ -73,7 +74,7 @@ export async function runDocumentPlanning({ source, adapter, model, question, an
         } else result = { callId: call.id, ok: true, data };
       } catch (failure) {
         error = failure;
-        hadError = true;
+        errorKinds.add(failure.details?.failedSelections ? 'citation' : 'parameter');
         repeatedOnly = false;
         result = { callId: call.id, ok: false, error: { code: failure.code ?? 'TOOL_FAILED', message: failure.message,
           retryable: failure instanceof DocumentToolError && failure.retryable && !signal?.aborted, details: failure.details } };
@@ -86,7 +87,14 @@ export async function runDocumentPlanning({ source, adapter, model, question, an
       if (error && !result.error.retryable) throw error;
     }
     if (prepared) return { prepared, messages, store, metrics: { ...tools.metrics, toolCalls: calls }, stopReason: 'model_finish' };
-    if (hadError && ++repairs > budget.repairs) { stopReason = 'repair_budget'; break; }
+    if (errorKinds.size) {
+      repairs++;
+      if (errorKinds.has('citation')) citationRepairs++;
+      if (errorKinds.has('parameter')) parameterRepairs++;
+      if (repairs > budget.repairs || citationRepairs > budget.citationRepairs || parameterRepairs > budget.parameterRepairs) {
+        stopReason = 'repair_budget'; break;
+      }
+    }
     noProgress = store.evidence.length === newEvidence && repeatedOnly ? noProgress + 1 : 0;
     if (noProgress >= budget.noProgress) { stopReason = 'no_progress'; break; }
     if (calls >= budget.tools || batchError === 'TOOL_BUDGET_EXHAUSTED') { stopReason = 'tool_budget'; break; }
@@ -110,7 +118,10 @@ export function assertContextBudget({ model, messages, tools }) {
 function summarizeInput(name, args) {
   if (!args || typeof args !== 'object') return { validJson: false };
   if (name === 'finish_reading') return { mode: args.mode, selections: Array.isArray(args.citationSelections)
-    ? args.citationSelections.slice(0, 12).map((s) => ({ kind: s?.kind, sourceEvidenceIds: s?.sourceEvidenceIds, quoteChars: typeof s?.quote === 'string' ? s.quote.length : 0 })) : [] };
+    ? args.citationSelections.slice(0, 12).map((s, selectionIndex) => ({ selectionIndex, kind: s?.kind, sourceEvidenceIds: s?.sourceEvidenceIds,
+      quoteChars: typeof s?.quote === 'string' ? s.quote.length : 0, quoteHash: typeof s?.quote === 'string' ? hash(s.quote) : undefined,
+      contextBeforeChars: typeof s?.contextBefore === 'string' ? s.contextBefore.length : 0,
+      contextAfterChars: typeof s?.contextAfter === 'string' ? s.contextAfter.length : 0 })) : [] };
   const allowed = ['mode', 'pageStart', 'pageEnd', 'sectionId', 'cursor', 'queries', 'matchMode', 'limit'];
   return Object.fromEntries(allowed.filter((key) => Object.hasOwn(args, key)).map((key) => [key, args[key]]));
 }

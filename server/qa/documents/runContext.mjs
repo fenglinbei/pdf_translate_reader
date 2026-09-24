@@ -24,8 +24,12 @@ export function createDocumentRunContext({ userId, userDocumentId, messageId, th
       const known = ['get_document_outline', 'search_document_text', 'read_document', 'finish_reading'].includes(call.name);
       const toolName = known ? call.name : 'unknown_tool';
       const summary = result.ok ? `${call.name} 完成${evidenceIds.length ? `，返回 ${evidenceIds.length} 项来源` : ''}。` : `工具未执行成功：${result.error.code}`;
+      // Persist actionable diagnostics, not the failed quotes or private reasoning.
+      const citationDiagnostics = result.error?.details?.failedSelections?.map(({ selectionIndex, sourceEvidenceIds, code, reason, textMatches }) =>
+        ({ selectionIndex, sourceEvidenceIds, code, reason, textMatches }));
       const row = await step('tool_call', summary, { callId: call.id, requestedTool: call.name.slice(0, 100),
-        cacheHit: Boolean(result.data?.cacheHit), errorCode: result.error?.code }, toolName, evidenceIds, error ? 'error' : 'success');
+        cacheHit: Boolean(result.data?.cacheHit), errorCode: result.error?.code,
+        ...(citationDiagnostics ? { citationDiagnostics, matchedSelectionIndexes: result.error.details.matchedSelectionIndexes } : {}) }, toolName, evidenceIds, error ? 'error' : 'success');
       const toolCall = await persistTool({ userId, stepId: row.id, toolName, input, outputSummary: summary,
         resultEvidenceIds: evidenceIds, startedAt: toolStarted, finishedAt: Date.now(), status: error ? 'error' : 'success',
         errorMessage: error ? result.error.message : undefined });
