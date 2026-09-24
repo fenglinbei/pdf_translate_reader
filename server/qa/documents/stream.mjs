@@ -3,7 +3,8 @@ import { writeJson } from '../../http/json.mjs';
 import { loadDocumentSource } from './source.mjs';
 import { createQaToolAdapter, assertDocumentToolModel } from '../../chatModels/qaToolAdapter.mjs';
 import { createDocumentRunContext } from './runContext.mjs';
-import { runDocumentPlanning, DOCUMENT_PROMPT_VERSION, DOCUMENT_RUNTIME_VERSION, assertContextBudget } from './runtime.mjs';
+import { runDocumentPlanning, DOCUMENT_PROMPT_VERSION, DOCUMENT_RUNTIME_VERSION } from './runtime.mjs';
+import { generateDocumentAnswer } from './answer.mjs';
 import { DOCUMENT_TOOLS } from './tools.mjs';
 import { verifyDocumentAnswer } from './citations.mjs';
 import { requireCondition } from './errors.mjs';
@@ -57,11 +58,12 @@ export async function handleDocumentStream(request, response, user, body, depend
       { phase: 'answer_generate', mode: prepared.mode, stopReason: result.stopReason }, undefined, prepared.allowedCitationIds);
     messages.push({ role: 'user', content: JSON.stringify({ instruction: '查阅结束。现在生成最终回答，不再调用工具。只使用以下通过 harness 映射的引用编号，关键论文论断分别附引用。证据不足须说明，不补写论文事实。',
       answerLanguage: body.answerLanguage ?? 'follow_user', mode: prepared.mode, allowedCitationIds: prepared.allowedCitationIds, answerOutline: prepared.answerOutline }) });
-    await source.assertCurrent();
-    assertContextBudget({ model: body.model, messages, tools: DOCUMENT_TOOLS });
-    await context.modelCall('answer_generate', () => adapter.stream({ messages, tools: DOCUMENT_TOOLS, signal,
+    const generated = await generateDocumentAnswer({ adapter, messages, tools: DOCUMENT_TOOLS, model: body.model, source, signal, context,
       onDelta: (text) => { answer += text; emit('delta', { text }); },
-      onUsage: (next) => { usage = next; context.events.modelUsage(next); emit('usage', next); } }));
+      onReset: () => { answer = ''; emit('answer_reset', {}); },
+      onUsage: (next) => { usage = next; context.events.modelUsage(next); emit('usage', next); } });
+    result.metrics.answerToolRejections = generated.rejectedTools;
+    snapshot.diagnostics.answerToolRejections = generated.rejectedTools;
     emit('finish', { finishReason: 'stop' });
     context.setPhase('persist_answer');
     await source.assertCurrent();

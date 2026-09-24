@@ -7,6 +7,7 @@ import { runDocumentPlanning } from '../../server/qa/documents/runtime.mjs';
 import { createDocumentRunContext } from '../../server/qa/documents/runContext.mjs';
 import { handleDocumentStream } from '../../server/qa/documents/stream.mjs';
 import { loadDocumentSource } from '../../server/qa/documents/source.mjs';
+import { generateDocumentAnswer } from '../../server/qa/documents/answer.mjs';
 
 const model = 'deepseek-flash';
 const env = { DEEPSEEK_API_KEY: 'synthetic-key' };
@@ -22,6 +23,11 @@ function fakeAdapter(turns) {
     assert(turns.length, 'unexpected model call');
     const next = turns.shift();
     if (next instanceof Error) throw next;
+    if (inputs.at(-1).stream) {
+      const choice = next.choices?.[0], message = choice?.message;
+      return new Response(`data: ${JSON.stringify({ choices: [{ delta: { ...message,
+        tool_calls: message?.tool_calls?.map((call, index) => ({ ...call, index })) }, finish_reason: choice?.finish_reason }], usage: next.usage })}\n\n`);
+    }
     return Response.json(next);
   } });
   return { adapter, inputs };
@@ -154,15 +160,82 @@ test('answer stream rejects early EOF and new tool calls, preserves received tex
   }
 });
 
-test('final stream disables new tools and reads provider cache usage without publishing private reasoning', async () => {
+test('final stream retains auto tool prefix and reads cache usage without publishing private reasoning', async () => {
   let body, text = '', usage;
   const adapter = createQaToolAdapter({ model, reasoningEffort: 'standard', env, fetchImpl: async (_url, init) => {
     body = JSON.parse(init.body);
     return new Response('data: {"choices":[{"delta":{"reasoning_content":"private","content":"Answer"},"finish_reason":"stop"}]}\n\ndata: {"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":10,"prompt_cache_hit_tokens":64}}\n\ndata: [DONE]\n\n');
   } });
   await adapter.stream({ messages: [], tools: [], onDelta: value => { text += value; }, onUsage: value => { usage = value; } });
-  assert.equal(body.tool_choice, 'none'); assert.equal(body.thinking.type, 'enabled');
+  assert.equal(body.tool_choice, 'auto'); assert.equal(body.thinking.type, 'enabled');
   assert.equal(text, 'Answer'); assert.equal(usage.promptCacheHitTokens, 64);
+});
+
+test('streamed planning assembles fragmented tool arguments before execution and persists ordinary commentary', async () => {
+  const run = context();
+  const encoder = new TextEncoder();
+  let responseCount = 0, streamedBeforeTool = false;
+  const adapter = createQaToolAdapter({ model, env, fetchImpl: async () => {
+    if (responseCount++) {
+      return new Response(`data: ${JSON.stringify({ choices: [{ delta: { role: 'assistant', tool_calls: [{ ...call('b', 'finish_reading', finish()), index: 0 }] }, finish_reason: 'tool_calls' }] })}\n\n`);
+    }
+    const frame = delta => encoder.encode(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`);
+    return new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(frame({ content: '我先阅读方法部分。', reasoning_content: 'private stream reasoning',
+          tool_calls: [{ index: 0, id: 'a', type: 'function', function: { name: 'read_document', arguments: '{"mode":' } }] }));
+        setTimeout(() => {
+          streamedBeforeTool = run.emitted.some(([event]) => event === 'commentary') && run.tools.length === 0;
+          controller.enqueue(frame({ tool_calls: [{ index: 0, function: { arguments: '"full"}' } }] }));
+          controller.enqueue(encoder.encode('data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n'));
+          controller.close();
+        }, 5);
+      },
+    }));
+  } });
+  const result = await plan(adapter, run);
+  assert.equal(result.stopReason, 'model_finish');
+  assert.equal(streamedBeforeTool, true);
+  assert.equal(run.steps[1].kind, 'commentary');
+  assert.equal(run.steps[1].summary, '我先阅读方法部分。');
+  assert(run.emitted.findIndex(([event]) => event === 'tool_start') < run.emitted.findIndex(([event]) => event === 'tool_call'));
+  assert.equal(JSON.stringify([...run.steps, ...run.tools, ...run.logs, ...run.emitted]).includes('private stream reasoning'), false);
+  assert.deepEqual(run.steps.map(s => s.stepIndex), run.steps.map((_, i) => i));
+});
+
+test('failed planning preserves bounded public commentary without exposing private reasoning', async () => {
+  const run = context();
+  const adapter = createQaToolAdapter({ model, env, fetchImpl: async () => new Response(`data: ${JSON.stringify({ choices: [{ delta: {
+    content: 'x'.repeat(1300), reasoning_content: 'never publish this' } }] })}\n\n`) });
+  await assert.rejects(plan(adapter, run), { code: 'MODEL_INCOMPLETE' });
+  const saved = run.steps.find(s => s.kind === 'commentary');
+  assert.equal(saved.summary.length, 1200);
+  assert.equal(saved.payload.truncated, true);
+  assert.equal(saved.status, 'error');
+  assert.equal(JSON.stringify(run.steps).includes('never publish'), false);
+});
+
+for (const repeat of [false, true]) test(`final harness never executes late tools and bounds correction: repeat=${repeat}`, async () => {
+  const run = context(), messages = [{ role: 'user', content: 'Answer now.' }];
+  let requests = 0, resets = 0, answer = '';
+  const adapter = { stream: async ({ onDelta }) => {
+    requests++;
+    if (requests === 1 || repeat) {
+      onDelta('我再试着读取。');
+      const tool = call(`late-${requests}`, 'read_document', { mode: 'full' });
+      return { calls: [{ id: tool.id, name: tool.function.name, arguments: tool.function.arguments }],
+        message: { role: 'assistant', content: '我再试着读取。', reasoning_content: 'private final reasoning', tool_calls: [tool] }, finishReason: 'tool_calls' };
+    }
+    onDelta('Final answer'); return { calls: [], finishReason: 'stop' };
+  } };
+  const operation = generateDocumentAnswer({ adapter, model, messages, tools: [], source: source(), context: run.value,
+    onDelta: text => { answer += text; }, onReset: () => { answer = ''; resets++; } });
+  if (repeat) await assert.rejects(operation, { code: 'MODEL_PROTOCOL_ERROR' });
+  else { assert.equal((await operation).rejectedTools, 1); assert.equal(answer, 'Final answer'); }
+  assert.equal(requests, 2); assert.equal(resets, repeat ? 2 : 1);
+  assert(run.tools.every(t => t.input.executionClosed && t.status === 'error' && !t.resultEvidenceIds.length));
+  assert(messages.filter(m => m.role === 'tool').every(m => JSON.parse(m.content).error.code === 'TOOLS_CLOSED'));
+  assert.equal(JSON.stringify([...run.steps, ...run.logs, ...run.tools]).includes('private final reasoning'), false);
 });
 
 class ResponseStub extends EventEmitter {

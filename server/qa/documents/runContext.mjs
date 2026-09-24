@@ -5,31 +5,60 @@ export function createDocumentRunContext({ userId, userDocumentId, messageId, th
   persistStep = insertQaAgentStep, persistTool = insertQaToolCall, persistLog = insertQaApiLog,
   runtimeVersion = DOCUMENT_RUNTIME_VERSION, promptVersion = DOCUMENT_PROMPT_VERSION, terminalLog = true }) {
   const startedAt = Date.now(), steps = [], modelCalls = [];
-  let nextIndex = 0, phase = 'document_load', activeUsage, terminalWritten = false;
+  let nextIndex = 0, phase = 'document_load', activeUsage, terminalWritten = false, commentary;
+  const pendingTools = new Map();
   const logScope = { userId, userDocumentId, messageId, threadId, model, promptVersion, retrieverVersion: runtimeVersion };
   async function insertStep(input) {
-    const row = await persistStep({ ...input, stepIndex: nextIndex++ });
+    const row = await persistStep({ ...input, stepIndex: input.stepIndex ?? nextIndex++ });
     steps.push(row); return row;
   }
-  async function step(kind, summary, payload = {}, toolName, evidenceIds = [], status = 'success') {
+  async function step(kind, summary, payload = {}, toolName, evidenceIds = [], status = 'success', stepIndex) {
     phase = payload.phase ?? phase;
-    const row = await insertStep({ userId, messageId, kind, summary, toolName, evidenceIds, payload: { phase, ...payload }, status });
+    const row = await insertStep({ userId, messageId, kind, summary, toolName, evidenceIds, payload: { phase, ...payload }, status, stepIndex });
     emit('agent_step', { step: row }); return row;
   }
   const events = {
     step,
     modelUsage: (usage) => { activeUsage = usage; },
+    commentaryDelta(text) {
+      if (!text) return;
+      if (!commentary) {
+        const stepIndex = nextIndex++;
+        commentary = { id: `pending-${messageId}-${stepIndex}`, userId, messageId, stepIndex, kind: 'commentary', summary: '',
+          evidenceIds: [], status: 'running', createdAt: Date.now(), payload: { phase, truncated: false } };
+      }
+      const remaining = 1200 - commentary.summary.length;
+      commentary.payload.truncated ||= text.length > remaining;
+      if (remaining <= 0) return;
+      commentary.summary += text.slice(0, remaining);
+      emit('commentary', { step: { ...commentary } });
+    },
+    async flushCommentary(status = 'success') {
+      if (!commentary) return;
+      const draft = commentary; commentary = undefined;
+      const row = await insertStep({ ...draft, status });
+      emit('commentary', { step: row });
+    },
+    toolStart({ call, input }) {
+      const stepIndex = nextIndex++;
+      const toolName = knownToolName(call.name);
+      const row = { id: `pending-${messageId}-${stepIndex}`, userId, messageId, stepIndex, kind: 'tool_call',
+        summary: `正在${toolDescription(call.name, input)}…`, toolName, evidenceIds: [], status: 'running', createdAt: Date.now(),
+        payload: { phase: 'tool_execution', callId: call.id, requestedTool: call.name.slice(0, 100) } };
+      pendingTools.set(call.id, row);
+      emit('tool_start', { step: row });
+    },
     async tool({ call, input, result, startedAt: toolStarted, evidenceIds, error }) {
       phase = 'tool_execution';
-      const known = ['get_document_outline', 'search_document_text', 'read_document', 'finish_reading'].includes(call.name);
-      const toolName = known ? call.name : 'unknown_tool';
-      const summary = result.ok ? `${call.name} 完成${evidenceIds.length ? `，返回 ${evidenceIds.length} 项来源` : ''}。` : `工具未执行成功：${result.error.code}`;
+      const toolName = knownToolName(call.name);
+      const summary = result.ok ? `${toolDescription(call.name, input)}完成${evidenceIds.length ? `，获得 ${evidenceIds.length} 项来源` : ''}${result.data?.hasMore ? '，仍有后续内容' : ''}。` : `工具未执行成功：${result.error.code}`;
       // Persist actionable diagnostics, not the failed quotes or private reasoning.
       const citationDiagnostics = result.error?.details?.failedSelections?.map(({ selectionIndex, sourceEvidenceIds, code, reason, textMatches }) =>
         ({ selectionIndex, sourceEvidenceIds, code, reason, textMatches }));
       const row = await step('tool_call', summary, { callId: call.id, requestedTool: call.name.slice(0, 100),
         cacheHit: Boolean(result.data?.cacheHit), errorCode: result.error?.code,
-        ...(citationDiagnostics ? { citationDiagnostics, matchedSelectionIndexes: result.error.details.matchedSelectionIndexes } : {}) }, toolName, evidenceIds, error ? 'error' : 'success');
+        ...(citationDiagnostics ? { citationDiagnostics, matchedSelectionIndexes: result.error.details.matchedSelectionIndexes } : {}) }, toolName, evidenceIds, error ? 'error' : 'success', pendingTools.get(call.id)?.stepIndex);
+      pendingTools.delete(call.id);
       const toolCall = await persistTool({ userId, stepId: row.id, toolName, input, outputSummary: summary,
         resultEvidenceIds: evidenceIds, startedAt: toolStarted, finishedAt: Date.now(), status: error ? 'error' : 'success',
         errorMessage: error ? result.error.message : undefined });
@@ -78,4 +107,15 @@ export function createDocumentRunContext({ userId, userDocumentId, messageId, th
         status, usage, errorMessage: error?.message, payload: { ...payload, ...this.summary(), usageAccounting: 'per-model-call', stopReason, failedPhase: error ? failedPhase : undefined } });
     },
   };
+}
+
+function knownToolName(name) {
+  return ['get_document_outline', 'search_document_text', 'read_document', 'finish_reading'].includes(name) ? name : 'unknown_tool';
+}
+function toolDescription(name, input) {
+  if (name === 'get_document_outline') return '查看文档目录';
+  if (name === 'search_document_text') return '查找原文';
+  if (name === 'read_document') return input?.mode === 'pages' ? `阅读第 ${input.pageStart}–${input.pageEnd} 页${input.cursor ? '的后续内容' : ''}` : '阅读原文';
+  if (name === 'finish_reading') return input?.mode === 'direct' ? '准备直接回答' : '核对引用原文';
+  return '检查工具调用';
 }

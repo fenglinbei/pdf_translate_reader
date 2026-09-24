@@ -1286,6 +1286,30 @@ button {
   color: var(--text-muted);
 }
 
+.ask-agent-activity {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 16px;
+}
+
+.ask-agent-commentary {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.65;
+}
+
+.ask-agent-tool {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.ask-agent-tool svg { flex-shrink: 0; }
+.ask-agent-tool--error { color: #b45309; }
+.ask-agent-tool--running svg { animation: mathpix-process-spin 1s linear infinite; }
+
 .ask-thinking-panel {
   display: grid;
   gap: 5px;

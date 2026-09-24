@@ -501,6 +501,7 @@ export type QaMessageStatus = "streaming" | "success" | "error" | "aborted";
 export type QaMessageRole = "user" | "assistant";
 export type QaAgentStepKind =
   | "plan"
+  | "commentary"
   | "tool_call"
   | "observation"
   | "gap_check"
@@ -516,7 +517,7 @@ export type QaAgentToolName =
   | "open_chunk"
   | "verify_citation"
   | "compose_answer";
-export type QaAgentStatus = "success" | "error" | "skipped";
+export type QaAgentStatus = "success" | "error" | "skipped" | "running";
 
 export type QaChunk = {
   id: string;

@@ -2331,7 +2331,7 @@ create table if not exists public.user_qa_agent_steps (
   user_id uuid not null references auth.users(id) on delete cascade,
   message_id uuid not null references public.user_qa_messages(id) on delete cascade,
   step_index integer not null check (step_index >= 0),
-  kind text not null check (kind in ('plan', 'tool_call', 'observation', 'gap_check', 'answer_outline', 'fallback')),
+  kind text not null check (kind in ('plan', 'commentary', 'tool_call', 'observation', 'gap_check', 'answer_outline', 'fallback')),
   summary text not null,
   tool_name text check (
     tool_name is null

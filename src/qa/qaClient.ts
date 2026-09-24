@@ -58,6 +58,7 @@ type QaThreadMessagesResponse = {
 
 export type QaStreamHandlers = {
   onAgentStep?: (step: QaAgentStep) => void;
+  onAnswerReset?: () => void;
   onCitation?: (citations: QaCitation[]) => void;
   onDelta: (text: string) => void;
   onDone?: (payload: QaDonePayload) => void;
@@ -335,9 +336,11 @@ async function readQaEventStream(
 
     if (eventName === "delta" && typeof payload.text === "string") {
       handlers.onDelta(payload.text);
+    } else if (eventName === "answer_reset") {
+      handlers.onAnswerReset?.();
     } else if (eventName === "meta") {
       handlers.onMeta?.(payload);
-    } else if (eventName === "agent_step") {
+    } else if (eventName === "agent_step" || eventName === "commentary" || eventName === "tool_start") {
       const step = normalizeQaAgentStepPayload(payload);
 
       if (step) {

@@ -515,6 +515,9 @@ export function PaperQaPanel({
               content: `${current.content}${text}`,
             }));
           },
+          onAnswerReset: () => {
+            updateAssistantMessage(message.id, (current) => ({ ...current, content: "" }));
+          },
           onDone: (payload) => {
             const assistantMessage = payload.assistantMessage;
 
@@ -590,6 +593,7 @@ export function PaperQaPanel({
     } catch (error) {
       updateAssistantMessage(message.id, (current) => ({
         ...current,
+        agentSteps: (current.agentSteps ?? []).map(step => step.status === "running" ? { ...step, status: "error" } : step),
         errorMessage: abortController.signal.aborted
           ? t("ask.stopped")
           : error instanceof Error
@@ -747,6 +751,9 @@ export function PaperQaPanel({
               content: `${message.content}${text}`,
             }));
           },
+          onAnswerReset: () => {
+            updateAssistantMessage(localAssistantMessageId, (message) => ({ ...message, content: "" }));
+          },
           onDone: (payload) => {
             setThreadId(payload.threadId);
             const assistantMessage = payload.assistantMessage;
@@ -829,6 +836,7 @@ export function PaperQaPanel({
     } catch (error) {
       updateAssistantMessage(localAssistantMessageId, (message) => ({
         ...message,
+        agentSteps: (message.agentSteps ?? []).map(step => step.status === "running" ? { ...step, status: "error" } : step),
         errorMessage: abortController.signal.aborted
           ? t("ask.stopped")
           : error instanceof Error
@@ -1127,6 +1135,7 @@ function QaMessageBubble({
         <div className="ask-message-role">
           {isAssistant ? t("ask.assistant") : t("ask.you")}
         </div>
+        {isAssistant && message.agentSteps?.length ? <AgentActivity steps={message.agentSteps} /> : null}
         <div className="ask-message-content">
           {isAssistant && message.reasoningText ? (
             <ReasoningPanel
@@ -1325,6 +1334,26 @@ function ReasoningPanel({ text, isStreaming }: { text: string; isStreaming: bool
       {expanded ? (
         <div className="ask-reasoning-text">{text}</div>
       ) : null}
+    </div>
+  );
+}
+
+function AgentActivity({ steps }: { steps: QaAgentStep[] }) {
+  const { t } = useI18n();
+  const visible = [...steps].sort((a, b) => a.stepIndex - b.stepIndex).filter(step => step.kind === "commentary"
+    || step.kind === "tool_call" && ["get_document_outline", "search_document_text", "read_document", "finish_reading", "unknown_tool"].includes(step.toolName ?? ""));
+  if (!visible.length) return null;
+  return (
+    <div className="ask-agent-activity" aria-label={t("ask.activity")}>
+      {visible.map(step => step.kind === "commentary" ? (
+        <p className="ask-agent-commentary" key={step.stepIndex}>{step.summary}</p>
+      ) : (
+        <div className={`ask-agent-tool ask-agent-tool--${step.status}`} key={step.stepIndex}>
+          {step.status === "running" ? <LoaderCircle className="spin" size={13} aria-hidden="true" />
+            : step.status === "error" ? <AlertTriangle size={13} aria-hidden="true" /> : <Check size={13} aria-hidden="true" />}
+          <span>{step.summary}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1671,6 +1700,7 @@ function mergeAgentStep(currentSteps: QaAgentStep[], nextStep: QaAgentStep) {
 }
 
 function getAgentStepLabelKey(kind: QaAgentStep["kind"]): MessageKey {
+  if (kind === "commentary") return "ask.agentStep.commentary";
   if (kind === "plan") {
     return "ask.agentStep.plan";
   }
@@ -1695,6 +1725,7 @@ function getAgentStepLabelKey(kind: QaAgentStep["kind"]): MessageKey {
 }
 
 function getAgentStatusLabelKey(status: QaAgentStep["status"]): MessageKey {
+  if (status === "running") return "ask.agentStatus.running";
   if (status === "error") {
     return "ask.agentStatus.error";
   }

@@ -5,7 +5,8 @@ import { dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { createQaToolAdapter } from '../server/chatModels/qaToolAdapter.mjs';
 import { createDocumentView } from '../server/qa/documents/view.mjs';
-import { runDocumentPlanning, assertContextBudget } from '../server/qa/documents/runtime.mjs';
+import { runDocumentPlanning } from '../server/qa/documents/runtime.mjs';
+import { generateDocumentAnswer } from '../server/qa/documents/answer.mjs';
 import { DOCUMENT_TOOLS } from '../server/qa/documents/tools.mjs';
 import { verifyDocumentAnswer } from '../server/qa/documents/citations.mjs';
 import { documentAgentCases } from '../tests/fixtures/documentAgentCases.mjs';
@@ -19,10 +20,13 @@ const report = () => ({ generatedAt: new Date().toISOString(), scope: 'synthetic
   model: values.model, reasoningEffort: values.effort, requested: selected.length, results });
 async function save() { const target = resolve(values.output); await mkdir(dirname(target), { recursive: true }); await writeFile(target, JSON.stringify(report(), null, 2) + '\n', { mode: 0o600 }); }
 for (const fixture of selected) {
-  const started = Date.now(), calls = [], events = []; let activeUsage, answer = '', firstAnswerMs;
+  const started = Date.now(), calls = [], events = [], commentaries = []; let activeUsage, answer = '', firstAnswerMs, commentary = '';
   const adapter = createQaToolAdapter({ model: values.model, reasoningEffort: values.effort });
   const source = { view: createDocumentView({ pages: fixture.pages, title: fixture.title, documentId: fixture.id.split('-')[0], documentVersion: 'synthetic-v1', sourceRecordId: 'synthetic' }), assertCurrent: async () => {} };
-  const hooks = { modelUsage: value => { activeUsage = value; }, step: async () => {}, tool: async value => events.push({ name: value.call.name, ok: value.result.ok, errorCode: value.result.error?.code, cacheHit: value.result.data?.cacheHit }) };
+  const hooks = { modelUsage: value => { activeUsage = value; }, step: async () => {},
+    commentaryDelta: value => { commentary = (commentary + value).slice(0, 1200); },
+    flushCommentary: async () => { if (commentary) commentaries.push(commentary); commentary = ''; },
+    tool: async value => events.push({ name: value.call.name, ok: value.result.ok, errorCode: value.result.error?.code, cacheHit: value.result.data?.cacheHit }) };
   async function onModelCall(phase, operation) {
     activeUsage = undefined; const start = Date.now(); let error;
     try { return await operation(); } catch (failure) { error = failure; throw failure; }
@@ -33,11 +37,11 @@ for (const fixture of selected) {
     const result = await runDocumentPlanning({ source, adapter, model: values.model, question: fixture.question, signal, events: hooks, onModelCall });
     result.messages.push({ role: 'user', content: JSON.stringify({ instruction: 'Answer the question now. Cite only allowed IDs. State limits when evidence is insufficient.',
       mode: result.prepared.mode, allowedCitationIds: result.prepared.allowedCitationIds, answerOutline: result.prepared.answerOutline }) });
-    assertContextBudget({ model: values.model, messages: result.messages, tools: DOCUMENT_TOOLS });
-    await onModelCall('answer_generate', () => adapter.stream({ messages: result.messages, tools: DOCUMENT_TOOLS, signal,
-      onDelta: text => { firstAnswerMs ??= Date.now() - started; answer += text; }, onUsage: hooks.modelUsage }));
+    await generateDocumentAnswer({ adapter, messages: result.messages, tools: DOCUMENT_TOOLS, signal, model: values.model, source,
+      context: { modelCall: onModelCall, events: hooks }, onReset: () => { answer = ''; firstAnswerMs = undefined; },
+      onDelta: text => { firstAnswerMs ??= Date.now() - started; answer += text; }, onUsage: hooks.modelUsage });
     const verification = verifyDocumentAnswer(answer, result.prepared);
-    results.push({ id: fixture.id, question: fixture.question, answer, elapsedMs: Date.now() - started, firstAnswerMs,
+    results.push({ id: fixture.id, question: fixture.question, answer, commentaries, elapsedMs: Date.now() - started, firstAnswerMs,
       citationProtocolPass: verification.valid, expectedKeywordPresent: fixture.expected ? answer.toLowerCase().includes(fixture.expected.toLowerCase()) : null,
       stopReason: result.stopReason, calls, tools: events, citations: verification.citations.map(c => ({ id: c.evidenceId, quote: c.quotedText, pageStart: c.pageStart, pageEnd: c.pageEnd, sectionPath: c.sectionPath, locationPrecision: c.locationPrecision })),
       metrics: result.metrics, warnings: verification.warnings });

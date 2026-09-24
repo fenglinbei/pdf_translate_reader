@@ -9,6 +9,7 @@ const content=`sha256-${'a'.repeat(64)}`, revision='2026-09-24T00:00:00.000Z';
 let db;
 const schema=await readFile(new URL('../../supabase/schema.sql',import.meta.url),'utf8');
 const migration=await readFile(new URL('../../supabase/migrations/20260924_qa_document_tools.sql',import.meta.url),'utf8');
+const conversationMigration=await readFile(new URL('../../supabase/migrations/20260924_qa_conversation.sql',import.meta.url),'utf8');
 function table(name) {
  const start=schema.indexOf(`create table if not exists public.${name} (`);
  assert(start>=0); return schema.slice(start,schema.indexOf('\n);',start)+3);
@@ -45,12 +46,20 @@ before(async()=>{
  alter table user_qa_citations enable row level security;
  grant select,insert,update,delete on all tables in schema public to authenticated,service_role;`);
  await db.exec(migration); await db.exec(migration);
+ await db.exec(conversationMigration); await db.exec(conversationMigration);
 });
 after(async()=>{await db?.close();});
 
 test('migration is repeatable and preserves indexed chunk citations',async()=>{
  const rows=await db.query("select chunk_id,source_kind from user_qa_citations where document_title='old citation'");
  assert.deepEqual(rows.rows,[{chunk_id:C,source_kind:'indexed_chunk'}]);
+});
+test('ordinary commentary is stored separately from the final answer', async()=>{
+ const result=await db.query(`insert into user_qa_agent_steps(user_id,message_id,step_index,kind,summary)
+ values ($1,$2,99,'commentary','Reading the method section.') returning kind,summary`,[A,M]);
+ assert.equal(result.rows[0].kind,'commentary');
+ const answer=await db.query('select content from user_qa_messages where id=$1',[M]);
+ assert.equal(answer.rows[0].content,'Synthetic answer');
 });
 test('authorized native citation can be stored without a fabricated chunk',async()=>{
  const result=await asUser(A,tx=>insert(tx)); assert.equal(result.rows[0].chunk_id,null); assert.equal(result.rows[0].source_kind,'document_text');
