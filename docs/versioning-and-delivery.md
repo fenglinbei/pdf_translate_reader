@@ -2,7 +2,7 @@
 
 状态：仓库实现；生产切流与部署另行验收。本文是后续开发与发布的约束。
 
-2026-09-24：[P1 已收尾](qa-agent-stage-1-closeout.md)，[P2 已实现并完成本地部署](qa-agent-stage-2-implementation.md)。本轮 [会话升级](qa-conversation-upgrade-2026-09-24.md) 将 QA 版本升为 `0.3.0-alpha.2`，默认使用 DeepSeek V4.1 Flash；部署与验收身份在升级记录中单独核对。
+2026-09-24：[P1 已收尾](qa-agent-stage-1-closeout.md)，[P2 已实现并完成本地部署](qa-agent-stage-2-implementation.md)。本轮 [会话升级](qa-conversation-upgrade-2026-09-24.md) 已将 QA 版本升为 `0.3.0-alpha.2` 并完成本地部署，默认使用 DeepSeek V4.1 Flash；本轮人工验收待进行。
 部署顺序为：独立测试库兼容迁移 → 兼容前端 → QA 制品 → 显式开启 `document-tools-v1`；生产继续保持既有发布。
 
 ## 版本规则
