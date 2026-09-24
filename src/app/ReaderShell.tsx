@@ -2669,7 +2669,7 @@ export function ReaderShell() {
               type="button"
             >
               <span className="ask-status-summary-label">
-                {nativeRuntime ? t(qaReadiness?.state === "readable" ? "ask.statusReadySummary" : "ask.waitingForParsing") : qaIndexJob?.status === "ready"
+                {nativeRuntime ? t(qaReadiness?.state === "readable" ? "ask.documentReadySummary" : "ask.waitingForParsing") : qaIndexJob?.status === "ready"
                   ? t("ask.statusReadySummary")
                   : qaIndexJob?.status === "error"
                     ? t("ask.indexStatus.error")
