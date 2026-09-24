@@ -2,7 +2,7 @@
 
 P2 使用 `QA_AGENT_RUNTIME=document-tools-v1`：MathPix 原文可读即可问答，无需建立 QA 索引或配置 Voyage。首次启动前必须给**独立测试库**应用 [兼容迁移](../supabase/migrations/20260924_qa_document_tools.sql)，再用 `node --env-file=.env.qa.local scripts/check-qa-document-schema.mjs` 检查。部署和人工验收步骤见 [P2 实施记录](qa-agent-stage-2-implementation.md)。下文涉及 QA 索引/Voyage 的步骤只用于显式旧路径。
 
-状态（2026-09-24 更新）：P2 已完成测试库迁移、本地部署和合成资料的真实问答/落库/浏览器定位验证，QA 版本 `0.2.0-alpha.3`，默认 DeepSeek V4.1 Flash；真实论文人工验收待进行。详见 [本地部署记录](qa-agent-stage-2-local-deployment.md)。
+状态（2026-09-24 更新）：P2 已完成测试库迁移、本地部署和合成资料的真实问答/落库/浏览器定位验证，QA 版本 `0.2.0-alpha.4`，默认 DeepSeek V4.1 Flash；用户已确认 P2 总体验收通过，公式/引用等待修复的人工复验待进行。详见 [本地部署记录](qa-agent-stage-2-local-deployment.md)。
 P1 全文修复的历史人工验收见 [两轮真实运行核验](qa-local-runs-2026-09-23.md)，当时验收源码为 `1cc80bdd4cc71871b55d83175dee4ea9eca23804`。
 当前验收 QA 从独立发布目录运行，进程和日志位置见本地 `output/qa-local-server/deployment.json`；修改工作区不会自动更新这个进程。恢复源码调试时先停止验收 QA，再按下面命令启动，避免重复占用 8789。
 规范约束见 [版本、CI/CD 与 QA 隔离规范](versioning-and-delivery.md)，本文只是操作步骤。
@@ -338,4 +338,7 @@ psql -p 5432 -d postgres -v msg_id=<uuid> -f scripts/qa-trace.sql
 - [x] P2 工程检查：逐调用轨迹、终止规则、稳定来源引用及故障回归
 - [x] P2 本地部署：兼容迁移、真实合成问答、引用保存/恢复/定位、RLS 与临时数据清理
 - [x] 用户确认 DeepSeek V4.1 Flash 为默认模型，界面及服务端默认请求已验证
-- [ ] P2 真实论文人工验收及相对旧路径的质量、费用和耗时对照
+- [x] 用户确认 P2 总体验收通过，并反馈公式格式与引用点击等待问题
+- [x] 公式/引用点击修复已实现、本地部署并完成工程复验
+- [ ] 公式/引用点击修复的人工复验
+- [ ] 相对旧路径的质量、费用和耗时对照

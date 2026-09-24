@@ -2,7 +2,7 @@
 
 状态：仓库实现；生产切流与部署另行验收。本文是后续开发与发布的约束。
 
-2026-09-24：[P1 已收尾](qa-agent-stage-1-closeout.md)，[P2 已实现并完成本地部署](qa-agent-stage-2-implementation.md)，QA 版本为 `0.2.0-alpha.3`，默认使用 DeepSeek V4.1 Flash。
+2026-09-24：[P1 已收尾](qa-agent-stage-1-closeout.md)，[P2 已实现并完成本地部署](qa-agent-stage-2-implementation.md)，QA 版本为 `0.2.0-alpha.4`，默认使用 DeepSeek V4.1 Flash。
 部署顺序为：独立测试库兼容迁移 → 兼容前端 → QA 制品 → 显式开启 `document-tools-v1`；生产继续保持既有发布。
 
 ## 版本规则
@@ -12,7 +12,7 @@
 | 对象 | 唯一版本来源 | Git 标签 | 当前开发版本 |
 | --- | --- | --- | --- |
 | 应用（阅读器、翻译、文库） | 根 `package.json`，同步 lockfile | `vX.Y.Z` | `0.1.0`，沿用已有声明，不追认历史正式发布 |
-| QA 服务 | `server/qa/package.json` | `qa-vX.Y.Z[-alpha.N/-beta.N/-rc.N]` | `0.2.0-alpha.3` |
+| QA 服务 | `server/qa/package.json` | `qa-vX.Y.Z[-alpha.N/-beta.N/-rc.N]` | `0.2.0-alpha.4` |
 | 检索、提示词、索引协议 | `server/qa/config.mjs` | 随服务发布 | 首次拆分保持原值 |
 
 公共兼容面包含 HTTP 请求、SSE 事件、持久化数据和配置；内部重排不应改变它们。
