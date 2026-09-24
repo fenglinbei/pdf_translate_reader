@@ -2,14 +2,13 @@
 
 P2 使用 `QA_AGENT_RUNTIME=document-tools-v1`：MathPix 原文可读即可问答，无需建立 QA 索引或配置 Voyage。首次启动前必须给**独立测试库**应用 [兼容迁移](../supabase/migrations/20260924_qa_document_tools.sql)，再用 `node --env-file=.env.qa.local scripts/check-qa-document-schema.mjs` 检查。部署和人工验收步骤见 [P2 实施记录](qa-agent-stage-2-implementation.md)。下文涉及 QA 索引/Voyage 的步骤只用于显式旧路径。
 
-状态（2026-09-23 更新）：Agent 路径已跑通；修复后的长上下文路径已通过本地人工验收，并核对真实模型回答成功落库。
-具体结果、证据范围和待修复问题见 [两轮真实运行核验](qa-local-runs-2026-09-23.md)，文末清单已同步。
-全文读取缺陷已在 `0.1.1-alpha.1` 修复，验收源码为 `1cc80bdd4cc71871b55d83175dee4ea9eca23804`。
+状态（2026-09-24 更新）：P2 已完成测试库迁移、本地部署和合成资料的真实问答/落库/浏览器定位验证，QA 版本 `0.2.0-alpha.3`，默认 DeepSeek V4.1 Flash；真实论文人工验收待进行。详见 [本地部署记录](qa-agent-stage-2-local-deployment.md)。
+P1 全文修复的历史人工验收见 [两轮真实运行核验](qa-local-runs-2026-09-23.md)，当时验收源码为 `1cc80bdd4cc71871b55d83175dee4ea9eca23804`。
 当前验收 QA 从独立发布目录运行，进程和日志位置见本地 `output/qa-local-server/deployment.json`；修改工作区不会自动更新这个进程。恢复源码调试时先停止验收 QA，再按下面命令启动，避免重复占用 8789。
 规范约束见 [版本、CI/CD 与 QA 隔离规范](versioning-and-delivery.md)，本文只是操作步骤。
-2026-09-24 [P1 已收尾](qa-agent-stage-1-closeout.md)；[P2 工具协议与自主查阅方案](qa-agent-stage-2-plan.md) 仅为设计，本文仍描述当前已实现环境。
+2026-09-24 [P1 已收尾](qa-agent-stage-1-closeout.md)；[P2 工具协议与自主查阅方案](qa-agent-stage-2-plan.md) 已实施。当前可直接打开 `https://127.0.0.1:5174` 测试；下面的启动命令供重新建立环境或切回源码调试时使用。
 
-离线学习（`npm run demo:qa`）不需要本文任何一步。需要看真实检索、真实模型决策和真实 SSE 时才需要。
+离线学习可运行 `npm run demo:qa-document`（原生工具）或 `npm run demo:qa`（旧循环），无需配置凭据。需要看真实模型决策、数据库记录和 SSE 时再使用本文环境。
 
 ## 启动流程
 
@@ -19,7 +18,7 @@ P2 使用 `QA_AGENT_RUNTIME=document-tools-v1`：MathPix 原文可读即可问�
 
 1. 建独立 Supabase 测试项目、执行 `supabase/schema.sql`、建测试账号 → 见 [建立独立的 Supabase 测试项目](#建立独立的-supabase-测试项目)。
 2. 填 `.env.qa.local` 并跑 `npm run check:qa-env` 确认通过 → 见 [配置文件](#配置文件)。
-3. 在测试项目里完成一篇论文的 MathPix 解析 → 见 [建索引](#建索引循环能不能跑起来的前提)。
+3. 在测试项目里完成一篇论文的 MathPix 解析；原生文档工具模式到此即可提问，只有显式旧路径需要继续[建索引](#旧路径建索引)。
 
 ### 每个终端各起一个进程
 
@@ -49,7 +48,7 @@ curl -s localhost:8790/api/health
 ```
 
 - `supabase.configured` 必须是 `true`——是 `false` 就说明凭据没读到，别继续往下走。
-- `embedding.configured` 必须是 `true`，否则 QA 检索会退化成纯文本检索。
+- 只有旧索引/混合检索路径需要 `embedding.configured=true`；新文档工具路径不依赖 embedding。
 - `curl -s localhost:8790/api/qa/threads` 应返回 `503 qa_disabled`，证明内嵌 QA 已按预期关闭。
 
 **终端 2 — QA 服务（8789）**
@@ -61,48 +60,34 @@ QA_ENV_FILE=.env.qa.local npm run dev:qa
 
 验证：`curl -s localhost:8789/api/qa/health`
 
-**终端 3 — 前端（5173，`--mode qa`）**
+**终端 3 — QA 前端（5174，`--mode qa`）**
 
 ```bash
 cd /home/fenglin/project/pdf_translate_reader
-npm run dev:web -- --mode qa
+npm run dev:web -- --mode qa --port 5174 --strictPort
 ```
 
 `--mode qa` 让 Vite 加载 `.env.qa.local` 并**覆盖** `.env.local`；不加这个参数前端会继续连生产项目。
 本机已实测：`mode=qa` 命中 `.env.qa.local`，默认 `development` 模式不受影响。
 
-⚠️ **如果你已经有一个开发前端在跑，5173 会被占用，Vite 不会报错，而是静默改用 5174。**
-本机实测：启动时提示 `Port 5173 is in use, trying another one...` 然后监听 5174。
-两个前端长得一模一样，但一个连生产项目、一个连测试项目——**开错窗口会在生产项目里登录**，
-然后看到一堆莫名其妙的 401。启动后务必确认日志里的端口，并按那个端口打开。
+本机主前端使用 5173，QA 前端固定为 5174；`--strictPort` 防止端口冲突时静默换端口。两个前端指向不同的 Supabase 项目，测试时使用 5174 和测试账号。
 
 ### 验收顺序
 
-1. **三个健康检查**：`localhost:8789/api/qa/health`、`localhost:8790/api/health`、`localhost:5173` 都能打开。
+1. **三个健康检查**：`http://127.0.0.1:8789/api/qa/health`、`http://127.0.0.1:8790/api/health`、`https://127.0.0.1:5174` 都能打开；QA 健康信息的 runtime 为 `document-tools-v1`。
 2. **确认前端连的是测试项目**：浏览器登录测试账号。若此时翻译/文库报 401，就是终端 1 或终端 3 没指向测试项目。
-3. **建索引**：`POST localhost:8789/api/qa/index-jobs`，等状态到完成。
-4. **提一个具体事实问题** → 看到 `agent_step`(plan) → `gap_check` → `tool_call` → `observation` → … → `agent_step`(answer_outline)。
-5. **提"总结这篇论文"** → 走长上下文路径，看不到 `tool_call`，这是预期。
+3. 选择 MathPix 已完成的文档，确认显示“文档已就绪，可提问”；无需建索引。
+4. 提一个实现方式问题，观察模型使用 `get_document_outline`、`search_document_text`、`read_document`、`finish_reading` 中适合的工具；不是每次都必须调用全部工具。
+5. 确认回答保存成功；刷新并打开问答面板，点击引用，核验章节标签和关键句所在原文行高亮。
 
-## 已验证的部分：不需要任何凭据
+显式切回 `legacy-json-v1` 后才需要构建 QA 索引，并使用原来的 detail 检索/global 全文分支。
 
-复制模板、改端口、启动服务、检查健康与路由隔离——这些在本机已经跑通：
+## 启动检查与离线验证
 
-```bash
-cp .env.qa.example .env.qa.local
-# 见下方"先改端口"
-QA_ENV_FILE=.env.qa.local npm run dev:qa
-```
-
-预期结果：
-
-| 检查 | 结果 |
-| --- | --- |
-| `GET /api/qa/health` | `{"status":"ok","service":"pdf-reader-qa","version":"0.1.1-alpha.1","sha":"development","environment":"development"}`（重启到当前代码后） |
-| `/api/health`、`/api/translate/stream`、`/api/library/documents`、`/api/mathpix/jobs` | 全部 `404`（独立进程不服务主应用路由） |
-| `GET /api/qa/threads` | `500 supabase_not_configured`（凭据为空时失败关闭，不崩溃） |
-
-`sha` 为 `development` 是预期的：只有打包产物才带 `qa-release.json`，且 production 环境缺它会直接拒绝启动。
+无凭据时可运行离线示例和测试。真实独立 QA 服务启动前会检查测试库引用字段；缺少 Supabase 配置或 P2 迁移时拒绝监听端口。
+正常启动后，`/api/qa/health` 返回服务版本、源码 SHA 和 runtime；未登录访问 `/api/qa/threads` 返回 401。
+独立 QA 服务上的 `/api/health`、`/api/translate/stream`、`/api/library/documents`、`/api/mathpix/jobs` 均返回 404。
+源码调试的 `sha` 为 `development`；独立制品从 `qa-release.json` 读取确切 SHA，production 环境缺少该文件时拒绝启动。
 
 ## 先改端口：8788 在本机已被占用
 
@@ -124,12 +109,13 @@ QA_PORT=8789
 ```bash
 QA_ENVIRONMENT=development
 QA_PORT=8789                  # 必须避开本机已被占用的 8788
+QA_AGENT_RUNTIME=document-tools-v1
 QA_INDEX_WORKER_ENABLED=false # 保持 false：只控制启动恢复，不打开就不会认领别人的任务
 SUPABASE_URL=https://<测试项目>.supabase.co
 SUPABASE_ANON_KEY=<测试 anon>
 SUPABASE_SERVICE_ROLE_KEY=<测试 service_role>
 DEEPSEEK_API_KEY=<建议用独立额度>
-VOYAGE_API_KEY=<建议用独立额度>
+VOYAGE_API_KEY=<仅旧索引/混合检索路径需要>
 
 # 前端（--mode qa 时生效）
 VITE_SUPABASE_URL=https://<同一个测试项目>.supabase.co
@@ -151,7 +137,7 @@ npm run check:qa-env
 
 | 检查 | 为什么 |
 | --- | --- |
-| 7 个凭据都已填 | `--env-file` 会注入空值并遮蔽 `.env.local`，空着不会自动回落 |
+| 新路径 6 个必要配置，旧路径额外要求 Voyage | `--env-file` 会注入空值并遮蔽 `.env.local`，空着不会自动回落 |
 | `SUPABASE_URL` 以 `https://` 开头 | 少协议头时 `createClient` 的报错很难懂 |
 | `SUPABASE_URL` == `VITE_SUPABASE_URL` | 不一致 → 全部 401 |
 | `SUPABASE_ANON_KEY` == `VITE_SUPABASE_ANON_KEY` | 同上 |
@@ -220,9 +206,9 @@ values (public.hash_signup_invite_code('QA-TEST-2026'), 'qa test', 5, now() + in
 
 ### 其余变量
 
-`DEEPSEEK_API_KEY` 与 `VOYAGE_API_KEY` 决定控制器调用与语义检索，缺失时表现为控制器调用失败、
-或退化为纯文本检索；模型额度建议与生产分开，避免共享额度被翻译任务耗尽。
-`MATHPIX_APP_ID` / `MATHPIX_APP_KEY` 是索引的上游，缺失时无法建索引。
+`DEEPSEEK_API_KEY` 用于默认模型；`VOYAGE_API_KEY` 只用于旧索引/混合检索路径。
+模型额度建议与生产分开，避免共享额度被翻译任务耗尽。
+`MATHPIX_APP_ID` / `MATHPIX_APP_KEY` 用于主应用侧的新解析任务；原生 QA 读取已有解析缓存，不会重新调用 MathPix。
 
 ## 关键：整条栈必须指向同一个测试项目
 
@@ -260,9 +246,9 @@ npm run dev:web -- --mode qa
 不这样做也能跑：只让前端登录测试项目、用它看 QA 面板，代价是翻译与文库功能 401。
 学习 Agent 流程够用，但别误判成"升级把主应用弄坏了"。
 
-## 建索引：循环能不能跑起来的前提
+## 旧路径建索引
 
-没有索引时 `retrieveEvidence` 无据可查，只能看到空证据轨迹。文档规定测试索引要显式请求
+下面仅适用于 `legacy-json-v1`。没有索引时 `retrieveEvidence` 无据可查，只能看到空证据轨迹。测试索引要显式请求
 （`QA_INDEX_WORKER_ENABLED=true` 只控制**启动时的恢复**，不是禁写开关）：
 
 1. 先让该文档完成 MathPix 解析（主应用侧流程）。
@@ -287,9 +273,9 @@ curl -X POST http://127.0.0.1:8789/api/qa/index-jobs \
 
 ## 观察点
 
-两条路径的完整逻辑图见 [一次 QA 请求的逻辑图](qa-request-flow.md)。
+原生路径的流程图与学习入口见 [P2 实施记录](qa-agent-stage-2-implementation.md)。在“检索过程”面板查看实际阅读工具及观察结果；在数据库查看每次模型调用、工具入参、缓存命中和终态。
 
-进入前端问答后，按 [执行内核说明](qa-agent-runtime.md) 的分流图先确认问题类型：
+显式使用旧执行器时，可对照 [P1 请求流程](qa-request-flow.md) 与 [执行内核说明](qa-agent-runtime.md) 理解原来的分流：
 
 - 问"总结这篇论文"→ 走长上下文路径，**看不到 `tool_call`**，这是预期。
 - 问一个具体事实 → 进入执行循环，SSE 依次出现 `agent_step`(plan) → `gap_check` → `tool_call` → `observation` → … → `agent_step`(answer_outline)。
@@ -303,12 +289,14 @@ curl -X POST http://127.0.0.1:8789/api/qa/index-jobs \
 | --- | --- |
 | 每一步的类型、摘要、证据编号 | `user_qa_agent_steps` |
 | **每一步的完整 payload** | `user_qa_agent_steps.payload`（jsonb） |
-| **模型每轮的决定** | `gap_check` 步骤的 `payload->'action'`（归一化后的动作） |
+| **模型选择的工具与参数** | 原生路径：`user_qa_tool_calls.tool_name/input`；旧路径：`gap_check.payload->'action'` |
 | **工具调用的完整入参** | `user_qa_tool_calls.input`（jsonb） |
 | **工具返回了什么证据** | `user_qa_tool_calls.result_evidence_ids` |
 | 工具耗时、报错 | `user_qa_tool_calls.started_at/finished_at/error_message` |
-| **证据正文（C 编号 → chunk）** | `user_qa_messages.retrieval_snapshot->'evidence'` |
+| **证据正文与来源身份** | `user_qa_messages.retrieval_snapshot->'evidence'`；原生路径为文档版本/evidenceKey/原文定位，旧路径为 chunk |
 | 引用校验结果 | `user_qa_citations` |
+| 每次模型调用耗时、用量与阶段 | `user_qa_api_logs` 中 `request_kind='model-call'` 的记录 |
+| 最终状态与停止原因 | `user_qa_api_logs` 中 `answer-stream` 的 status/payload，以及消息 status/error_message |
 
 `scripts/qa-trace.sql` 把这七块一次性打出来（本机用合成数据验证过全部语句）：
 
@@ -322,20 +310,17 @@ psql -p 5432 -d postgres -v msg_id=<uuid> -f scripts/qa-trace.sql
 
 连接参数沿用前面那套 `PGHOST` / `PGUSER` / `PGPASSWORD`。第 0 节会回显取到的消息，先确认目标对了再往下看。
 
-其中第 2 节最贴近"模型每次交互"：`turn` 是循环第几轮，`model_action` 是模型选了哪个动作，`rewritten_query` 是**模型自己改写的检索词**（通常不等于你的原话）。
+脚本第 2 节的 `turn/model_action/rewritten_query` 适用于旧 JSON 控制器。原生路径从工具调用的 input、步骤 payload 中的 callId，以及逐次模型日志的 phase/callIndex 关联轨迹。
 
 ### 有一层是查不到的
 
-**发给模型的消息**和**模型返回的原始文本**都不落库，这是有意为之（`qa-agent-runtime.md`：不新增模型私有推理文本的存储）。
-`gap_check` 里存的只是**归一化之后**的动作。
-
-所以要看到逐字的 prompt 和原始响应，需要另加一个调试开关——目前代码里没有任何 debug 设施。要的话得改
-`agent/controller.mjs`，在 `complete()` 前后各打一行。
+完整规划消息与原始供应商响应不单独落库；最终回答、工具参数及选中的原文引用正常保存。模型私有推理只在本次原生协议续接所需的内存上下文中保留。
+学习消息结构可运行 `npm run demo:qa-document` 查看合成示例；真实运行以业务轨迹、工具记录和逐调用用量为准。
 
 ## 待办清单
 
 - [x] `.env.qa.local` 建立并避让端口冲突（本机已验证）
-- [x] 无凭据启动、健康检查、路由隔离（本机已验证）
+- [x] P1 无凭据隔离测试的历史记录；P2 真实启动改为必须通过数据库预检
 - [x] 独立 Supabase 测试项目已配置（与主应用配置的项目不同）
 - [x] 本轮所需 QA 表与数据可查询（不据此宣称完整 schema / 钩子配置全部验收）
 - [x] 测试凭据已填入 `.env.qa.local`；前后端项目配置一致
@@ -349,5 +334,8 @@ psql -p 5432 -d postgres -v msg_id=<uuid> -f scripts/qa-trace.sql
 - [x] 长上下文真实模型与浏览器成功路径验收（本地发布版 1cc80bd；人工确认正确触发，成功落库已核对）
 - [x] P1 收尾：基线、7 组轨迹对照、完整 CI、当前服务健康与阶段边界已核验
 - [x] P2 设计交付：原生工具协议、无语义索引阅读、引用迁移与缓存验收范围已成文
-- [ ] P2 正式实施：工具协议、参数校验、结果回传与自主文档阅读
-- [ ] 配套 F02/F03：全流程轨迹、终止规则、稳定证据与引用，完成故障矩阵验收
+- [x] P2 正式实施：工具协议、参数校验、结果回传与自主文档阅读
+- [x] P2 工程检查：逐调用轨迹、终止规则、稳定来源引用及故障回归
+- [x] P2 本地部署：兼容迁移、真实合成问答、引用保存/恢复/定位、RLS 与临时数据清理
+- [x] 用户确认 DeepSeek V4.1 Flash 为默认模型，界面及服务端默认请求已验证
+- [ ] P2 真实论文人工验收及相对旧路径的质量、费用和耗时对照

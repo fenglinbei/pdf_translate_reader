@@ -2,11 +2,10 @@
 
 `QA_AGENT_RUNTIME=document-tools-v1` 的新流程是：解析来源授权 → 原生工具规划循环 → `finish_reading` 原文匹配 → 禁用新工具的最终回答 → 引用校验与保存。无需 QA 索引、embedding 或 rerank。详细实现见 [P2 实施记录](qa-agent-stage-2-implementation.md)。下文为 `legacy-json-v1` 的旧检索/全文流程，保留作为对照。
 
-对着 `server/routes/qa.mjs`、`server/qa/agent/loop.mjs` 和 `server/qa/queryRouter.mjs` 画的实际流程。
-这是**逻辑**（任何一次运行都成立），不是某次运行的数据；具体查询词、证据编号、轮数因问题而异。
-全文读取字段已在 `0.1.1-alpha.1` 修复。下面的事件持久化缺口仍是现状，
-[F02 失败记录方案](qa-execution-observability-plan.md) 描述这些缺口的后续处理，不能当作已实现行为。
-本文保留已验收旧路径的实际流程；[P2 工具自主查阅方案](qa-agent-stage-2-plan.md) 为尚未实施的新路径。
+下文是对照 `server/routes/qa.mjs`、`server/qa/agent/loop.mjs` 和 `server/qa/queryRouter.mjs` 绘制的 **P1 历史流程**，用于理解原来的两条分支和失败原因。具体查询词、证据编号、轮数因问题而异。
+全文读取字段已在 `0.1.1-alpha.1` 修复；下文的事件持久化缺口属于 P1 历史记录。
+P2 已实现逐模型调用日志、全局步骤序号、失败终态和受限回落，旧执行器也接入了这些记录；不能用下面的历史表格判断当前可观测性。
+本地现已部署原生工具路径，当前行为以 [P2 实施记录](qa-agent-stage-2-implementation.md) 为准。
 
 `detail` 与 `global` 是两条完全不同的路径，差别在第 6 步那一个分支。
 

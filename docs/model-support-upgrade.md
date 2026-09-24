@@ -1,6 +1,6 @@
 # 模型支持升级（2026-09-22）
 
-当前交付：统一模型目录、翻译与论文问答适配已实现，并于 2026-09-22 部署生产。通过本地回归、生产构建、七个型号的生产凭据实调用、双域名资源校验与登录页浏览器检查，详见[发布记录](model-support-production-2026-09-22.md)。首轮公开中英文论文评测已完成，[QA 默认建议](public-paper-model-evaluation-2026-09-22.md)仍待确认；登录后的完整论文流程尚未验收。
+统一模型目录、翻译与论文问答适配已于 2026-09-22 部署生产，历史检查范围见[发布记录](model-support-production-2026-09-22.md)。2026-09-24 用户已确认采纳 [QA 默认建议](public-paper-model-evaluation-2026-09-22.md)，当前源码和本地独立 QA 默认使用 DeepSeek V4.1 Flash；本次未更新生产部署。新文档工具路径的本地验证与待人工验收项见 [P2 部署记录](qa-agent-stage-2-local-deployment.md)。
 
 ## 已确认的范围与默认策略
 
@@ -15,7 +15,7 @@
 | 可选高速档 | GLM FlashX | `glm-5.3-flashx` | 智谱 | 强制开启；`low / high / max` |
 
 - 翻译默认 **DeepSeek Flash**。新用户及无效设置使用该默认；已保存且仍受支持的选择保持原值。
-- 论文问答新默认值 **待代表性论文评测后冻结**。当前暂保留原有 `deepseek-v4-pro`，不代表它是本轮选定的核心型号。`QA_DEFAULT_CHAT_MODEL` 仍可设置目录中已适配的型号。
+- 论文问答默认 **DeepSeek V4.1 Flash**（`deepseek-flash`），已获用户确认并用于本地独立 QA。`deepseek-v4-pro` 保留为手动选择；`QA_DEFAULT_CHAT_MODEL` 仍可覆盖服务端未指定模型时的默认值。
 - FlashX 可手动选择，不作为默认；不接入 `kimi-k2.7-code-highspeed`。
 - `deepseek-v4-flash`、`deepseek-v4-pro`、`glm-5.2` 暂作兼容项，保留原有调用范围与历史身份。**旧型号何时停止新请求、已保存选择如何迁移仍待确认**；本轮不静默改写历史模型。
 - 使用版本化的当前型号 ID，不用 `qwen-max` 等可能指向旧代的泛称。DeepSeek 官方当前 Flash ID 是 `deepseek-flash`，历史 V4 Flash 记录仍显示原型号。
@@ -81,7 +81,7 @@ node scripts/evaluate-model-support.mjs --run --include-optional --only-router -
 
 ## 后续冻结与验收
 
-1. 首轮公开论文已完成 56 次调用，覆盖总结、公式解释、引用、证据不足和连续追问；已建议 DeepSeek Flash，等待确认 QA 默认值。后续继续补充跨学科与更多长文样例。
+1. 首轮公开论文已完成 56 次调用，覆盖总结、公式解释、引用、证据不足和连续追问；用户已确认 DeepSeek V4.1 Flash 为 QA 默认值。后续继续补充跨学科与更多长文样例。
 2. 确认旧型号退场及保存偏好的迁移规则；历史记录不改写模型身份。
 3. 生产发布与部署后检查已完成；仍需登录后的真实论文检索、回答引用定位、追问及数据库保存验收。生产侧合成调用使用部署代码和运行进程凭据，未经过该完整链路。
 

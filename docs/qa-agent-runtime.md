@@ -5,8 +5,8 @@
 状态：代码已实现，独立 QA 服务已完成 [真实运行与全文路径本地人工验收](qa-local-runs-2026-09-23.md)；生产尚未部署。
 版本与发布按 [交付规范](versioning-and-delivery.md) 执行。
 `0.1.1-alpha.1` 已修复全文读取的字段契约，实际文档读取、合成路由测试和发布版 1cc80bd 的全文路径人工验收通过；
-第一阶段已完成 [收尾核验](qa-agent-stage-1-closeout.md)。下一步以
-[第二阶段：工具协议与模型自主查阅文档](qa-agent-stage-2-plan.md) 为准，尚未实施；
+第一阶段已完成 [收尾核验](qa-agent-stage-1-closeout.md)。
+[第二阶段：工具协议与模型自主查阅文档](qa-agent-stage-2-plan.md) 已实施并部署到本地独立测试环境；
 [失败记录与回落边界](qa-execution-observability-plan.md) 是其中的配套工作 F02，不再称作完整的“第二步”。
 
 本阶段沿用现有手写执行器，学习重点是一次 Agent 运行如何调用模型、执行工具、累积证据与停止。
