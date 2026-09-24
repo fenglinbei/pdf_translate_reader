@@ -80,3 +80,13 @@ test('workspace input preserves multiline user question and conversation history
   const messages = createWorkspaceMessages({ model: 'deepseek-flash', question: 'next', recentMessages: [{ role: 'user', status: 'success', content: 'earlier' }, { role: 'assistant', status: 'success', content: 'answer' }] });
   assert.deepEqual(messages.slice(1, 3).map(m => m.role), ['user', 'assistant']);
 });
+
+test('failed older requests retain a closed assistant turn instead of becoming pending instructions', () => {
+  const messages = createWorkspaceMessages({ model: 'deepseek-flash', question: '你是什么模型', recentMessages: [
+    { role: 'user', status: 'success', content: 'Compare two papers' },
+    { role: 'assistant', status: 'error', content: 'Incomplete output' },
+  ] });
+  assert.equal(messages[2].role, 'assistant');
+  assert.match(messages[2].content, /不是待执行/);
+  assert.equal(messages.at(-1).content, '你是什么模型');
+});

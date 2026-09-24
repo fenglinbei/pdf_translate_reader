@@ -909,8 +909,11 @@ button {
   flex-direction: column;
   gap: 12px;
 }
-.workspace-qa-container .ask-workbench { flex: 1; overflow: hidden; }
+.workspace-qa-container .ask-workbench { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+.workspace-qa-container .ask-workbench > * { flex-shrink: 0; }
+.workspace-qa-container .ask-workbench .ask-message-stream { flex: 1; min-height: 0; max-height: none; }
 .workspace-qa-slot { min-height: 0; flex: 1; overflow: hidden; }
+.translation-pane:has(.workspace-qa-slot), .mobile-panel:has(.workspace-qa-slot) { display: flex; flex-direction: column; overflow: hidden; }
 .workspace-qa-context { display: flex; gap: 12px; align-items: center; justify-content: space-between; color: var(--text-muted); font-size: 12px; }
 .workspace-qa-context > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-qa-context > button { flex-shrink: 0; }
