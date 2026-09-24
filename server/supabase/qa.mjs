@@ -149,18 +149,20 @@ export async function getLatestQaIndexJob({ userDocumentId, userId }) {
   return data ? rowToQaIndexJob(data) : undefined;
 }
 
-export async function listQaThreadsForDocument({ userDocumentId, userId }) {
-  await requireUserDocument({ userDocumentId, userId });
+export async function listQaThreadsForDocument({ userDocumentId, userId, scope = 'current' }) {
+  validateThreadScope(scope, userDocumentId);
+  if (scope === 'current') await requireUserDocument({ userDocumentId, userId });
 
-  const { data, error } = await requireSupabaseServiceClient()
+  let query = requireSupabaseServiceClient()
     .from("user_qa_threads")
     .select(QA_THREAD_COLUMNS)
     .eq("user_id", userId)
-    .eq("active_user_document_id", userDocumentId)
-    .eq("scope", "current")
+    .eq("scope", scope)
     .is("deleted_at", null)
     .order("updated_at", { ascending: false })
     .limit(30);
+  query = scope === 'general' ? query.is('active_user_document_id', null) : query.eq('active_user_document_id', userDocumentId);
+  const { data, error } = await query;
 
   if (error) {
     throw toSupabaseServiceError(error, "qa_threads_query_failed", "Could not read QA threads.");
@@ -438,21 +440,23 @@ export async function createOrReuseQaThread({
   question,
   threadId,
   userId,
+  scope = 'current',
 }) {
-  await requireUserDocument({ userDocumentId: activeUserDocumentId, userId });
+  validateThreadScope(scope, activeUserDocumentId);
+  if (scope === 'current') await requireUserDocument({ userDocumentId: activeUserDocumentId, userId });
 
   if (threadId) {
     const thread = await requireQaThread({ threadId, userId });
 
-    if (thread.scope !== "current") {
+    if (thread.scope !== scope) {
       throw new SupabaseServiceError(
         409,
         "qa_thread_scope_unsupported",
-        "Only current-paper QA threads are supported in this milestone.",
+        "This conversation belongs to a different QA mode.",
       );
     }
 
-    if (thread.activeCloudDocumentId && thread.activeCloudDocumentId !== activeUserDocumentId) {
+    if ((thread.activeCloudDocumentId ?? null) !== (activeUserDocumentId ?? null)) {
       throw new SupabaseServiceError(
         409,
         "qa_thread_document_mismatch",
@@ -467,9 +471,9 @@ export async function createOrReuseQaThread({
   const { data, error } = await requireSupabaseServiceClient()
     .from("user_qa_threads")
     .insert({
-      active_user_document_id: activeUserDocumentId,
+      active_user_document_id: activeUserDocumentId ?? null,
       reference_document_ids: [],
-      scope: "current",
+      scope,
       title: createThreadTitle(question),
       updated_at: now,
       user_id: userId,
@@ -482,6 +486,12 @@ export async function createOrReuseQaThread({
   }
 
   return rowToQaThread(data);
+}
+
+function validateThreadScope(scope, documentId) {
+  if (!['current', 'general'].includes(scope) || (scope === 'general' ? Boolean(documentId) : !documentId)) {
+    throw new SupabaseServiceError(400, 'invalid_qa_scope', 'Document QA requires a document; general chat cannot be bound to one.');
+  }
 }
 
 export async function insertQaMessage({

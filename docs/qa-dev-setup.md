@@ -1,5 +1,7 @@
 # QA 开发环境：跑通一次真实问答
 
+`0.3.0-alpha.1` 新增普通问答与实时过程说明。已有 P2 数据库还需备份并应用 [会话兼容迁移](../supabase/migrations/20260924_qa_conversation.sql)；引用字段检查脚本不能代替此次约束迁移。普通问答不需要 PDF、MathPix、embedding 或 rerank；在原问答面板切换即可。当前交付状态以 [会话升级记录](qa-conversation-upgrade-2026-09-24.md) 为准，下述 alpha.4 为上次部署记录。
+
 P2 使用 `QA_AGENT_RUNTIME=document-tools-v1`：MathPix 原文可读即可问答，无需建立 QA 索引或配置 Voyage。首次启动前必须给**独立测试库**应用 [兼容迁移](../supabase/migrations/20260924_qa_document_tools.sql)，再用 `node --env-file=.env.qa.local scripts/check-qa-document-schema.mjs` 检查。部署和人工验收步骤见 [P2 实施记录](qa-agent-stage-2-implementation.md)。下文涉及 QA 索引/Voyage 的步骤只用于显式旧路径。
 
 状态（2026-09-24 更新）：P2 已完成测试库迁移、本地部署和合成资料的真实问答/落库/浏览器定位验证，QA 版本 `0.2.0-alpha.4`，默认 DeepSeek V4.1 Flash；用户已确认 P2 总体验收通过，公式/引用等待修复的人工复验待进行。详见 [本地部署记录](qa-agent-stage-2-local-deployment.md)。

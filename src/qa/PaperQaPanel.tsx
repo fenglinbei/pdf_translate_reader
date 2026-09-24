@@ -50,6 +50,8 @@ import {
   getQaThreads,
   streamQaAnswer,
   type QaVerifierPayload,
+  getQaCapabilities,
+  type QaCapabilities,
 } from "./qaClient";
 import { qaSourceKey, sameQaSource } from "./sourceIdentity";
 import type { MessageKey } from "../i18n/messages";
@@ -119,6 +121,15 @@ export function PaperQaPanel({
   const [messages, setMessages] = useState<LocalQaMessage[]>([]);
   const [model, setModel] = useState<QaChatModel>(MODEL_DEFAULTS.qa);
   const [reasoningEffort, setReasoningEffort] = useState<QaReasoningEffort>("auto");
+  const [qaMode, setQaMode] = useState<'current' | 'general'>('current');
+  const scope = activeDocumentId ? qaMode : 'general';
+  const conversationDocumentId = scope === 'current' ? activeDocumentId : undefined;
+  const scopeKey = `${scope}:${conversationDocumentId ?? ''}`;
+  const scopeKeyRef = useRef(scopeKey);
+  scopeKeyRef.current = scopeKey;
+  const [capabilities, setCapabilities] = useState<QaCapabilities>();
+  const [capabilitiesLoading, setCapabilitiesLoading] = useState(true);
+  const [capabilitiesError, setCapabilitiesError] = useState<string>();
   const [retrievalWarnings, setRetrievalWarnings] = useState<string[]>([]);
   const [selectedEvidenceRef, setSelectedEvidenceRef] = useState<SelectedEvidenceRef>();
   const [threadId, setThreadId] = useState<string>();
@@ -135,11 +146,37 @@ export function PaperQaPanel({
   const [readiness, setReadiness] = useState<QaDocumentReadiness>();
   const [readinessLoading, setReadinessLoading] = useState(true);
   const [readinessError, setReadinessError] = useState<string>();
-  const nativeRuntime = readiness?.documentId === activeDocumentId && readiness?.runtime === "document-tools-v1";
-  const availableModels = nativeRuntime ? QA_MODELS.filter((id) => readiness?.models.includes(id)) : QA_MODELS;
-  const isReady = Boolean(activeDocumentId && !readinessLoading && !readinessError && (nativeRuntime
+  const nativeRuntime = capabilities?.runtime === "document-tools-v1" || readiness?.documentId === activeDocumentId && readiness?.runtime === "document-tools-v1";
+  const enabledModels = scope === 'general' ? capabilities?.models : readiness?.models ?? capabilities?.models;
+  const availableModels = nativeRuntime ? QA_MODELS.filter((id) => enabledModels?.includes(id)) : QA_MODELS;
+  const historyEnabled = scope === 'general' ? Boolean(capabilities?.generalChat) : Boolean(conversationDocumentId);
+  const isReady = scope === 'general'
+    ? Boolean(!capabilitiesLoading && !capabilitiesError && capabilities?.generalChat && availableModels.includes(model))
+    : Boolean(conversationDocumentId && !readinessLoading && !readinessError && (nativeRuntime
     ? readiness?.state === "readable" && availableModels.includes(model)
     : qaIndexJob?.status === "ready" && qaIndexJob?.chunkerVersion === PROJECT_CONFIG.qa.chunkerVersion));
+
+  useEffect(() => {
+    let disposed = false;
+    let timer: number | undefined;
+    const refresh = async () => {
+      try {
+        const next = await getQaCapabilities();
+        if (disposed) return;
+        setCapabilities(next); setCapabilitiesError(undefined);
+        if (next?.runtime === 'document-tools-v1') {
+          const enabled = QA_MODELS.filter(id => next.models.includes(id));
+          setModel(current => enabled.includes(current) ? current : enabled[0] ?? current);
+        }
+      } catch (error) {
+        if (!disposed) setCapabilitiesError(error instanceof Error ? error.message : t('ask.answerFailed'));
+      } finally {
+        if (!disposed) { setCapabilitiesLoading(false); timer = window.setTimeout(refresh, 15000); }
+      }
+    };
+    void refresh();
+    return () => { disposed = true; window.clearTimeout(timer); };
+  }, [t]);
 
   useEffect(() => {
     let disposed = false;
@@ -171,16 +208,17 @@ export function PaperQaPanel({
 
   const warnings = useMemo(
     () => uniqueStrings([
-      ...(readinessError ? [readinessError] : []),
+      ...(scope === 'current' && readinessError ? [readinessError] : []),
+      ...(scope === 'general' && capabilitiesError ? [capabilitiesError] : []),
       ...retrievalWarnings,
       ...verifierWarnings,
       ...(historyError ? [historyError] : []),
     ]),
-    [historyError, readinessError, retrievalWarnings, verifierWarnings],
+    [scope, capabilitiesError, historyError, readinessError, retrievalWarnings, verifierWarnings],
   );
 
   const refreshThreads = useCallback(async (options: { selectLatest?: boolean; silent?: boolean } = {}) => {
-    if (!activeDocumentId) {
+    if (!historyEnabled) {
       setThreads([]);
       return [];
     }
@@ -193,7 +231,7 @@ export function PaperQaPanel({
     setHistoryError(undefined);
 
     try {
-      const nextThreads = await getQaThreads(activeDocumentId);
+      const nextThreads = await getQaThreads(conversationDocumentId, scope);
 
       if (historyRequestRef.current !== requestId) {
         return nextThreads;
@@ -220,13 +258,14 @@ export function PaperQaPanel({
         setIsLoadingThreads(false);
       }
     }
-  }, [activeDocumentId, t]);
+  }, [conversationDocumentId, scope, historyEnabled, t]);
 
   useEffect(() => {
     abortControllerRef.current?.abort();
     abortControllerRef.current = undefined;
     historyRequestRef.current += 1;
     messagesRequestRef.current += 1;
+    justFinishedStreamRef.current = false;
     setDraftQuestion("");
     setHistoryError(undefined);
     setIsLoadingMessages(false);
@@ -239,10 +278,10 @@ export function PaperQaPanel({
     setThreads([]);
     setVerifierWarnings([]);
 
-    if (activeDocumentId) {
+    if (historyEnabled) {
       void refreshThreads({ selectLatest: true });
     }
-  }, [activeDocumentId, refreshThreads]);
+  }, [conversationDocumentId, scope, historyEnabled, refreshThreads]);
 
   useEffect(() => {
     if (!isFullscreen) {
@@ -441,7 +480,7 @@ export function PaperQaPanel({
   }, [isStreaming, operatingMessageId, refreshThreads, t]);
 
   const handleRegenerateMessage = useCallback(async (message: LocalQaMessage) => {
-    if (!activeDocumentId || !isReady || isStreaming || operatingMessageId || !threadId) {
+    if (!isReady || isStreaming || operatingMessageId || !threadId) {
       return;
     }
 
@@ -486,14 +525,14 @@ export function PaperQaPanel({
       setIsStreaming(true);
       await streamQaAnswer(
         {
-          activeDocumentId,
+          activeDocumentId: conversationDocumentId,
           answerLanguage,
           executionMode: "agentic",
           model,
           question,
           reasoningEffort,
           regenerateMessageId: message.id,
-          scope: "current",
+          scope,
           threadId,
         },
         {
@@ -519,6 +558,7 @@ export function PaperQaPanel({
             updateAssistantMessage(message.id, (current) => ({ ...current, content: "" }));
           },
           onDone: (payload) => {
+            if (scopeKeyRef.current !== scopeKey || abortController.signal.aborted) return;
             const assistantMessage = payload.assistantMessage;
 
             if (assistantMessage) {
@@ -548,6 +588,7 @@ export function PaperQaPanel({
             }));
           },
           onMeta: (metadata) => {
+            if (scopeKeyRef.current !== scopeKey || abortController.signal.aborted) return;
             setThreadId(metadata.threadId);
           },
           onObservation: (step) => {
@@ -604,13 +645,14 @@ export function PaperQaPanel({
     } finally {
       if (abortControllerRef.current === abortController) {
         abortControllerRef.current = undefined;
+        setIsStreaming(false);
+        setOperatingMessageId(undefined);
       }
-
-      setIsStreaming(false);
-      setOperatingMessageId(undefined);
     }
   }, [
-    activeDocumentId,
+    conversationDocumentId,
+    scope,
+    scopeKey,
     answerLanguage,
     isReady,
     isStreaming,
@@ -683,7 +725,7 @@ export function PaperQaPanel({
   const handleSubmit = useCallback(async () => {
     const question = draftQuestion.trim();
 
-    if (!question || !activeDocumentId || !isReady || isStreaming) {
+    if (!question || !isReady || isStreaming) {
       return;
     }
 
@@ -723,13 +765,13 @@ export function PaperQaPanel({
     try {
       await streamQaAnswer(
         {
-          activeDocumentId,
+          activeDocumentId: conversationDocumentId,
           answerLanguage,
           executionMode: "agentic",
           model,
           question,
           reasoningEffort,
-          scope: "current",
+          scope,
           threadId,
         },
         {
@@ -755,6 +797,7 @@ export function PaperQaPanel({
             updateAssistantMessage(localAssistantMessageId, (message) => ({ ...message, content: "" }));
           },
           onDone: (payload) => {
+            if (scopeKeyRef.current !== scopeKey || abortController.signal.aborted) return;
             setThreadId(payload.threadId);
             const assistantMessage = payload.assistantMessage;
 
@@ -791,6 +834,7 @@ export function PaperQaPanel({
             }));
           },
           onMeta: (metadata) => {
+            if (scopeKeyRef.current !== scopeKey || abortController.signal.aborted) return;
             setThreadId(metadata.threadId);
           },
           onObservation: (step) => {
@@ -847,12 +891,13 @@ export function PaperQaPanel({
     } finally {
       if (abortControllerRef.current === abortController) {
         abortControllerRef.current = undefined;
+        setIsStreaming(false);
       }
-
-      setIsStreaming(false);
     }
   }, [
-    activeDocumentId,
+    conversationDocumentId,
+    scope,
+    scopeKey,
     answerLanguage,
     draftQuestion,
     isReady,
@@ -872,14 +917,15 @@ export function PaperQaPanel({
   return (
     <>
       <section
-        aria-label={t("ask.chatSection")}
+        aria-label={t(scope === 'general' ? 'ask.generalChat' : "ask.chatSection")}
         className={`ask-workbench ${isFullscreen ? "ask-workbench--fullscreen" : ""}`}
       >
       <header className="ask-workbench-header">
         <div className="ask-workbench-title-block">
-          <div className="ask-workbench-title">{t("ask.chatTitle")}</div>
+          <div className="ask-workbench-title">{t(scope === 'general' ? 'ask.generalChat' : "ask.chatTitle")}</div>
           <div className="ask-workbench-status">
-            {isReady ? t("ask.chatReady") : nativeRuntime ? t("ask.waitingForParsing") : t("ask.chatWaitingForIndex")}
+            {scope === 'general' ? t(isReady ? 'ask.generalReady' : capabilitiesLoading ? 'ask.connecting' : 'ask.generalUnavailable')
+              : isReady ? t("ask.chatReady") : nativeRuntime ? t("ask.waitingForParsing") : t("ask.chatWaitingForIndex")}
             {isStreaming ? <span>{t("ask.streaming")}</span> : null}
           </div>
         </div>
@@ -908,6 +954,15 @@ export function PaperQaPanel({
           </button>
         </div>
       </header>
+
+      {capabilities?.generalChat ? (
+        <div className="ask-mode-switch" role="group" aria-label={t('ask.mode')}>
+          <button type="button" aria-pressed={scope === 'current'} disabled={!activeDocumentId || isStreaming}
+            onClick={() => setQaMode('current')}>{t('ask.documentChat')}</button>
+          <button type="button" aria-pressed={scope === 'general'} disabled={isStreaming}
+            onClick={() => setQaMode('general')}>{t('ask.generalChat')}</button>
+        </div>
+      ) : null}
 
       {warnings.length > 0 ? (
         <div className="ask-warning-stack">
@@ -939,7 +994,7 @@ export function PaperQaPanel({
         ) : messages.length === 0 ? (
           <div className="ask-chat-empty">
             <Search aria-hidden="true" size={18} strokeWidth={2} />
-            <span>{t("ask.emptyChat")}</span>
+            <span>{t(scope === 'general' ? 'ask.generalEmpty' : "ask.emptyChat")}</span>
           </div>
         ) : messages.map((message) => (
           <QaMessageBubble
@@ -1002,7 +1057,8 @@ export function PaperQaPanel({
               void handleSubmit();
             }
           }}
-          placeholder={isReady ? t("ask.placeholder") : nativeRuntime ? t("ask.waitingForParsing") : t("ask.disabledPlaceholder")}
+          placeholder={scope === 'general' ? t(isReady ? 'ask.generalPlaceholder' : 'ask.generalUnavailable')
+            : isReady ? t("ask.placeholder") : nativeRuntime ? t("ask.waitingForParsing") : t("ask.disabledPlaceholder")}
           rows={3}
           value={draftQuestion}
         />

@@ -2673,7 +2673,7 @@ export function ReaderShell() {
           <div className="pins-clear-actions">{closeButton}</div>
         </div>
         <div className="ask-panel">
-          <div
+          {currentEntry ? <div
             aria-expanded={isAskStatusExpanded}
             className={`ask-status-strip ${isAskStatusExpanded ? "ask-status-strip--expanded" : "ask-status-strip--collapsed"}`}
           >
@@ -2774,7 +2774,7 @@ export function ReaderShell() {
             </section> : null}
               </div>
             ) : null}
-          </div>
+          </div> : null}
           <PaperQaPanel
             activeDocumentId={currentEntry?.cloudDocumentId}
             isFullscreen={isQaFullscreen}

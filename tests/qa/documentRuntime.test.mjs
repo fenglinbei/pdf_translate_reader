@@ -6,8 +6,11 @@ import { createDocumentView } from '../../server/qa/documents/view.mjs';
 import { runDocumentPlanning } from '../../server/qa/documents/runtime.mjs';
 import { createDocumentRunContext } from '../../server/qa/documents/runContext.mjs';
 import { handleDocumentStream } from '../../server/qa/documents/stream.mjs';
-import { loadDocumentSource } from '../../server/qa/documents/source.mjs';
+import { loadDocumentSource, createDeferredDocumentSource } from '../../server/qa/documents/source.mjs';
 import { generateDocumentAnswer } from '../../server/qa/documents/answer.mjs';
+import { DOCUMENT_TOOLS, createDocumentTools } from '../../server/qa/documents/tools.mjs';
+import { createEvidenceStore } from '../../server/qa/documents/view.mjs';
+import { normalizeQaStreamRequest } from '../../server/routes/qa.mjs';
 
 const model = 'deepseek-flash';
 const env = { DEEPSEEK_API_KEY: 'synthetic-key' };
@@ -166,7 +169,7 @@ test('final stream retains auto tool prefix and reads cache usage without publis
     body = JSON.parse(init.body);
     return new Response('data: {"choices":[{"delta":{"reasoning_content":"private","content":"Answer"},"finish_reason":"stop"}]}\n\ndata: {"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":10,"prompt_cache_hit_tokens":64}}\n\ndata: [DONE]\n\n');
   } });
-  await adapter.stream({ messages: [], tools: [], onDelta: value => { text += value; }, onUsage: value => { usage = value; } });
+  await adapter.stream({ messages: [], tools: DOCUMENT_TOOLS, onDelta: value => { text += value; }, onUsage: value => { usage = value; } });
   assert.equal(body.tool_choice, 'auto'); assert.equal(body.thinking.type, 'enabled');
   assert.equal(text, 'Answer'); assert.equal(usage.promptCacheHitTokens, 64);
 });
@@ -269,6 +272,44 @@ test('native stream persists citations, usage and one terminal before done', asy
   assert.equal(test.counts.stream, 1);
   assert.equal(test.run.logs.filter(l => l.requestKind === 'answer-stream').length, 1);
 });
+
+test('general chat requires explicit scope and cannot inherit a paper document', () => {
+  const documentId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  assert.equal(normalizeQaStreamRequest({ question: 'Hello', scope: 'general' }).activeDocumentId, undefined);
+  assert.equal(normalizeQaStreamRequest({ question: 'Hello', scope: 'general' }).scope, 'general');
+  assert.throws(() => normalizeQaStreamRequest({ question: 'Hello' }), /activeDocumentId/);
+  assert.throws(() => normalizeQaStreamRequest({ question: 'Hello', scope: 'general', activeDocumentId: documentId }), /不能绑定文档/);
+  assert.throws(() => normalizeQaStreamRequest({ question: 'Hello', scope: 'library' }), /supported/);
+  assert.equal(normalizeQaStreamRequest({ question: 'Hello', activeDocumentId: documentId }).scope, 'current');
+});
+
+test('general chat makes one answer call without loading a document or planning tools', async () => {
+  const test = routeSetup(); let requestScope, input;
+  test.deps.loadSource = async () => { throw new Error('general chat must not load a document'); };
+  test.deps.db.createOrReuseQaThread = async args => { requestScope = args; return { id: 'general-thread' }; };
+  test.deps.createAdapter = () => ({
+    complete: async () => { throw new Error('general chat must not plan'); },
+    stream: async args => { input = args; args.onDelta('Hello, what would you like to discuss?'); args.onUsage({ promptTokens: 50, completionTokens: 10 }); return { calls: [] }; },
+  });
+  await handleDocumentStream({}, test.response, { id: 'user' }, { model, question: 'Hello', scope: 'general' }, test.deps);
+  assert.equal(requestScope.scope, 'general'); assert.equal(requestScope.activeUserDocumentId, undefined);
+  assert.deepEqual(input.tools, []);
+  assert.equal(test.updates.at(-1).status, 'success');
+  assert.equal(test.updates.at(-1).retrievalSnapshot.scope, 'general');
+  assert.equal(test.run.logs.filter(l => l.requestKind === 'model-call').length, 1);
+  assert.equal(test.run.tools.length, 0);
+  assert(test.response.output.includes('"stopReason":"direct_answer"'));
+});
+
+test('plain model calls omit empty tools and tool_choice', async () => {
+  let body;
+  const adapter = createQaToolAdapter({ model, env, fetchImpl: async (_url, init) => {
+    body = JSON.parse(init.body);
+    return new Response('data: {"choices":[{"delta":{"content":"Hello"},"finish_reason":"stop"}]}\n\n');
+  } });
+  await adapter.stream({ messages: [], tools: [] });
+  assert.equal(body.tools, undefined); assert.equal(body.tool_choice, undefined);
+});
 for (const fault of ['cancel', 'eof', 'persist', 'timeout']) test(`native ${fault} failure preserves partial text and never regenerates or falls back`, async () => {
   const test = routeSetup(fault);
   await handleDocumentStream({}, test.response, { id: 'user' }, { model, question: 'Explain', activeDocumentId: 'doc' }, test.deps);
@@ -295,4 +336,25 @@ test('source loader binds current owner/document/hash and rejects revision chang
   revision = '2026-09-24T01:00:00Z';
   await assert.rejects(value.assertCurrent(), { code: 'DOCUMENT_VERSION_CHANGED' });
   assert.equal(ownerChecks.length, 3);
+});
+
+test('deferred source downloads only on reading and cannot reuse a changed source', async () => {
+  let downloads = 0, revision = '2026-09-24T00:00:00Z';
+  const query = { select() { return this; }, eq() { return this; }, is() { return this; }, order() { return this; }, limit() { return this; },
+    async maybeSingle() { return { data: { status: 'completed', content_sha256: 'hash', mathpix_options_hash: 'options', updated_at: revision, pages_storage_path: 'scoped/pages.json', num_pages: 1 } }; } };
+  const client = { from: () => query, storage: { from: () => ({ download: async () => {
+    downloads++; return { data: new Blob([JSON.stringify([{ lines: ['A verified sentence.'] }])]) };
+  } }) } };
+  const deferred = await createDeferredDocumentSource({ userId: 'owner', userDocumentId: 'document' }, { client,
+    requireDocument: async () => ({ content_sha256: 'hash', display_file_name: 'Synthetic' }) });
+  const tools = createDocumentTools({ source: deferred, store: createEvidenceStore(deferred.view) });
+  await tools.execute('finish_reading', finish([]));
+  assert.equal(downloads, 0);
+  const read = await tools.execute('read_document', { mode: 'full' });
+  assert.equal(read.evidence[0].text, 'A verified sentence.\n');
+  assert.equal(downloads, 1);
+  assert.equal((await tools.execute('read_document', { mode: 'full' })).cacheHit, true);
+  assert.equal(downloads, 1);
+  revision = '2026-09-24T01:00:00Z';
+  await assert.rejects(tools.execute('read_document', { mode: 'full' }), { code: 'DOCUMENT_VERSION_CHANGED' });
 });

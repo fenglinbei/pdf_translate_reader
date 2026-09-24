@@ -47,6 +47,8 @@ before(async()=>{
  grant select,insert,update,delete on all tables in schema public to authenticated,service_role;`);
  await db.exec(migration); await db.exec(migration);
  await db.exec(conversationMigration); await db.exec(conversationMigration);
+ const threadPolicies=schema.slice(schema.indexOf('alter table public.user_qa_threads enable row level security;'),schema.indexOf('create table if not exists public.user_qa_messages ('));
+ await db.exec(threadPolicies);
 });
 after(async()=>{await db?.close();});
 
@@ -60,6 +62,18 @@ test('ordinary commentary is stored separately from the final answer', async()=>
  assert.equal(result.rows[0].kind,'commentary');
  const answer=await db.query('select content from user_qa_messages where id=$1',[M]);
  assert.equal(answer.rows[0].content,'Synthetic answer');
+});
+test('general histories are owner isolated and cannot contain document bindings or paper citations', async()=>{
+ const G='55555555-5555-4555-8555-555555555555', GM='66666666-6666-4666-8666-666666666666';
+ await asUser(A,tx=>tx.query("insert into user_qa_threads(id,user_id,scope,title) values ($1,$2,'general','Ordinary chat')",[G,A]));
+ const mine=await asUser(A,tx=>tx.query("select id from user_qa_threads where scope='general'"));
+ const other=await asUser(B,tx=>tx.query("select id from user_qa_threads where scope='general'"));
+ assert.deepEqual(mine.rows,[{id:G}]); assert.equal(other.rows.length,0);
+ await assert.rejects(()=>asUser(B,tx=>tx.query("insert into user_qa_threads(user_id,scope,title) values ($1,'general','Cross-owner')",[A])),/row-level security/);
+ await assert.rejects(()=>db.query("insert into user_qa_threads(user_id,scope,title,active_user_document_id) values ($1,'general','Invalid',$2)",[A,D]),/check constraint/);
+ await assert.rejects(()=>db.query("insert into user_qa_threads(user_id,scope,title,reference_document_ids) values ($1,'general','Invalid',array[$2::uuid])",[A,D]),/check constraint/);
+ await db.query("insert into user_qa_messages(id,user_id,thread_id,role,content,status) values ($1,$2,$3,'assistant','Hello','success')",[GM,A,G]);
+ await assert.rejects(()=>asUser(A,tx=>insert(tx,{message_id:GM})),/row-level security/);
 });
 test('authorized native citation can be stored without a fabricated chunk',async()=>{
  const result=await asUser(A,tx=>insert(tx)); assert.equal(result.rows[0].chunk_id,null); assert.equal(result.rows[0].source_kind,'document_text');

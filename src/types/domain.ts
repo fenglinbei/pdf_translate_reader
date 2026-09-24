@@ -481,7 +481,7 @@ export type ApiCallLog = {
   promptCacheMissTokens?: number;
 };
 
-export type QaScope = "current" | "current-plus-references" | "library";
+export type QaScope = "current" | "current-plus-references" | "library" | "general";
 export type QaChatModel = ModelId;
 export type QaExecutionMode = "agentic";
 export type QaReasoningEffort = "auto" | "quick" | "standard" | "deep";
@@ -708,14 +708,14 @@ export type QaApiLog = {
 };
 
 export type QaAnswerStreamRequest = {
-  activeDocumentId: string;
+  activeDocumentId?: string;
   answerLanguage: QaAnswerLanguage;
   executionMode: QaExecutionMode;
   model: QaChatModel;
   question: string;
   reasoningEffort: QaReasoningEffort;
   regenerateMessageId?: string;
-  scope: "current";
+  scope: "current" | "general";
   threadId?: string;
 };
 

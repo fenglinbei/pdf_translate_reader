@@ -177,6 +177,7 @@ export function createDocumentTools({ source, store, maxReadChars = 16000, maxFu
         const prepared = resolveCitationSelections(store, args.citationSelections);
         return { ...prepared, mode: args.mode, answerOutline: args.answerOutline };
       }
+      await source.ensureLoaded?.();
       const key = stableJson([name, args]);
       if (cache.has(key)) { cacheHits++; return { ...cache.get(key), cacheHit: true }; }
       const data = name === 'get_document_outline' ? outline(args) : name === 'read_document' ? read(args) : search(args);

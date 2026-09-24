@@ -51,6 +51,11 @@ const NO_EVIDENCE_ANSWER_ZH = "我没有在当前论文索引中找到能支撑�
 
 export async function handleQaRoute(request, response, url, user) {
   try {
+    if (request.method === 'GET' && url.pathname === '/api/qa/capabilities') {
+      const runtime = process.env.QA_AGENT_RUNTIME ?? 'legacy-json-v1';
+      writeJson(response, 200, { runtime, generalChat: runtime === 'document-tools-v1', models: getDocumentToolModels() });
+      return;
+    }
     if (request.method === 'GET' && url.pathname === '/api/qa/document-readiness') {
       const userDocumentId = normalizeUuidLike(url.searchParams.get('activeDocumentId'));
       if (!userDocumentId) { writeJson(response, 400, { error: { code: 'invalid_document', message: 'activeDocumentId is required.' } }); return; }
@@ -132,6 +137,10 @@ async function handleQaStream(request, response, user) {
 
   if (process.env.QA_AGENT_RUNTIME === 'document-tools-v1') {
     await handleDocumentStream(request, response, user, requestBody);
+    return;
+  }
+  if (requestBody.scope === 'general') {
+    writeJson(response, 409, { error: { code: 'qa_general_unavailable', message: '当前执行器尚未开放普通问答。' } });
     return;
   }
 
@@ -709,12 +718,13 @@ async function handleQaStream(request, response, user) {
 
 async function handleGetThreads(url, response, user) {
   const userDocumentId = normalizeUuidLike(url.searchParams.get("documentId"));
+  const scope = normalizeQaScope(url.searchParams.get('scope'));
 
-  if (!userDocumentId) {
+  if (scope === 'current' ? !userDocumentId : Boolean(userDocumentId)) {
     writeJson(response, 400, {
       error: {
         code: "invalid_qa_threads_request",
-        message: "documentId is required.",
+        message: "文档问答需要 documentId；普通问答不能绑定文档。",
       },
     });
     return;
@@ -723,6 +733,7 @@ async function handleGetThreads(url, response, user) {
   const threads = await listQaThreadsForDocument({
     userDocumentId,
     userId: user.id,
+    scope,
   });
 
   writeJson(response, 200, { threads });
@@ -861,7 +872,7 @@ async function handleCreateIndexJob(request, response, user) {
   writeJson(response, result.reused ? 200 : 201, result);
 }
 
-function normalizeQaStreamRequest(body) {
+export function normalizeQaStreamRequest(body) {
   if (!body || typeof body !== "object") {
     throw new Error("Request body must be an object.");
   }
@@ -873,14 +884,16 @@ function normalizeQaStreamRequest(body) {
     body.activeDocumentId ?? body.activeUserDocumentId ?? body.userDocumentId,
   );
   const threadId = normalizeUuidLike(body.threadId);
+  const scope = normalizeQaScope(body.scope);
 
   if (!question) {
     throw new Error("question is required.");
   }
 
-  if (!activeDocumentId) {
+  if (scope === 'current' && !activeDocumentId) {
     throw new Error("activeDocumentId is required.");
   }
+  if (scope === 'general' && activeDocumentId) throw new Error('普通问答不能绑定文档，请切换到文档问答。');
 
   return {
     activeDocumentId,
@@ -890,7 +903,7 @@ function normalizeQaStreamRequest(body) {
     question: question.slice(0, 2000),
     reasoningEffort: normalizeReasoningEffort(body.reasoningEffort),
     regenerateMessageId: normalizeUuidLike(body.regenerateMessageId),
-    scope: normalizeQaScope(body.scope),
+    scope,
     threadId,
   };
 }
@@ -910,11 +923,11 @@ function normalizeReasoningEffort(value) {
 }
 
 function normalizeQaScope(value) {
-  if (value && value !== "current") {
-    throw new Error("Only current-paper QA scope is supported in this milestone.");
+  if (value && value !== "current" && value !== 'general') {
+    throw new Error("Only current-paper QA and general chat are supported.");
   }
 
-  return "current";
+  return value || "current";
 }
 
 function createNoEvidenceAnswer(requestBody) {

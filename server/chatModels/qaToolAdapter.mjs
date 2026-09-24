@@ -21,10 +21,9 @@ export function createQaToolAdapter({ model, reasoningEffort = 'standard', fetch
     signal?.throwIfAborted();
     const body = createModelChatBody({ model, messages, stream, maxTokens, temperature: 0.2,
       thinking: resolveQaThinking(model, reasoningEffort) });
-    body.tools = tools;
     // Keep the provider's serialized tool prefix stable through the final turn.
     // The harness closes execution after finish_reading, not tool_choice=none.
-    body.tool_choice = 'auto';
+    if (tools?.length) { body.tools = tools; body.tool_choice = 'auto'; }
     const combined = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(timeoutMs)]);
     let response;
     try {

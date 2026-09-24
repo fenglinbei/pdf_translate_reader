@@ -17,6 +17,14 @@ import type {
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
+export type QaCapabilities = { runtime: string; generalChat: boolean; models: string[] };
+export async function getQaCapabilities(): Promise<QaCapabilities | undefined> {
+  const response = await fetch(`${apiBaseUrl}/qa/capabilities`, { headers: { Authorization: `Bearer ${await getSupabaseAccessToken()}` } });
+  if (response.status === 404) return undefined; // Existing QA deployments remain usable.
+  if (!response.ok) throw new Error('Could not read QA capabilities.');
+  return response.json();
+}
+
 export type QaDocumentReadiness = {
   documentId: string;
   state: "readable" | "parsing" | "missing" | "error";
@@ -79,7 +87,7 @@ export type QaStreamMeta = {
   model: string;
   promptVersion: string;
   reasoningEffort: QaReasoningEffort;
-  scope: "current";
+  scope: "current" | "general";
   threadId: string;
   userMessageId: string;
 };
@@ -154,9 +162,11 @@ export async function createQaIndexJob(input: {
   return response.json() as Promise<CreateQaIndexJobResponse>;
 }
 
-export async function getQaThreads(cloudDocumentId: string) {
+export async function getQaThreads(cloudDocumentId?: string, scope: 'current' | 'general' = 'current') {
+  const query = new URLSearchParams({ scope });
+  if (cloudDocumentId) query.set('documentId', cloudDocumentId);
   const response = await fetch(
-    `${apiBaseUrl}/qa/threads?documentId=${encodeURIComponent(cloudDocumentId)}`,
+    `${apiBaseUrl}/qa/threads?${query}`,
     {
       headers: {
         Accept: "application/json",

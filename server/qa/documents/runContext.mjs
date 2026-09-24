@@ -8,13 +8,15 @@ export function createDocumentRunContext({ userId, userDocumentId, messageId, th
   let nextIndex = 0, phase = 'document_load', activeUsage, terminalWritten = false, commentary;
   const pendingTools = new Map();
   const logScope = { userId, userDocumentId, messageId, threadId, model, promptVersion, retrieverVersion: runtimeVersion };
-  async function insertStep(input) {
-    const row = await persistStep({ ...input, stepIndex: input.stepIndex ?? nextIndex++ });
+  async function insertStep(input, reservedIndex) {
+    // Legacy executors pass their own local indices; only this context may
+    // reserve a global index for an in-flight commentary/tool event.
+    const row = await persistStep({ ...input, stepIndex: reservedIndex ?? nextIndex++ });
     steps.push(row); return row;
   }
   async function step(kind, summary, payload = {}, toolName, evidenceIds = [], status = 'success', stepIndex) {
     phase = payload.phase ?? phase;
-    const row = await insertStep({ userId, messageId, kind, summary, toolName, evidenceIds, payload: { phase, ...payload }, status, stepIndex });
+    const row = await insertStep({ userId, messageId, kind, summary, toolName, evidenceIds, payload: { phase, ...payload }, status }, stepIndex);
     emit('agent_step', { step: row }); return row;
   }
   const events = {
@@ -36,7 +38,7 @@ export function createDocumentRunContext({ userId, userDocumentId, messageId, th
     async flushCommentary(status = 'success') {
       if (!commentary) return;
       const draft = commentary; commentary = undefined;
-      const row = await insertStep({ ...draft, status });
+      const row = await insertStep({ ...draft, status }, draft.stepIndex);
       emit('commentary', { step: row });
     },
     toolStart({ call, input }) {
@@ -100,7 +102,7 @@ export function createDocumentRunContext({ userId, userDocumentId, messageId, th
       if (terminalWritten) return;
       terminalWritten = true;
       const failedPhase = phase; phase = 'terminal';
-      await step('observation', status === 'success' ? '本次文档问答已完成。' : status === 'aborted' ? '本次问答已取消。' : '本次问答未完成。',
+      await step('observation', status === 'success' ? '本次问答已完成。' : status === 'aborted' ? '本次问答已取消。' : '本次问答未完成。',
         { terminal: true, terminalStatus: status, stopReason, failedPhase: error ? failedPhase : undefined, errorCode: error?.code,
           ...this.summary() }, undefined, [], status === 'success' ? 'success' : 'error');
       if (terminalLog) await persistLog({ ...logScope, requestKind: 'answer-stream', requestStartedAt: startedAt, requestFinishedAt: Date.now(),

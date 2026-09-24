@@ -2187,8 +2187,11 @@ create table if not exists public.user_qa_threads (
   user_id uuid not null references auth.users(id) on delete cascade,
   active_user_document_id uuid references public.user_documents(id) on delete set null,
   title text not null,
-  scope text not null check (scope in ('current', 'current-plus-references', 'library')),
+  scope text not null check (scope in ('current', 'current-plus-references', 'library', 'general')),
   reference_document_ids uuid[] not null default '{}',
+  constraint user_qa_threads_general_context_check check (
+    scope <> 'general' or (active_user_document_id is null and cardinality(reference_document_ids) = 0)
+  ),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   deleted_at timestamptz

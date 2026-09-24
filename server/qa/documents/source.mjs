@@ -46,3 +46,35 @@ export async function loadDocumentSource(scope, { signal, client = requireSupaba
   await assertCurrent();
   return { view, assertCurrent };
 }
+
+// Permission/metadata are checked up front; parsing artifacts are downloaded
+// only when a reading tool is actually used. The view identity stays stable for
+// the evidence store, and a changed version never replaces already read text.
+export async function createDeferredDocumentSource(scope, { signal, client = requireSupabaseServiceClient(), requireDocument = requireUserDocument } = {}) {
+  signal?.throwIfAborted();
+  const { document, record } = await inspectSource(scope, client, requireDocument);
+  const readable = record?.status === 'completed' && Boolean(record.pages_storage_path);
+  const version = readable ? sourceVersion(document, record) : undefined;
+  const view = { title: document.display_file_name || '当前文档', pageCount: record?.num_pages ?? 0,
+    documentVersion: version, readable };
+  let loaded;
+  return {
+    view,
+    async assertCurrent() {
+      signal?.throwIfAborted();
+      if (loaded) return loaded.assertCurrent();
+      const current = await inspectSource(scope, client, requireDocument);
+      requireCondition(current.document.content_sha256 === document.content_sha256
+        && (!version || current.record?.status === 'completed' && sourceVersion(current.document, current.record) === version),
+      'DOCUMENT_VERSION_CHANGED', '文档或解析版本已变化，请重新提问。', { retryable: false, statusCode: 409 });
+    },
+    async ensureLoaded() {
+      if (loaded) return;
+      requireCondition(readable, 'DOCUMENT_NOT_READY', '文档尚未完成解析；普通交流可切换到普通问答。', { retryable: false, statusCode: 409 });
+      const candidate = await loadDocumentSource(scope, { signal, client, requireDocument });
+      requireCondition(candidate.view.documentVersion === version, 'DOCUMENT_VERSION_CHANGED', '文档解析版本已变化，请重新提问。', { retryable: false, statusCode: 409 });
+      Object.assign(view, candidate.view);
+      loaded = candidate;
+    },
+  };
+}
