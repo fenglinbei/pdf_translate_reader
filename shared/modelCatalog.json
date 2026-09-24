@@ -1,8 +1,8 @@
 {
-  "version": "2026-09-22.1",
+  "version": "2026-09-24.1",
   "defaults": {
     "translation": "deepseek-flash",
-    "qa": "deepseek-v4-pro",
+    "qa": "deepseek-flash",
     "reasoningSummary": "deepseek-flash"
   },
   "models": {
