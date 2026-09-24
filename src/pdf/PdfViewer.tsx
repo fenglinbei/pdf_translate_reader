@@ -91,6 +91,8 @@ type PdfViewerProps = {
 };
 
 export type PinLocateRequest = {
+  /** Scroll within the same PDF while fresh source validation is pending; draw no highlight. */
+  citationPreview?: boolean;
   strictCitationLocation?: boolean;
   anchorLineNumber?: number;
   pageIndex?: number;
@@ -219,6 +221,7 @@ export function PdfViewer({
   const locatedPinTimerRef = useRef<number>();
   const locatedCitationTimerRef = useRef<number>();
   const pendingCitationLocateRef = useRef<PinLocateRequest>();
+  const citationScrollRequestRef = useRef<number>();
   const revealPinnedCardTimerRef = useRef<number>();
   const panDragRef = useRef<PanDragState>();
   const saveTimerRef = useRef<number>();
@@ -1220,13 +1223,15 @@ export function PdfViewer({
           const scrollElement = scrollRef.current;
           const pageScrollTop = pageLayout.tops[targetPageIndex];
 
-          if (scrollElement && pageScrollTop !== undefined) {
+          if (scrollElement && pageScrollTop !== undefined && citationScrollRequestRef.current !== request.requestId) {
             scrollElement.scrollTo({
               behavior: "smooth",
               top: Math.max(0, pageScrollTop + anchorTopDisplay - scrollElement.clientHeight * 0.24),
             });
+            citationScrollRequestRef.current = request.requestId;
           }
 
+          if (request.citationPreview) return true;
           setLocatedCitation({
             key: `citation-${request.requestId}`,
             pageIndex: targetPageIndex,
@@ -1409,6 +1414,10 @@ export function PdfViewer({
   );
 
   useEffect(() => {
+    if (locateRequest?.citationPreview) {
+      window.clearTimeout(locatedCitationTimerRef.current);
+      setLocatedCitation(undefined);
+    }
     if (locateRequest?.pin) {
       pendingCitationLocateRef.current = undefined;
       handleLocatePin(locateRequest.pin);
@@ -1429,15 +1438,17 @@ export function PdfViewer({
       // Page layout/pages may not be ready yet (e.g. still loading). Scroll
       // it into view and remember the request so we can retry once the page
       // (and, for the text-match fallback, its text index) is built.
-      scrollToPage(locateRequest.pageIndex);
+      if (citationScrollRequestRef.current !== locateRequest.requestId && scrollToPage(locateRequest.pageIndex)) {
+        citationScrollRequestRef.current = locateRequest.requestId;
+      }
       pendingCitationLocateRef.current = locateRequest;
       return;
     }
 
     pendingCitationLocateRef.current = undefined;
 
-    if (typeof locateRequest?.pageIndex === "number") {
-      scrollToPage(locateRequest.pageIndex);
+    if (typeof locateRequest?.pageIndex === "number" && citationScrollRequestRef.current !== locateRequest.requestId) {
+      if (scrollToPage(locateRequest.pageIndex)) citationScrollRequestRef.current = locateRequest.requestId;
     }
   }, [handleLocatePin, highlightLocatedCitation, locateRequest, scrollToPage]);
 

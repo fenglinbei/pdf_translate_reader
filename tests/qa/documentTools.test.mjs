@@ -77,6 +77,46 @@ test('matching cannot borrow unseen source text or silently correct rewritten qu
   assert.throws(() => resolveCitationSelections(store, [select(id, 'GATE weights')]), { code: 'QUOTE_NOT_FOUND' });
 });
 
+test('formatted formulas accompany read text without changing quote identity or line mapping', async () => {
+  const text = 'alpha_i = exp(z_i) / sum_j exp(z_j).';
+  const latex = String.raw`\[\alpha_i=\frac{\exp(z_i)}{\sum_j\exp(z_j)}\]`;
+  const { tools, view, store } = setup({ pages: [{ width: 100, height: 100, lines: [{ ...line(text, 10), latex }] }] });
+  const read = await tools.execute('read_document', { mode: 'full' });
+  assert.deepEqual(read.evidence[0].latexLines, [{ text, latex }]);
+  assert.equal(read.evidence[0].text, text + '\n');
+  assert.equal(tools.metrics.returnedChars, view.text.length + text.length + latex.length);
+  const result = resolveCitationSelections(store, [select(read.evidence[0].evidenceId, text)]);
+  assert.deepEqual(result.citations[0].lineRegions.map(r => r.lineNumber), [1]);
+  assert.throws(() => resolveCitationSelections(store, [select(read.evidence[0].evidenceId, latex)]), { code: 'QUOTE_NOT_FOUND' });
+});
+
+test('partial search previews do not reveal unread formula text through a LaTeX copy', async () => {
+  const text = 'Formula ' + 'x'.repeat(600) + ' hidden suffix.';
+  const { tools } = setup({ pages: [{ lines: [{ text, latex: 'private formula suffix' }] }] });
+  const search = await tools.execute('search_document_text', { queries: ['Formula'], matchMode: 'literal' });
+  assert.equal(search.evidence[0].text.length, 400);
+  assert.equal(search.evidence[0].latexLines, undefined);
+  assert.equal(search.evidence[0].latexOmitted, true);
+});
+
+test('formula supplements respect read/full/run budgets and reserve all search previews', async () => {
+  const { source, store, view } = setup({ pages: [{ lines: [{ text: 'Formula A', latex: 'a'.repeat(80) },
+    { text: 'Formula B', latex: 'b'.repeat(80) }] }] });
+  for (const limits of [{ maxReadChars: view.text.length }, { maxFullChars: view.text.length }, { maxTotalChars: view.text.length }]) {
+    const tools = createDocumentTools({ source, store, ...limits });
+    const read = await tools.execute('read_document', 'maxReadChars' in limits ? { mode: 'pages', pageStart: 1, pageEnd: 1 } : { mode: 'full' });
+    assert.equal(read.evidence[0].latexLines, undefined);
+    assert.equal(read.evidence[0].latexOmitted, true);
+    assert.equal(tools.metrics.returnedChars, view.text.length);
+  }
+  const canonicalChars = view.text.length + 'Formula B\n'.length;
+  const tools = createDocumentTools({ source, store, maxTotalChars: canonicalChars });
+  const search = await tools.execute('search_document_text', { queries: ['Formula'], matchMode: 'literal' });
+  assert.equal(search.evidence.length, 2);
+  assert(search.evidence.every(e => e.latexOmitted && !e.latexLines));
+  assert.equal(tools.metrics.returnedChars, canonicalChars);
+});
+
 test('cross-page quote anchors at first page even when later page has more lines', async () => {
   const { tools } = setup();
   const read = await tools.execute('read_document', { mode: 'full' });

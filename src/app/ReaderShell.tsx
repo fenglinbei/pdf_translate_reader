@@ -2313,31 +2313,45 @@ export function ReaderShell() {
     if (!currentEntry?.cloudDocumentId || source.cloudDocumentId !== currentEntry.cloudDocumentId) return;
     const fingerprint = currentEntry.fingerprint;
     const requestId = ++locateRequestIdRef.current;
-    if (source.sourceKind === "document_text") {
-      try {
-        const current = await getQaDocumentReadiness(source.cloudDocumentId);
-        if (activeFingerprintRef.current !== fingerprint || requestId !== locateRequestIdRef.current) return;
-        if (current?.state !== "readable" || current.documentVersion !== source.sourceVersion
-          || (source.pdfFingerprint && source.pdfFingerprint !== fingerprint)) {
-          setStatusMessage(t("ask.sourceVersionChanged")); return;
-        }
-      } catch (error) {
-        if (requestId === locateRequestIdRef.current && activeFingerprintRef.current === fingerprint)
-          setStatusMessage(error instanceof Error ? error.message : t("ask.readinessFailed"));
-        return;
-      }
-    }
     const target = Math.max(source.pageStart, Math.min(pageNumber ?? source.pageStart, source.pageEnd));
     const native = source.sourceKind === "document_text";
     const anchorLine = native ? source.sourceLocator.sourceSpans.find((span) => span.pageNumber === target)?.lineNumber : undefined;
-    setLocateRequest({
+    const location = {
       pageIndex: target - 1,
       lineRegions: source.lineRegions,
       strictCitationLocation: native,
       anchorLineNumber: anchorLine,
       quotedText: native ? undefined : "quotedText" in source ? source.quotedText : source.textPreview,
       requestId,
-    });
+    };
+    if (native) {
+      if (source.pdfFingerprint && source.pdfFingerprint !== fingerprint) {
+        setStatusMessage(t("ask.sourceVersionChanged")); return;
+      }
+      // Browsing the already-open PDF needs no network round trip. A matching
+      // fingerprint permits a scroll preview, never an unverified highlight.
+      if (source.pdfFingerprint === fingerprint) {
+        setLocateRequest({ ...location, citationPreview: true });
+        setMobilePanel(null);
+      }
+      setStatusMessage(t("ask.checkingCitationSource"));
+      try {
+        const current = await getQaDocumentReadiness(source.cloudDocumentId);
+        if (activeFingerprintRef.current !== fingerprint || requestId !== locateRequestIdRef.current) return;
+        if (current?.state !== "readable" || current.documentVersion !== source.sourceVersion) {
+          setLocateRequest(undefined);
+          setStatusMessage(t("ask.sourceVersionChanged")); return;
+        }
+      } catch (error) {
+        if (requestId === locateRequestIdRef.current && activeFingerprintRef.current === fingerprint) {
+          setLocateRequest(undefined);
+          setStatusMessage(error instanceof Error ? error.message : t("ask.readinessFailed"));
+        }
+        return;
+      }
+      setStatusMessage(undefined);
+    }
+    setLocateRequest(location);
     setMobilePanel(null);
   }, [currentEntry?.cloudDocumentId, currentEntry?.fingerprint, t]);
 

@@ -67,11 +67,19 @@ export function createDocumentTools({ source, store, maxReadChars = 16000, maxFu
     requireCondition(saved?.name === name && saved.parameters === stableJson(parameters), 'INVALID_CURSOR', '续读游标只适用于本次文档版本和相同工具参数。');
     return saved.position;
   }
-  function addEvidence(start, end) {
-    requireCondition(totalChars + end - start <= maxTotalChars, 'DOCUMENT_BUDGET_EXHAUSTED', '本次资料预算已用尽，请依据已读资料结束。');
-    const evidence = store.add(start, end);
-    totalChars += end - start;
-    return store.publicItem(evidence);
+  function addEvidenceRanges(ranges, maxResponseChars) {
+    const textChars = ranges.reduce((sum, range) => sum + range.end - range.start, 0);
+    requireCondition(totalChars + textChars <= maxTotalChars, 'DOCUMENT_BUDGET_EXHAUSTED', '本次资料预算已用尽，请依据已读资料结束。');
+    // Reserve every preview's canonical text before allocating formatted copies.
+    // LaTeX counts against both the response and run budgets, including its quote.
+    let available = Math.max(0, Math.min(maxResponseChars - textChars, maxTotalChars - totalChars - textChars));
+    totalChars += textChars;
+    return ranges.map(({ start, end }) => {
+      const item = store.publicItem(store.add(start, end), available);
+      const used = (item.latexLines ?? []).reduce((sum, line) => sum + line.text.length + line.latex.length, 0);
+      available -= used; totalChars += used;
+      return item;
+    });
   }
   function outline(args) {
     const offset = resume('get_document_outline', args, 0);
@@ -104,7 +112,7 @@ export function createDocumentTools({ source, store, maxReadChars = 16000, maxFu
     }
     requireCondition(until > position, 'DOCUMENT_UNREADABLE', '当前范围没有可读正文。');
     const slice = view.text.slice(position, until);
-    const evidence = slice.trim() ? [addEvidence(position, until)] : [];
+    const evidence = slice.trim() ? addEvidenceRanges([{ start: position, end: until }], args.mode === 'full' ? maxFullChars : maxReadChars) : [];
     return { evidence, coverageStatus: until === end && position === start ? 'complete' : 'partial',
       hasMore: until < end, cursor: until < end ? continuation('read_document', args, until) : undefined,
       truncated: until < end, remainingChars: Math.max(0, maxTotalChars - totalChars) };
@@ -149,7 +157,7 @@ export function createDocumentTools({ source, store, maxReadChars = 16000, maxFu
     requireCondition(totalChars + selected.reduce((sum, m) => sum + m.end - m.start, 0) <= maxTotalChars,
       'DOCUMENT_BUDGET_EXHAUSTED', '本次资料预算不足以返回这些预览，请缩小 limit 或结束。');
     const next = unique.length > limit ? selected.at(-1).next : end < scopeEnd ? Math.max(position + 1, end - 400) : end;
-    return { evidence: selected.map((m) => ({ ...addEvidence(m.start, m.end), matchedQuery: m.query })),
+    return { evidence: addEvidenceRanges(selected, maxReadChars).map((item, index) => ({ ...item, matchedQuery: selected[index].query })),
       hasMore: next < scopeEnd, cursor: next < scopeEnd ? continuation('search_document_text', args, next) : undefined,
       scannedChars: end - position, scannedEntireScope: position === scopeStart && next === scopeEnd,
       note: '只有预览文字属于已读原文；必要时继续阅读正文。' };

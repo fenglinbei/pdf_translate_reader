@@ -137,8 +137,22 @@ export function createEvidenceStore(view) {
     }
     return { ...item, ...extra };
   }
-  function publicItem(item) {
-    return { evidenceId: item.evidenceId, text: item.text, scopeLabel: item.sectionPath.join(' / ') || `PDF pages ${item.pageStart}-${item.pageEnd}` };
+  function publicItem(item, maxLatexChars = 0) {
+    const latexLines = [];
+    let latexChars = 0, latexOmitted = false;
+    for (const line of view.lines) {
+      if (!line.latex?.trim() || line.latex === line.text || line.end <= item.start || line.start >= item.end) continue;
+      // Never reveal the unseen remainder of a line through its formatted copy.
+      // Canonical text and offsets stay unchanged for exact quote mapping.
+      const size = line.text.length + line.latex.length;
+      if (line.start < item.start || line.end > item.end || latexChars + size > maxLatexChars) {
+        latexOmitted = true; continue;
+      }
+      latexLines.push({ text: line.text, latex: line.latex });
+      latexChars += size;
+    }
+    return { evidenceId: item.evidenceId, text: item.text, scopeLabel: item.sectionPath.join(' / ') || `PDF pages ${item.pageStart}-${item.pageEnd}`,
+      ...(latexLines.length ? { latexLines } : {}), ...(latexOmitted ? { latexOmitted: true } : {}) };
   }
   return { view, evidence, byId, add, publicItem };
 }
