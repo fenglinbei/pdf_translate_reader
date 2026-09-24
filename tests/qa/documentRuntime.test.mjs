@@ -310,6 +310,38 @@ test('plain model calls omit empty tools and tool_choice', async () => {
   await adapter.stream({ messages: [], tools: [] });
   assert.equal(body.tools, undefined); assert.equal(body.tool_choice, undefined);
 });
+
+for (const needsDocument of [false, true]) test(`unparsed document permits ${needsDocument ? 'recoverable reading refusal' : 'direct conversation'} in the same thread`, async () => {
+  const setup = routeSetup(); let downloads = 0, scope;
+  const previous = [{ id: 'prior-user-message', role: 'user', content: 'Please help me study.', status: 'success' }];
+  setup.deps.db.listQaMessagesForThread = async () => previous;
+  setup.deps.db.createOrReuseQaThread = async args => { scope = args; return { id: 'thread' }; };
+  const query = { select() { return this; }, eq() { return this; }, is() { return this; }, order() { return this; }, limit() { return this; }, maybeSingle: async () => ({ data: null }) };
+  setup.deps.loadSource = args => createDeferredDocumentSource(args, { client: {
+    from: () => query, storage: { from: () => ({ download: async () => { downloads++; throw new Error('must not download unparsed document'); } }) },
+  }, requireDocument: async () => ({ content_sha256: 'hash', display_file_name: 'Unread document' }) });
+  const text = needsDocument ? 'Please parse the document first.' : 'Here is a study plan.';
+  const { adapter, inputs } = fakeAdapter([
+    ...(needsDocument ? [reply([call('read', 'get_document_outline', {})])] : []),
+    reply([call('finish', 'finish_reading', { mode: needsDocument ? 'insufficient' : 'direct', citationSelections: [], answerOutline: text })]),
+    reply([], { content: text }),
+  ]);
+  setup.deps.createAdapter = () => adapter;
+  await handleDocumentStream({}, setup.response, { id: 'user' }, { model, question: needsDocument ? 'Explain this paper.' : 'Make a study plan.',
+    scope: 'current', activeDocumentId: 'doc', threadId: 'thread' }, setup.deps);
+  assert.equal(scope.scope, 'current'); assert.equal(scope.threadId, 'thread');
+  assert.equal(downloads, 0); assert.equal(setup.updates.at(-1).status, 'success');
+  assert.equal(setup.updates.at(-1).content, text);
+  assert.equal(setup.updates.at(-1).retrievalSnapshot.queryPlan.intent, needsDocument ? 'model_document_reading' : 'direct_chat');
+  assert.deepEqual(setup.updates.at(-1).retrievalSnapshot.evidence, []);
+  const context = JSON.parse(inputs[0].messages[1].content);
+  assert.equal(context.document.readable, false); assert.equal(context.recentConversation[0].content, previous[0].content);
+  if (needsDocument) {
+    const result = JSON.parse(inputs[1].messages.find(m => m.role === 'tool').content);
+    assert.equal(result.error.code, 'DOCUMENT_NOT_READY'); assert.equal(result.error.retryable, true);
+  } else assert.deepEqual(setup.run.tools.map(t => t.toolName), ['finish_reading']);
+});
+
 for (const fault of ['cancel', 'eof', 'persist', 'timeout']) test(`native ${fault} failure preserves partial text and never regenerates or falls back`, async () => {
   const test = routeSetup(fault);
   await handleDocumentStream({}, test.response, { id: 'user' }, { model, question: 'Explain', activeDocumentId: 'doc' }, test.deps);

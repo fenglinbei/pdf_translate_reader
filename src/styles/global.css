@@ -1286,31 +1286,6 @@ button {
   color: var(--text-muted);
 }
 
-.ask-mode-switch {
-  display: flex;
-  gap: 5px;
-  padding: 4px;
-  border-radius: 8px;
-  background: rgba(103, 112, 122, 0.07);
-}
-.ask-mode-switch button {
-  flex: 1;
-  padding: 6px 9px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-.ask-mode-switch button[aria-pressed="true"] {
-  border-color: rgba(103, 112, 122, 0.16);
-  background: var(--surface, #fff);
-  color: var(--text);
-}
-.ask-mode-switch button:disabled { cursor: default; opacity: 0.5; }
-
 .ask-agent-activity {
   display: grid;
   gap: 10px;

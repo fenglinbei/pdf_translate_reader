@@ -59,13 +59,15 @@ export async function handleDocumentStream(request, response, user, body, depend
     }
     const { prepared, messages } = result;
     snapshot = { scope, activeCloudDocumentId: body.activeDocumentId, referenceDocumentIds: [],
-      queryPlan: { intent: general ? 'direct_chat' : 'model_document_reading', rewrittenQueries: [], requiredEvidence: 'multi', answerFormat: 'paragraph' },
+      queryPlan: { intent: prepared.mode === 'direct' ? 'direct_chat' : 'model_document_reading', rewrittenQueries: [], requiredEvidence: 'multi', answerFormat: 'paragraph' },
       retrieverVersion: DOCUMENT_RUNTIME_VERSION, documentVersion: source?.view.documentVersion,
       evidence: prepared.citations.map(toEvidenceSnapshot), diagnostics: { ...result.metrics, stopReason: result.stopReason } };
     emit('retrieval', { snapshot, diagnostics: snapshot.diagnostics, warnings: general || result.stopReason === 'model_finish' ? [] : ['查阅因预算结束，引用为实际已读范围。'] });
-    await context.events.step('answer_outline', prepared.mode === 'direct' ? '开始回答。' : '原文引用已完成位置映射，开始生成回答。',
+    await context.events.step('answer_outline', prepared.mode === 'direct' ? '开始回答。' : prepared.allowedCitationIds.length ? '原文引用已完成位置映射，开始生成回答。' : '现有资料不足，将说明需要补充的内容。',
       { phase: 'answer_generate', mode: prepared.mode, stopReason: result.stopReason }, undefined, prepared.allowedCitationIds);
-    if (!general) messages.push({ role: 'user', content: JSON.stringify({ instruction: '查阅结束。现在生成最终回答，不再调用工具。只使用以下通过 harness 映射的引用编号，关键论文论断分别附引用。证据不足须说明，不补写论文事实。',
+    if (!general) messages.push({ role: 'user', content: JSON.stringify({ instruction: prepared.mode === 'direct'
+      ? '当前问题不依赖文档原文。直接回答用户的普通问题，不再调用工具，不附论文引用，不假称读过论文，也不强行引导到论文。'
+      : '查阅结束。现在生成最终回答，不再调用工具。只使用以下通过 harness 映射的引用编号，关键论文论断分别附引用。证据不足须说明，不补写论文事实。',
       answerLanguage: body.answerLanguage ?? 'follow_user', mode: prepared.mode, allowedCitationIds: prepared.allowedCitationIds, answerOutline: prepared.answerOutline }) });
     const generated = await generateDocumentAnswer({ adapter, messages, tools, model: body.model, source, signal, context,
       onDelta: (text) => { answer += text; emit('delta', { text }); },

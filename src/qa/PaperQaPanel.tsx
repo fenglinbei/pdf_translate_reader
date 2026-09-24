@@ -121,8 +121,9 @@ export function PaperQaPanel({
   const [messages, setMessages] = useState<LocalQaMessage[]>([]);
   const [model, setModel] = useState<QaChatModel>(MODEL_DEFAULTS.qa);
   const [reasoningEffort, setReasoningEffort] = useState<QaReasoningEffort>("auto");
-  const [qaMode, setQaMode] = useState<'current' | 'general'>('current');
-  const scope = activeDocumentId ? qaMode : 'general';
+  // Scope binds history and permissions. The agent chooses whether this
+  // individual question needs document tools within the same conversation.
+  const scope = activeDocumentId ? 'current' : 'general';
   const conversationDocumentId = scope === 'current' ? activeDocumentId : undefined;
   const scopeKey = `${scope}:${conversationDocumentId ?? ''}`;
   const scopeKeyRef = useRef(scopeKey);
@@ -153,7 +154,7 @@ export function PaperQaPanel({
   const isReady = scope === 'general'
     ? Boolean(!capabilitiesLoading && !capabilitiesError && capabilities?.generalChat && availableModels.includes(model))
     : Boolean(conversationDocumentId && !readinessLoading && !readinessError && (nativeRuntime
-    ? readiness?.state === "readable" && availableModels.includes(model)
+    ? availableModels.includes(model)
     : qaIndexJob?.status === "ready" && qaIndexJob?.chunkerVersion === PROJECT_CONFIG.qa.chunkerVersion));
 
   useEffect(() => {
@@ -917,15 +918,16 @@ export function PaperQaPanel({
   return (
     <>
       <section
-        aria-label={t(scope === 'general' ? 'ask.generalChat' : "ask.chatSection")}
+        aria-label={t(nativeRuntime ? 'ask.autoChat' : scope === 'general' ? 'ask.generalChat' : "ask.chatSection")}
         className={`ask-workbench ${isFullscreen ? "ask-workbench--fullscreen" : ""}`}
       >
       <header className="ask-workbench-header">
         <div className="ask-workbench-title-block">
-          <div className="ask-workbench-title">{t(scope === 'general' ? 'ask.generalChat' : "ask.chatTitle")}</div>
+          <div className="ask-workbench-title">{t(nativeRuntime ? 'ask.autoChat' : scope === 'general' ? 'ask.generalChat' : "ask.chatTitle")}</div>
           <div className="ask-workbench-status">
             {scope === 'general' ? t(isReady ? 'ask.generalReady' : capabilitiesLoading ? 'ask.connecting' : 'ask.generalUnavailable')
-              : isReady ? t("ask.chatReady") : nativeRuntime ? t("ask.waitingForParsing") : t("ask.chatWaitingForIndex")}
+              : isReady ? t(nativeRuntime ? readiness?.state === 'readable' ? 'ask.autoReady' : 'ask.autoNeedsParsing' : "ask.chatReady")
+                : nativeRuntime ? t('ask.connecting') : t("ask.chatWaitingForIndex")}
             {isStreaming ? <span>{t("ask.streaming")}</span> : null}
           </div>
         </div>
@@ -954,15 +956,6 @@ export function PaperQaPanel({
           </button>
         </div>
       </header>
-
-      {capabilities?.generalChat ? (
-        <div className="ask-mode-switch" role="group" aria-label={t('ask.mode')}>
-          <button type="button" aria-pressed={scope === 'current'} disabled={!activeDocumentId || isStreaming}
-            onClick={() => setQaMode('current')}>{t('ask.documentChat')}</button>
-          <button type="button" aria-pressed={scope === 'general'} disabled={isStreaming}
-            onClick={() => setQaMode('general')}>{t('ask.generalChat')}</button>
-        </div>
-      ) : null}
 
       {warnings.length > 0 ? (
         <div className="ask-warning-stack">
@@ -994,7 +987,7 @@ export function PaperQaPanel({
         ) : messages.length === 0 ? (
           <div className="ask-chat-empty">
             <Search aria-hidden="true" size={18} strokeWidth={2} />
-            <span>{t(scope === 'general' ? 'ask.generalEmpty' : "ask.emptyChat")}</span>
+            <span>{t(scope === 'general' ? 'ask.generalEmpty' : nativeRuntime ? 'ask.autoEmpty' : "ask.emptyChat")}</span>
           </div>
         ) : messages.map((message) => (
           <QaMessageBubble
@@ -1057,7 +1050,7 @@ export function PaperQaPanel({
               void handleSubmit();
             }
           }}
-          placeholder={scope === 'general' ? t(isReady ? 'ask.generalPlaceholder' : 'ask.generalUnavailable')
+          placeholder={nativeRuntime && isReady ? t('ask.generalPlaceholder') : scope === 'general' ? t(isReady ? 'ask.generalPlaceholder' : 'ask.generalUnavailable')
             : isReady ? t("ask.placeholder") : nativeRuntime ? t("ask.waitingForParsing") : t("ask.disabledPlaceholder")}
           rows={3}
           value={draftQuestion}

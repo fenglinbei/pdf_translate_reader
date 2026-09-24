@@ -70,7 +70,7 @@ export async function createDeferredDocumentSource(scope, { signal, client = req
     },
     async ensureLoaded() {
       if (loaded) return;
-      requireCondition(readable, 'DOCUMENT_NOT_READY', '文档尚未完成解析；普通交流可切换到普通问答。', { retryable: false, statusCode: 409 });
+      requireCondition(readable, 'DOCUMENT_NOT_READY', '文档尚未完成解析。不要重复读取：普通问题用 finish_reading direct；文档问题用 insufficient 和空引用，提示先完成 MathPix 解析。', { retryable: true, statusCode: 409 });
       const candidate = await loadDocumentSource(scope, { signal, client, requireDocument });
       requireCondition(candidate.view.documentVersion === version, 'DOCUMENT_VERSION_CHANGED', '文档解析版本已变化，请重新提问。', { retryable: false, statusCode: 409 });
       Object.assign(view, candidate.view);
