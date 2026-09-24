@@ -1,6 +1,6 @@
-# QA 会话升级：0.3.0-alpha.1
+# QA 会话升级：0.3.0-alpha.2
 
-按用户确认顺序实施工具反馈、缓存与过程输出、普通问答。运行时仍为 `document-tools-v1`，提示词版本为 `qa-document-tools-v3`，默认模型为 DeepSeek V4.1 Flash。
+按用户确认顺序实施工具反馈、缓存与过程输出、普通问答。运行时仍为 `document-tools-v1`，提示词版本为 `qa-document-tools-v4`，默认模型为 DeepSeek V4.1 Flash。
 
 ## 行为与契约
 
