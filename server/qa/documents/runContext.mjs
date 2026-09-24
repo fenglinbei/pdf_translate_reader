@@ -41,24 +41,24 @@ export function createDocumentRunContext({ userId, userDocumentId, messageId, th
       const row = await insertStep({ ...draft, status }, draft.stepIndex);
       emit('commentary', { step: row });
     },
-    toolStart({ call, input }) {
+    toolStart({ call, input, activity }) {
       const stepIndex = nextIndex++;
       const toolName = knownToolName(call.name);
       const row = { id: `pending-${messageId}-${stepIndex}`, userId, messageId, stepIndex, kind: 'tool_call',
         summary: `正在${toolDescription(call.name, input)}…`, toolName, evidenceIds: [], status: 'running', createdAt: Date.now(),
-        payload: { phase: 'tool_execution', callId: call.id, requestedTool: call.name.slice(0, 100) } };
+        payload: { phase: 'tool_execution', callId: call.id, requestedTool: call.name.slice(0, 100), ...(activity ? { activity } : {}) } };
       pendingTools.set(call.id, row);
       emit('tool_start', { step: row });
     },
-    async tool({ call, input, result, startedAt: toolStarted, evidenceIds, error }) {
+    async tool({ call, input, result, startedAt: toolStarted, evidenceIds, error, activity }) {
       phase = 'tool_execution';
       const toolName = knownToolName(call.name);
-      const summary = result.ok ? `${toolDescription(call.name, input)}完成${evidenceIds.length ? `，获得 ${evidenceIds.length} 项来源` : ''}${result.data?.hasMore ? '，仍有后续内容' : ''}。` : `工具未执行成功：${result.error.code}`;
+      const summary = result.ok ? `${toolDescription(call.name, input)}完成${evidenceIds.length ? `，获得 ${evidenceIds.length} 项来源` : ''}${result.data?.hasMore ? '，仍有后续内容' : ''}。` : `查阅未完成：${String(result.error.message || result.error.code).slice(0, 240)}`;
       // Persist actionable diagnostics, not the failed quotes or private reasoning.
       const citationDiagnostics = result.error?.details?.failedSelections?.map(({ selectionIndex, sourceEvidenceIds, code, reason, textMatches }) =>
         ({ selectionIndex, sourceEvidenceIds, code, reason, textMatches }));
       const row = await step('tool_call', summary, { callId: call.id, requestedTool: call.name.slice(0, 100),
-        cacheHit: Boolean(result.data?.cacheHit), errorCode: result.error?.code,
+        cacheHit: Boolean(result.data?.cacheHit), errorCode: result.error?.code, ...(activity ? { activity } : {}),
         ...(citationDiagnostics ? { citationDiagnostics, matchedSelectionIndexes: result.error.details.matchedSelectionIndexes } : {}) }, toolName, evidenceIds, error ? 'error' : 'success', pendingTools.get(call.id)?.stepIndex);
       pendingTools.delete(call.id);
       const toolCall = await persistTool({ userId, stepId: row.id, toolName, input, outputSummary: summary,
@@ -122,7 +122,7 @@ function toolDescription(name, input) {
   if (name === 'search_document') return '查找原文';
   if (name === 'get_document_outline') return '查看文档目录';
   if (name === 'search_document_text') return '查找原文';
-  if (name === 'read_document') return input?.mode === 'pages' ? `阅读第 ${input.pageStart}–${input.pageEnd} 页${input.cursor ? '的后续内容' : ''}` : '阅读原文';
+  if (name === 'read_document') return input?.pageStart && input?.pageEnd ? `阅读第 ${input.pageStart}–${input.pageEnd} 页` : input?.cursor ? '继续阅读原文' : '阅读原文';
   if (name === 'finish_reading') return input?.mode === 'direct' ? '准备直接回答' : '核对引用原文';
   return '检查工具调用';
 }

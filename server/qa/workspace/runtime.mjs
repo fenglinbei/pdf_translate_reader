@@ -76,7 +76,7 @@ export async function runWorkspaceAgent({ adapter, model, question, activeDocume
       try {
         try { input = JSON.parse(call.arguments); }
         catch { throw new DocumentToolError('INVALID_TOOL_ARGUMENTS', '工具参数必须是 JSON 对象。'); }
-        context.events.toolStart({ call, input });
+        context.events.toolStart({ call, input, activity: workspace.describeActivity?.(call.name, input) });
         result = { ok: true, data: await workspace.execute(call.name, input) };
       } catch (failure) {
         signal?.throwIfAborted();
@@ -87,7 +87,8 @@ export async function runWorkspaceAgent({ adapter, model, question, activeDocume
       }
       messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
       const evidenceIds = (result.data?.citations ?? []).map(item => item.citation);
-      await context.events.tool({ call, input: input ?? { rawArguments: call.arguments }, result, startedAt, evidenceIds, error });
+      await context.events.tool({ call, input: input ?? { rawArguments: call.arguments }, result, startedAt, evidenceIds, error,
+        activity: workspace.describeActivity?.(call.name, input, result) });
       if (error) {
         if (error.retryable === false) throw error;
         requireCondition(++errors <= 4, 'REPAIR_BUDGET_EXHAUSTED', '工具调用连续出错，已停止本次查阅。', { retryable: false });

@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import {
   Activity,
+  BookOpen,
+  Columns2,
+  Sparkles,
   Archive,
   Check,
   ChevronRight,
@@ -64,7 +67,8 @@ import { LibraryWorkspaceContainer } from "../library/LibraryWorkspaceContainer"
 import { metadataIsPending } from "../library/MetadataRecognition";
 import { createPdfFingerprint } from "../pdf/pdfFingerprint";
 import { PdfViewer, type PinLocateRequest } from "../pdf/PdfViewer";
-import { WorkspaceQaHost } from "../qa/WorkspaceQaHost";
+import { WorkspaceTools } from "./WorkspaceTools";
+import { WorkspaceChat } from "../qa/WorkspaceChat";
 import { PaperQaPanel } from "../qa/PaperQaPanel";
 import { createQaIndexJob, getQaIndexJob, getQaDocumentReadiness, getQaCapabilities, type QaDocumentReadiness } from "../qa/qaClient";
 import {
@@ -494,13 +498,40 @@ export function ReaderShell() {
   // QA chat fullscreen. While on, the right pane is widened in place and the
   // resizer range is expanded. The user's normal pane width is restored on exit.
   const [workspaceQa, setWorkspaceQa] = useState(false);
-  const [workspaceQaPage, setWorkspaceQaPage] = useState(false);
+  const [workspaceView, setWorkspaceView] = useState<'reading' | 'split' | 'chat'>('reading');
+  const setWorkspaceQaPage = (open: boolean) => setWorkspaceView(open ? 'chat' : 'reading');
+  const [navigationTab, setNavigationTab] = useState<'sessions' | 'documents'>('documents');
+  const [qaNavigation, setQaNavigation] = useState<HTMLDivElement | null>(null);
+  const [mobileWorkspaceContent, setMobileWorkspaceContent] = useState<'chat' | 'document'>('chat');
+  const [chatRatio, setChatRatio] = useState(43);
+  const chatResizeRef = useRef<{ x: number; ratio: number; width: number }>();
+  const navigationCloseRef = useRef<HTMLButtonElement>(null);
+  const navigationOpenRef = useRef<HTMLButtonElement>(null);
+  const annotationsCloseRef = useRef<HTMLButtonElement>(null);
+  const annotationsOpenRef = useRef<HTMLButtonElement>(null);
+  const setNavigationOpen = (open: boolean) => {
+    setIsLibraryPaneOpen(open);
+    requestAnimationFrame(() => (open ? navigationCloseRef : navigationOpenRef).current?.focus());
+  };
+  const closeAnnotations = () => {
+    setIsPinsPaneOpen(false); setMobilePanel(null);
+    requestAnimationFrame(() => annotationsOpenRef.current?.focus());
+  };
+  const openAnnotations = () => {
+    if (isNarrowViewport) setMobilePanel('pins'); else setIsPinsPaneOpen(true);
+    requestAnimationFrame(() => annotationsCloseRef.current?.focus());
+  };
+  const selectWorkspaceSession = useCallback(() => {
+    setWorkspaceView(view => view === 'reading' ? 'chat' : view);
+    setMobileWorkspaceContent('chat');
+    if (isNarrowViewport) setIsLibraryPaneOpen(false);
+  }, [isNarrowViewport]);
   const [pendingQaLocation, setPendingQaLocation] = useState<{ source: QaCitation | QaRetrievedEvidence; page?: number }>();
   const qaOpenRequestRef = useRef(0);
   useEffect(() => {
     let disposed = false;
     setWorkspaceQa(false); setWorkspaceQaPage(false);
-    if (readerSessionUserId) void getQaCapabilities().then(cap => { if (!disposed) setWorkspaceQa(Boolean(cap?.workspaceChat)); }).catch(() => {});
+    if (readerSessionUserId) void getQaCapabilities().then(cap => { if (!disposed) { setWorkspaceQa(Boolean(cap?.workspaceChat)); if (cap?.workspaceChat) { setRightPaneTab("annotations"); setIsPinsPaneOpen(false); } } }).catch(() => {});
     return () => { disposed = true; };
   }, [readerSessionUserId]);
   const [isQaFullscreen, setIsQaFullscreen] = useState(false);
@@ -618,7 +649,8 @@ export function ReaderShell() {
   const closeLibraryWorkbench = useCallback(() => {
     setIsLibraryWorkbenchOpen(false);
     window.requestAnimationFrame(() => {
-      libraryWorkbenchTriggerRef.current?.focus();
+      if (libraryWorkbenchTriggerRef.current?.getClientRects().length) libraryWorkbenchTriggerRef.current?.focus();
+      else document.querySelector<HTMLButtonElement>('.workspace-tools-trigger')?.focus();
     });
   }, []);
 
@@ -2368,8 +2400,9 @@ export function ReaderShell() {
 
   const openQaSource = useCallback(async (source: QaCitation | QaRetrievedEvidence, page?: number) => {
     const request = ++qaOpenRequestRef.current;
-    setWorkspaceQaPage(false); setIsLibraryWorkbenchOpen(false);
-    setRightPaneTab("ask"); setIsPinsPaneOpen(true);
+    setIsLibraryWorkbenchOpen(false);
+    if (workspaceQa) { setWorkspaceView('split'); setMobileWorkspaceContent('document'); setIsLibraryPaneOpen(isNarrowViewport ? false : isLibraryPaneOpen); }
+    else { setRightPaneTab("ask"); setIsPinsPaneOpen(true); }
     if (source.cloudDocumentId === currentEntry?.cloudDocumentId) {
       await locateQaSource(source, page); return;
     }
@@ -2382,7 +2415,7 @@ export function ReaderShell() {
     } catch (error) {
       if (request === qaOpenRequestRef.current) setStatusMessage(error instanceof Error ? error.message : t("ask.readinessFailed"));
     }
-  }, [currentEntry?.cloudDocumentId, workspaceQa, handleOpenHistory, locateQaSource, t]);
+  }, [currentEntry?.cloudDocumentId, workspaceQa, isNarrowViewport, isLibraryPaneOpen, handleOpenHistory, locateQaSource, t]);
   useEffect(() => {
     if (pendingQaLocation && pendingQaLocation.source.cloudDocumentId === currentEntry?.cloudDocumentId) {
       setPendingQaLocation(undefined);
@@ -2412,13 +2445,14 @@ export function ReaderShell() {
   }, [isNarrowViewport]);
 
   const handleLibraryPaneToggle = useCallback(() => {
+    if (workspaceQa) { setIsLibraryPaneOpen(open => !open); return; }
     if (isNarrowViewport) {
       setMobilePanel((panel) => (panel === "library" ? null : "library"));
       return;
     }
 
     setIsLibraryPaneOpen((isOpen) => !isOpen);
-  }, [isNarrowViewport]);
+  }, [isNarrowViewport, workspaceQa]);
 
   const handlePinsPaneToggle = useCallback(() => {
     if (isNarrowViewport) {
@@ -2432,6 +2466,7 @@ export function ReaderShell() {
   }, [isNarrowViewport, rightPaneTab]);
 
   const handleAskPaneToggle = useCallback(() => {
+    if (workspaceQa) { setWorkspaceView('split'); setNavigationTab('sessions'); setMobileWorkspaceContent('chat'); return; }
     setWorkspaceQaPage(false);
     if (isNarrowViewport) {
       setRightPaneTab("ask");
@@ -2441,12 +2476,11 @@ export function ReaderShell() {
 
     setRightPaneTab("ask");
     setIsPinsPaneOpen((isOpen) => rightPaneTab === "ask" ? !isOpen : true);
-  }, [isNarrowViewport, rightPaneTab]);
+  }, [isNarrowViewport, rightPaneTab, workspaceQa]);
 
   const handleQaFullscreenChange = useCallback((fullscreen: boolean) => {
     if (workspaceQa) {
-      setWorkspaceQaPage(fullscreen); setRightPaneTab("ask"); setIsPinsPaneOpen(true);
-      if (isNarrowViewport) setMobilePanel(fullscreen ? null : "ask");
+      setWorkspaceView(fullscreen ? 'chat' : 'split');
       return;
     }
     setIsQaFullscreen((wasFullscreen) => {
@@ -2542,9 +2576,11 @@ export function ReaderShell() {
   }, []);
 
   const workspaceStyle = {
-    "--library-pane-column": isLibraryPaneOpen ? `${libraryPaneWidth}px` : "0px",
+    "--chat-ratio": `${chatRatio}fr`,
+    "--document-ratio": `${100 - chatRatio}fr`,
+    "--library-pane-column": isLibraryPaneOpen ? `${libraryPaneWidth}px` : workspaceQa ? '38px' : "0px",
     "--library-resizer-column": isLibraryPaneOpen ? "7px" : "0px",
-    "--pins-pane-column": isPinsPaneOpen ? `${pinsPaneWidth}px` : "0px",
+    "--pins-pane-column": isPinsPaneOpen ? `${pinsPaneWidth}px` : workspaceQa ? '38px' : "0px",
     "--pins-resizer-column": isPinsPaneOpen ? "7px" : "0px",
     "--library-pane-width": `${libraryPaneWidth}px`,
     "--pins-pane-width": `${pinsPaneWidth}px`,
@@ -2617,7 +2653,7 @@ export function ReaderShell() {
       />
     </>
   );
-  const renderRightPaneTabs = () => (
+  const renderRightPaneTabs = () => workspaceQa ? <div className="pane-heading">{t('reader.annotations')}</div> : (
     <div className="pane-tabs" aria-label={t("reader.rightPaneTabs")} role="tablist">
       <button
         aria-selected={rightPaneTab === "annotations"}
@@ -2873,7 +2909,7 @@ export function ReaderShell() {
   );
   const renderDocumentHeaderControls = () => (
     <div className="pdf-export-toolbar" aria-label={t("reader.exportControls")}>
-      <button
+      {!workspaceQa ? <button
         aria-label={t("freeTranslation.open")}
         className="icon-button"
         onClick={() => openFreeTranslation()}
@@ -2881,7 +2917,7 @@ export function ReaderShell() {
         type="button"
       >
         <Languages aria-hidden="true" size={17} strokeWidth={2} />
-      </button>
+      </button> : null}
       <button
         aria-label={t("reader.exportPdf")}
         className="icon-button"
@@ -2906,7 +2942,7 @@ export function ReaderShell() {
       </button>
     </div>
   );
-  const renderMobileReaderSideDock = () => (
+  const renderMobileReaderSideDock = () => workspaceQa ? null : (
     <div className="mobile-reader-side-dock" aria-label={t("reader.sidePanels")}>
       <button
         aria-label={isLibraryControlOpen ? t("reader.closeLibraryPane") : t("reader.openLibraryPane")}
@@ -2989,16 +3025,26 @@ export function ReaderShell() {
 
   return (
     <I18nProvider locale={settings.uiLocale}>
-    <div className={`app-shell ${workspaceQaPage ? "app-shell--qa-page" : ""}`}>
+    <div className={`app-shell ${workspaceQa ? "app-shell--workspace" : ""}`}>
       <header className="topbar">
         <div className="brand-lockup" aria-label={t("app.name")}>
           <span className="brand-mark">P</span>
           <span className="brand-text">{t("app.name")}</span>
         </div>
+        {workspaceQa ? <div className="workspace-view-switch" role="group" aria-label={t('ask.viewLabel')}>
+          {(['reading', 'split', 'chat'] as const).map(view => <button key={view} type="button" aria-pressed={workspaceView === view}
+            onClick={() => { setWorkspaceView(view); setNavigationTab(view === 'reading' ? 'documents' : 'sessions'); setIsLibraryWorkbenchOpen(false); setMobilePanel(null); }}>
+            {view === 'reading' ? <BookOpen size={15} /> : view === 'split' ? <Columns2 size={15} /> : <MessageSquareText size={15} />}
+            <span>{t(view === 'reading' ? 'ask.viewReading' : view === 'split' ? 'ask.viewSplit' : 'ask.viewChat')}</span>
+          </button>)}
+        </div> : null}
         <div className="topbar-actions">
-          {workspaceQa ? <button className="workspace-qa-trigger" aria-pressed={workspaceQaPage} onClick={() => {
-            setWorkspaceQaPage(!workspaceQaPage); setIsLibraryWorkbenchOpen(false); setMobilePanel(null);
-          }} type="button"><MessageSquareText size={17} aria-hidden="true" />{t("ask.workspaceEntry")}</button> : null}
+          {workspaceQa ? <button className="icon-button workspace-ai-entry" aria-label={t('ask.workspaceEntry')} title={t('ask.workspaceEntry')}
+            aria-pressed={workspaceView !== 'reading'} onClick={() => {
+              setWorkspaceView('chat'); setNavigationTab('sessions'); setMobileWorkspaceContent('chat'); setIsLibraryWorkbenchOpen(false); setMobilePanel(null);
+            }} type="button"><Sparkles size={17} aria-hidden="true" /></button> : null}
+          {workspaceQa ? <button className="icon-button" aria-label={t('freeTranslation.open')} title={t('freeTranslation.open')} onClick={() => openFreeTranslation()} type="button"><Languages size={17} aria-hidden="true" /></button> : null}
+          <WorkspaceTools enabled={workspaceQa}>
           <button
             aria-label={
               isLibraryWorkbenchOpen
@@ -3028,8 +3074,8 @@ export function ReaderShell() {
           >
             <LibraryBig aria-hidden="true" size={17} strokeWidth={2} />
           </button>
-          {currentEntry ? null : renderSidebarToggleButtons()}
-          {currentEntry ? null : (
+          {currentEntry || workspaceQa ? null : renderSidebarToggleButtons()}
+          {currentEntry || workspaceQa ? null : (
             <button
               aria-label={t("freeTranslation.open")}
               className="icon-button"
@@ -3108,6 +3154,7 @@ export function ReaderShell() {
           </div>
           {renderMobileModeControls()}
           <SettingsButton isOpen={isSettingsOpen} onClick={() => setIsSettingsOpen(true)} />
+          </WorkspaceTools>
         </div>
       </header>
 
@@ -3144,7 +3191,7 @@ export function ReaderShell() {
 
       <main
         aria-hidden={isLibraryWorkbenchOpen}
-        className={`reader-workspace ${isPaneResizing ? "reader-workspace--resizing" : ""}`}
+        className={`reader-workspace ${isPaneResizing ? "reader-workspace--resizing" : ""} ${workspaceQa ? `reading-workspace reading-workspace--${workspaceView} reading-workspace--mobile-${mobileWorkspaceContent} ${isLibraryPaneOpen ? 'reading-workspace--nav-open' : ''}` : ''}`}
         ref={readerWorkspaceRef}
         style={workspaceStyle}
       >
@@ -3153,14 +3200,19 @@ export function ReaderShell() {
           aria-hidden={!isLibraryPaneOpen}
           aria-label={t("reader.pdfLibrary")}
         >
-          {renderLibraryPaneContent(
-            <button
-              aria-label={t("reader.closeLibraryPane")}
-              className="icon-button icon-button--small"
-              onClick={() => setIsLibraryPaneOpen(false)}
-              title={t("reader.closeLibrary")}
-              type="button"
-            >
+          {workspaceQa ? <>
+            <div className="workspace-navigation-heading">
+              <div role="tablist" aria-label={t('ask.navOpen')}>
+                {(['sessions', 'documents'] as const).map(tab => <button key={tab} type="button" role="tab" aria-selected={navigationTab === tab} onClick={() => setNavigationTab(tab)}>{t(tab === 'sessions' ? 'ask.navSessions' : 'ask.navDocuments')}</button>)}
+              </div>
+              <button className="workspace-pane-toggle" ref={navigationCloseRef} type="button" aria-label={t('ask.navClose')} title={t('ask.navClose')} onClick={() => setNavigationOpen(false)}><PanelLeftClose size={16} /></button>
+            </div>
+            <div className="workspace-navigation-body" hidden={navigationTab !== 'sessions'} ref={setQaNavigation} />
+            <div className="workspace-navigation-documents" hidden={navigationTab !== 'documents'}>
+              {renderLibraryPaneContent(null)}
+            </div>
+          </> : renderLibraryPaneContent(
+            <button aria-label={t("reader.closeLibraryPane")} className="icon-button icon-button--small" onClick={() => setIsLibraryPaneOpen(false)} title={t("reader.closeLibrary")} type="button">
               <PanelLeftClose aria-hidden="true" size={16} strokeWidth={2} />
             </button>,
           )}
@@ -3191,6 +3243,22 @@ export function ReaderShell() {
             )}
           </button>
         </div>
+        {workspaceQa ? <>
+          <section className="workspace-chat-column" aria-label={t('ask.workspaceTitle')}>
+            <WorkspaceChat key={readerSessionUserId} navigation={qaNavigation} visible={workspaceView !== 'reading'} activeDocumentId={currentEntry?.cloudDocumentId}
+              onSelect={selectWorkspaceSession} onCitationClick={handleLocateQaCitation} onEvidenceClick={handleLocateQaEvidence} />
+          </section>
+          <div className="workspace-chat-resizer" role="separator" aria-label={t('ask.resizeChat')} aria-orientation="vertical" tabIndex={workspaceView === 'split' ? 0 : -1}
+            aria-valuemin={32} aria-valuemax={55} aria-valuenow={Math.round(chatRatio)}
+            onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); setChatRatio(value => clamp(value + (event.key === 'ArrowLeft' ? -2 : 2), 32, 55)); } }}
+            onPointerDown={event => { chatResizeRef.current = { x: event.clientX, ratio: chatRatio, width: event.currentTarget.parentElement!.clientWidth - (isLibraryPaneOpen ? libraryPaneWidth : 38) - (isPinsPaneOpen ? pinsPaneWidth : 38) }; event.currentTarget.setPointerCapture(event.pointerId); setIsPaneResizing(true); }}
+            onPointerMove={event => { const start = chatResizeRef.current; if (start) setChatRatio(clamp(start.ratio + (event.clientX - start.x) / start.width * 100, 32, 55)); }}
+            onPointerUp={() => { chatResizeRef.current = undefined; setIsPaneResizing(false); }} onPointerCancel={() => { chatResizeRef.current = undefined; setIsPaneResizing(false); }} />
+          {workspaceView === 'split' ? <div className="workspace-mobile-content" role="group" aria-label={t('ask.viewSplit')}>
+            <button type="button" aria-pressed={mobileWorkspaceContent === 'chat'} onClick={() => setMobileWorkspaceContent('chat')}>{t('ask.mobileQuestion')}</button>
+            <button type="button" aria-pressed={mobileWorkspaceContent === 'document'} onClick={() => setMobileWorkspaceContent('document')}>{t('ask.mobileDocument')}</button>
+          </div> : null}
+        </> : null}
         <section
           className={`document-stage ${currentEntry ? "document-stage--active" : ""}`}
           aria-label={t("reader.pdfReader")}
@@ -3201,6 +3269,7 @@ export function ReaderShell() {
               activeSelection={sentenceSelection}
               entry={currentEntry}
               headerControls={renderDocumentHeaderControls()}
+              fitToPane={workspaceQa}
               locateRequest={locateRequest}
               onActivateTranslationCard={handleActivateTranslationCard}
               onCreateAnnotation={handleCreateAnnotation}
@@ -3285,7 +3354,7 @@ export function ReaderShell() {
           aria-hidden={!isPinsPaneOpen}
           aria-label={rightPaneTab === "ask" ? t("reader.ask") : t("reader.annotations")}
         >
-          {rightPaneTab === "ask"
+          {!workspaceQa && rightPaneTab === "ask"
             ? renderAskPaneContent(
                 <button
                   aria-label={t("reader.closeAskPane")}
@@ -3300,8 +3369,9 @@ export function ReaderShell() {
             : renderPinsPaneContent(
                 <button
                   aria-label={t("reader.closeAnnotationsPane")}
-                  className="icon-button icon-button--small"
-                  onClick={() => setIsPinsPaneOpen(false)}
+                  className={workspaceQa ? 'workspace-pane-toggle' : 'icon-button icon-button--small'}
+                  ref={annotationsCloseRef}
+                  onClick={workspaceQa ? closeAnnotations : () => setIsPinsPaneOpen(false)}
                   title={t("reader.closeAnnotations")}
                   type="button"
                 >
@@ -3310,16 +3380,6 @@ export function ReaderShell() {
               )}
         </aside>
       </main>
-      {workspaceQa ? <WorkspaceQaHost pageOpen={workspaceQaPage} narrow={isNarrowViewport}
-        mobileOpen={mobilePanel === "ask"} sideOpen={isPinsPaneOpen && rightPaneTab === "ask"}>
-        <div className="workspace-qa-context"><span>{currentEntry?.cloudDocumentId ? t("ask.workspaceFocus", { title: currentEntry.fileName }) : t("ask.workspaceNoFocus")}</span>
-          {workspaceQaPage ? <button className="secondary-button" type="button" onClick={() => {
-            setWorkspaceQaPage(false); setRightPaneTab("ask"); setIsPinsPaneOpen(true);
-          }}>{t("ask.workspaceBack")}</button> : null}</div>
-        <PaperQaPanel key={readerSessionUserId} workspace activeDocumentId={currentEntry?.cloudDocumentId}
-          isFullscreen={workspaceQaPage} onFullscreenChange={handleQaFullscreenChange}
-          onCitationClick={handleLocateQaCitation} onEvidenceClick={handleLocateQaEvidence} />
-      </WorkspaceQaHost> : null}
       {isLibraryWorkbenchOpen ? (
         <LibraryWorkspaceContainer
           activeDocumentId={currentEntry?.cloudDocumentId}
@@ -3330,22 +3390,24 @@ export function ReaderShell() {
           onOpenDocument={handleOpenHistory}
         />
       ) : null}
-      {!isLibraryWorkbenchOpen && !isNarrowViewport && !isLibraryPaneOpen && (
+      {!isLibraryWorkbenchOpen && (workspaceQa || !isNarrowViewport) && !isLibraryPaneOpen && (
         <button
-          aria-label={t("reader.openLibraryPane")}
-          className="pane-reopen-tab pane-reopen-tab--library"
-          onClick={handleLibraryPaneToggle}
+          aria-label={t(workspaceQa ? 'ask.navOpen' : "reader.openLibraryPane")}
+          ref={navigationOpenRef}
+          className={`pane-reopen-tab pane-reopen-tab--library ${workspaceQa ? 'workspace-pane-toggle' : ''}`}
+          onClick={workspaceQa ? () => setNavigationOpen(true) : handleLibraryPaneToggle}
           title={t("reader.openLibrary")}
           type="button"
         >
           <PanelLeftOpen aria-hidden="true" size={16} strokeWidth={2} />
         </button>
       )}
-      {!isLibraryWorkbenchOpen && !isNarrowViewport && !isPinsPaneOpen && (
+      {!isLibraryWorkbenchOpen && (workspaceQa ? workspaceView !== 'chat' && !(workspaceView === 'split' && isNarrowViewport && mobileWorkspaceContent === 'chat') && (isNarrowViewport ? mobilePanel !== 'pins' : !isPinsPaneOpen) : !isNarrowViewport && !isPinsPaneOpen) && (
         <button
           aria-label={rightPaneTab === "ask" ? t("reader.openAskPane") : t("reader.openAnnotationsPane")}
-          className="pane-reopen-tab pane-reopen-tab--pins"
-          onClick={rightPaneTab === "ask" ? handleAskPaneToggle : handlePinsPaneToggle}
+          ref={annotationsOpenRef}
+          className={`pane-reopen-tab pane-reopen-tab--pins ${workspaceQa ? 'workspace-pane-toggle' : ''}`}
+          onClick={workspaceQa ? openAnnotations : rightPaneTab === "ask" ? handleAskPaneToggle : handlePinsPaneToggle}
           title={rightPaneTab === "ask" ? t("reader.openAsk") : t("reader.openAnnotations")}
           type="button"
         >
@@ -3401,8 +3463,9 @@ export function ReaderShell() {
                 : renderPinsPaneContent(
                   <button
                     aria-label={t("reader.closeAnnotationsPane")}
-                    className="icon-button icon-button--small"
-                    onClick={() => setMobilePanel(null)}
+                    className={workspaceQa ? 'workspace-pane-toggle' : 'icon-button icon-button--small'}
+                    ref={annotationsCloseRef}
+                    onClick={workspaceQa ? closeAnnotations : () => setMobilePanel(null)}
                     title={t("reader.closeAnnotations")}
                     type="button"
                   >

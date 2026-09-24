@@ -49,6 +49,7 @@ const QA_INDEX_JOB_COLUMNS = [
 ].join(",");
 
 const QA_THREAD_COLUMNS = [
+  "pinned_at",
   "active_user_document_id",
   "created_at",
   "deleted_at",
@@ -149,7 +150,7 @@ export async function getLatestQaIndexJob({ userDocumentId, userId }) {
   return data ? rowToQaIndexJob(data) : undefined;
 }
 
-export async function listQaThreadsForDocument({ userDocumentId, userId, scope = 'current', offset = 0 }) {
+export async function listQaThreadsForDocument({ userDocumentId, userId, scope = 'current', offset = 0, search = '' }) {
   validateThreadScope(scope, userDocumentId);
   if (scope === 'current') await requireUserDocument({ userDocumentId, userId });
 
@@ -159,9 +160,11 @@ export async function listQaThreadsForDocument({ userDocumentId, userId, scope =
     .eq("user_id", userId)
     .eq("scope", scope)
     .is("deleted_at", null)
+    .order("pinned_at", { ascending: false, nullsFirst: false })
     .order("updated_at", { ascending: false })
     .order("id", { ascending: false }).range(offset, offset + 29);
   query = scope !== 'current' ? query.is('active_user_document_id', null) : query.eq('active_user_document_id', userDocumentId);
+  if (search) query = query.ilike("title", `%${search.replace(/[\\%_]/g, "\\$&")}%`);
   const { data, error } = await query;
 
   if (error) {
@@ -169,6 +172,25 @@ export async function listQaThreadsForDocument({ userDocumentId, userId, scope =
   }
 
   return (data ?? []).map(rowToQaThread);
+}
+
+export async function updateWorkspaceThread({ threadId, userId, patch }) {
+  const client = requireSupabaseServiceClient();
+  const current = await client.from('user_qa_threads').select(QA_THREAD_COLUMNS)
+    .eq('id', threadId).eq('user_id', userId).eq('scope', 'workspace').maybeSingle();
+  if (current.error) throw toSupabaseServiceError(current.error, 'qa_thread_query_failed', 'Could not read conversation.');
+  if (!current.data || current.data.deleted_at && patch.deleted !== false)
+    throw new SupabaseServiceError(404, 'qa_thread_not_found', 'Conversation not found.');
+  const values = {};
+  if (patch.title !== undefined) values.title = patch.title;
+  if (patch.pinned !== undefined) values.pinned_at = patch.pinned ? new Date().toISOString() : null;
+  // Only the workspace container is soft-deleted. Existing child tombstones
+  // remain untouched, so undo cannot resurrect individually deleted answers.
+  if (patch.deleted !== undefined) values.deleted_at = patch.deleted ? new Date().toISOString() : null;
+  const { data, error } = await client.from('user_qa_threads').update(values)
+    .eq('id', threadId).eq('user_id', userId).eq('scope', 'workspace').select(QA_THREAD_COLUMNS).single();
+  if (error) throw toSupabaseServiceError(error, 'qa_thread_update_failed', 'Could not update conversation.');
+  return rowToQaThread(data);
 }
 
 export async function listQaMessagesForThread({ threadId, userId }) {
@@ -1045,6 +1067,7 @@ function rowToQaIndexJob(row) {
 
 function rowToQaThread(row) {
   return {
+    pinnedAt: parseIsoTime(row.pinned_at),
     activeCloudDocumentId: row.active_user_document_id ?? undefined,
     createdAt: parseIsoTime(row.created_at) ?? Date.now(),
     deletedAt: parseIsoTime(row.deleted_at),

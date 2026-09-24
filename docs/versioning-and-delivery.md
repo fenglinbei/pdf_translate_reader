@@ -1,5 +1,7 @@
 # 版本、CI/CD 与 QA 隔离规范
 
+2026-09-25：[工作区 UI 候选](qa-workspace-ui-review.md) 的代码版本为应用 `0.2.0-alpha.1` / QA `0.4.0-alpha.4`，已完成本地检查。用户要求先讨论流转，现有 5174 / 8789 验收入口仍保留上一版。
+
 状态：仓库实现；生产切流与部署另行验收。本文是后续开发与发布的约束。
 
 2026-09-24：[P1 已收尾](qa-agent-stage-1-closeout.md)，[P2 已实现并完成本地部署](qa-agent-stage-2-implementation.md)。此前 [会话升级](qa-conversation-upgrade-2026-09-24.md) 已将 QA 版本升为 `0.3.0-alpha.3` 并完成本地部署，支持自动判断普通/文档问题，默认使用 DeepSeek V4.1 Flash。当前 [工作区升级](qa-workspace-agent-plan.md) 为 `0.4.0-alpha.3`，已完成本地隔离部署及工程自动验收，用户人工验收待进行。

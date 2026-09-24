@@ -162,8 +162,8 @@ export async function createQaIndexJob(input: {
   return response.json() as Promise<CreateQaIndexJobResponse>;
 }
 
-export async function getQaThreads(cloudDocumentId?: string, scope: 'current' | 'general' | 'workspace' = 'current', offset = 0) {
-  const query = new URLSearchParams({ scope, offset: String(offset) });
+export async function getQaThreads(cloudDocumentId?: string, scope: 'current' | 'general' | 'workspace' = 'current', offset = 0, search = '') {
+  const query = new URLSearchParams({ scope, offset: String(offset), search });
   if (cloudDocumentId) query.set('documentId', cloudDocumentId);
   const response = await fetch(
     `${apiBaseUrl}/qa/threads?${query}`,
@@ -202,6 +202,14 @@ export async function getQaThreadMessages(threadId: string) {
   const payload = await response.json() as QaThreadMessagesResponse;
 
   return payload.messages;
+}
+
+export async function updateWorkspaceThread(threadId: string, patch: { title?: string; pinned?: boolean; deleted?: boolean }) {
+  const response = await fetch(`${apiBaseUrl}/qa/threads/${encodeURIComponent(threadId)}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', ...await getAuthHeader() }, body: JSON.stringify(patch),
+  });
+  if (!response.ok) throw new Error(await readErrorMessage(response));
+  return (await response.json() as { thread: QaThread }).thread;
 }
 
 export async function deleteQaThread(threadId: string) {

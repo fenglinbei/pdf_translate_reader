@@ -147,6 +147,44 @@ export function createWorkspaceTools({ userId, activeDocumentId, signal, loadSou
     return executeReading(legacyName, { document: args.document, parameters: args.section ? { mode: 'section', sectionId: args.section }
       : args.pageStart ? { mode: 'pages', pageStart: args.pageStart, pageEnd: args.pageEnd } : { mode: 'full' } });
   }
-  return { execute, get metrics() { return metrics(); }, get citations() { return [...selected.values()]; },
+  // UI provenance is projected from harness-owned locations, never requested
+  // from the model and never added to the tool messages in its context.
+  function describeActivity(name, input = {}, result) {
+    const args = input?.cursor ? cursors.get(input.cursor)?.args ?? {} : input ?? {};
+    const data = result?.ok ? result.data : undefined;
+    const locations = [];
+    const add = (r, item = {}) => {
+      if (!r) return;
+      locations.push({ documentId: r.id, title: r.source.view.title.slice(0, 240),
+        ...(item.pageStart ? { pageStart: item.pageStart, pageEnd: item.pageEnd } : {}),
+        ...(item.sectionPath?.length ? { sectionPath: item.sectionPath.slice(0, 8) } : {}) });
+    };
+    for (const group of data?.results ?? (data ? [data] : [])) {
+      for (const item of group.evidence ?? []) {
+        const ref = sources.get(item.source);
+        if (ref) add(ref.reader, ref.reader.store.byId.get(ref.id));
+      }
+      if (!group.evidence?.length && group.document) add(readers.get(documents.get(group.document)));
+    }
+    for (const item of data?.citations ?? []) {
+      const citation = [...selected.values()].find(c => c.evidenceId === item.citation);
+      if (citation) add(readers.get(citation.cloudDocumentId), citation);
+    }
+    const found = [data?.currentDocument, ...(data?.documents ?? [])].filter(Boolean);
+    for (const card of found) locations.push({ documentId: documents.get(card.document), title: String(card.title || card.fileName || card.document).slice(0, 240), current: Boolean(card.isCurrent) });
+    // Before completion these are requested ranges, not a claim of having read them.
+    if (!locations.length && !result) for (const ref of Array.isArray(args.documents) ? args.documents : [args.document]) {
+      const r = readers.get(documents.get(ref));
+      const params = args.parameters ?? args;
+      if (r) add(r, params.section || params.sectionId ? r.source.view.sections.find(s => s.sectionId === (params.section || params.sectionId)) : params);
+    }
+    const unique = [...new Map(locations.map(item => [JSON.stringify(item), item])).values()];
+    return { version: 1, operation: name, locations: unique.slice(0, 12), totalLocations: unique.length,
+      query: typeof args.query === 'string' ? args.query.slice(0, 200) : [args.queries, args.parameters?.queries].filter(Array.isArray).flat().filter(item => typeof item === 'string').join(' / ').slice(0, 800) || undefined,
+      hasMore: Boolean(data?.hasMore || data?.results?.some(r => r.hasMore)),
+      ...(data?.documents ? { resultCount: data.documents.length } : {}),
+      ...(data?.citations ? { citationCount: data.citations.length } : {}) };
+  }
+  return { execute, describeActivity, get metrics() { return metrics(); }, get citations() { return [...selected.values()]; },
     async assertCurrent() { for (const r of readers.values()) await r.source.assertCurrent(); } };
 }

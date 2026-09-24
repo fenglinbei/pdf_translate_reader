@@ -57,6 +57,7 @@ type PdfViewerProps = {
   activeSelection?: SentenceSelection;
   entry: PdfLibraryEntry;
   headerControls?: ReactNode;
+  fitToPane?: boolean;
   locateRequest?: PinLocateRequest;
   onActivateTranslationCard: (selection: SentenceSelection) => void;
   onCloseTranslationCard: (selection: SentenceSelection) => void;
@@ -192,6 +193,7 @@ export function PdfViewer({
   activeSelection,
   entry,
   headerControls,
+  fitToPane = false,
   locateRequest,
   onActivateTranslationCard,
   onCloseTranslationCard,
@@ -391,8 +393,8 @@ export function PdfViewer({
   }, [entry.blob, entry.fingerprint, onDocumentLoadError, onSentenceSelectionChange]);
 
   const liveFitScale = useMemo(
-    () => getFitScale(pages, availableWidth, isMobileViewport ? MOBILE_MAX_RENDER_SCALE : MAX_RENDER_SCALE),
-    [availableWidth, isMobileViewport, pages],
+    () => getFitScale(pages, availableWidth, isMobileViewport ? MOBILE_MAX_RENDER_SCALE : MAX_RENDER_SCALE, fitToPane ? 0.25 : MIN_RENDER_SCALE),
+    [availableWidth, isMobileViewport, pages, fitToPane],
   );
 
   useEffect(() => {
@@ -412,7 +414,7 @@ export function PdfViewer({
     setRenderZoom(userZoomRef.current);
   }, [isMobileViewport]);
 
-  const fitScale = baseScale ?? liveFitScale;
+  const fitScale = fitToPane ? liveFitScale : baseScale ?? liveFitScale;
   const displayScale = useMemo(() => fitScale * userZoom, [fitScale, userZoom]);
   const committedDisplayScale = useMemo(() => fitScale * renderZoom, [fitScale, renderZoom]);
   const pdfRenderScale = committedDisplayScale;
@@ -2359,11 +2361,11 @@ async function loadPageDescriptors(pdfDocument: PdfDocumentProxy) {
   return descriptors;
 }
 
-function getFitScale(pages: PageDescriptor[], availableWidth: number, maxRenderScale: number) {
+function getFitScale(pages: PageDescriptor[], availableWidth: number, maxRenderScale: number, minRenderScale = MIN_RENDER_SCALE) {
   const widestPage = pages.reduce((width, page) => Math.max(width, page.width), 612);
   const nextScale = availableWidth / widestPage;
 
-  return Math.min(maxRenderScale, Math.max(MIN_RENDER_SCALE, nextScale));
+  return Math.min(maxRenderScale, Math.max(minRenderScale, nextScale));
 }
 
 // For a multi-page chunk, return the page number that holds the most line

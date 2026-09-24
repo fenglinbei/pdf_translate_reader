@@ -56,7 +56,14 @@ import {
 import { qaSourceKey, sameQaSource } from "./sourceIdentity";
 import type { MessageKey } from "../i18n/messages";
 
+export type QaSessionState = { threadId?: string; streaming: boolean; title?: string };
 type PaperQaPanelProps = {
+  managedSession?: { key: string; initialThreadId?: string };
+  sessionTitle?: string;
+  visible?: boolean;
+  onSessionState?: (key: string, state: QaSessionState) => void;
+  onHistoryChanged?: () => void;
+  onNewSession?: () => void;
   workspace?: boolean;
   activeDocumentId?: string;
   isFullscreen?: boolean;
@@ -92,6 +99,7 @@ const QA_MODELS = getAvailableModelIds("qa");
 const QA_REASONING_EFFORTS: QaReasoningEffort[] = ["auto", "quick", "standard", "deep"];
 
 export function PaperQaPanel({
+  managedSession, sessionTitle, visible = true, onSessionState, onHistoryChanged, onNewSession,
   workspace = false,
   activeDocumentId,
   isFullscreen: isFullscreenProp,
@@ -135,7 +143,7 @@ export function PaperQaPanel({
   const [capabilitiesError, setCapabilitiesError] = useState<string>();
   const [retrievalWarnings, setRetrievalWarnings] = useState<string[]>([]);
   const [selectedEvidenceRef, setSelectedEvidenceRef] = useState<SelectedEvidenceRef>();
-  const [threadId, setThreadId] = useState<string>();
+  const [threadId, setThreadId] = useState<string | undefined>(managedSession?.initialThreadId);
   const [threads, setThreads] = useState<QaThread[]>([]);
   const [hasMoreThreads, setHasMoreThreads] = useState(false);
   const [verifierWarnings, setVerifierWarnings] = useState<string[]>([]);
@@ -160,7 +168,14 @@ export function PaperQaPanel({
     ? availableModels.includes(model)
     : qaIndexJob?.status === "ready" && qaIndexJob?.chunkerVersion === PROJECT_CONFIG.qa.chunkerVersion));
 
+  const sessionQuestion = messages.find(message => message.role === 'user')?.content || draftQuestion;
   useEffect(() => {
+    if (managedSession) onSessionState?.(managedSession.key, { threadId, streaming: isStreaming, title: sessionQuestion?.slice(0, 100) });
+  }, [managedSession?.key, threadId, isStreaming, sessionQuestion, onSessionState]);
+  useEffect(() => () => { abortControllerRef.current?.abort(); }, []);
+
+  useEffect(() => {
+    if (!visible && capabilities) return;
     let disposed = false;
     let timer: number | undefined;
     const refresh = async () => {
@@ -180,14 +195,14 @@ export function PaperQaPanel({
     };
     void refresh();
     return () => { disposed = true; window.clearTimeout(timer); };
-  }, [t]);
+  }, [t, visible]);
 
   useEffect(() => {
     let disposed = false;
     let timer: number | undefined;
     setReadiness(undefined); setReadinessError(undefined); setReadinessLoading(true);
     onReadinessChange?.(undefined);
-    if (!activeDocumentId) { setReadinessLoading(false); return; }
+    if (!activeDocumentId || workspace) { setReadinessLoading(false); return; }
     const refresh = async () => {
       try {
         const next = await getQaDocumentReadiness(activeDocumentId);
@@ -208,7 +223,7 @@ export function PaperQaPanel({
     };
     void refresh();
     return () => { disposed = true; window.clearTimeout(timer); };
-  }, [activeDocumentId, t, onReadinessChange]);
+  }, [activeDocumentId, workspace, t, onReadinessChange]);
 
   const warnings = useMemo(
     () => uniqueStrings([
@@ -222,6 +237,7 @@ export function PaperQaPanel({
   );
 
   const refreshThreads = useCallback(async (options: { selectLatest?: boolean; silent?: boolean } = {}) => {
+    if (managedSession) { onHistoryChanged?.(); return []; }
     if (!historyEnabled) {
       setThreads([]);
       return [];
@@ -263,7 +279,7 @@ export function PaperQaPanel({
         setIsLoadingThreads(false);
       }
     }
-  }, [conversationDocumentId, scope, historyEnabled, workspace, t]);
+  }, [conversationDocumentId, scope, historyEnabled, workspace, t, managedSession, onHistoryChanged]);
 
   const loadMoreThreads = useCallback(async () => {
     if (isLoadingThreads || !hasMoreThreads) return;
@@ -282,6 +298,7 @@ export function PaperQaPanel({
   }, [conversationDocumentId, scope, threads.length, isLoadingThreads, hasMoreThreads, t]);
 
   useEffect(() => {
+    if (managedSession) return;
     abortControllerRef.current?.abort();
     abortControllerRef.current = undefined;
     historyRequestRef.current += 1;
@@ -302,7 +319,7 @@ export function PaperQaPanel({
     if (historyEnabled) {
       void refreshThreads({ selectLatest: true });
     }
-  }, [conversationDocumentId, scope, historyEnabled, refreshThreads]);
+  }, [conversationDocumentId, scope, historyEnabled, refreshThreads, managedSession]);
 
   useEffect(() => {
     if (!isFullscreen) {
@@ -748,7 +765,7 @@ export function PaperQaPanel({
   const handleSubmit = useCallback(async () => {
     const question = draftQuestion.trim();
 
-    if (!question || !isReady || isStreaming) {
+    if (!question || !isReady || isStreaming || isLoadingMessages) {
       return;
     }
 
@@ -925,6 +942,7 @@ export function PaperQaPanel({
     scopeKey,
     answerLanguage,
     draftQuestion,
+    isLoadingMessages,
     isReady,
     isStreaming,
     model,
@@ -947,7 +965,7 @@ export function PaperQaPanel({
       >
       <header className="ask-workbench-header">
         <div className="ask-workbench-title-block">
-          <div className="ask-workbench-title">{t(workspace ? "ask.workspaceTitle" : nativeRuntime ? 'ask.autoChat' : scope !== 'current' ? 'ask.generalChat' : "ask.chatTitle")}</div>
+          <div className="ask-workbench-title">{sessionTitle || t(workspace ? "ask.workspaceTitle" : nativeRuntime ? 'ask.autoChat' : scope !== 'current' ? 'ask.generalChat' : "ask.chatTitle")}</div>
           <div className="ask-workbench-status">
             {workspace ? t("ask.workspaceReady") : scope !== 'current' ? t(isReady ? 'ask.generalReady' : capabilitiesLoading ? 'ask.connecting' : 'ask.generalUnavailable')
               : isReady ? t(nativeRuntime ? readiness?.state === 'readable' ? 'ask.autoReady' : 'ask.autoNeedsParsing' : "ask.chatReady")
@@ -961,14 +979,14 @@ export function PaperQaPanel({
           ) : null}
           <button
             className="ask-icon-button"
-            disabled={isStreaming}
-            onClick={handleNewThread}
+            disabled={!managedSession && isStreaming}
+            onClick={onNewSession ?? handleNewThread}
             title={t("ask.newThread")}
             type="button"
           >
             <Plus aria-hidden="true" size={16} strokeWidth={2.2} />
           </button>
-          <button
+          {!managedSession ? <button
             className="ask-icon-button"
             onClick={() => setFullscreen(!isFullscreen)}
             title={isFullscreen ? t("ask.exitFullscreen") : t("ask.enterFullscreen")}
@@ -977,7 +995,7 @@ export function PaperQaPanel({
             {isFullscreen
               ? <Minimize2 aria-hidden="true" size={15} strokeWidth={2.2} />
               : <Maximize2 aria-hidden="true" size={15} strokeWidth={2.2} />}
-          </button>
+          </button> : null}
         </div>
       </header>
 
@@ -992,7 +1010,7 @@ export function PaperQaPanel({
         </div>
       ) : null}
 
-      <ThreadHistory
+      {!managedSession ? <ThreadHistory
         activeThreadId={threadId}
         deletingThreadId={deletingThreadId}
         disabled={isStreaming}
@@ -1001,7 +1019,7 @@ export function PaperQaPanel({
         onSelect={handleThreadSelect}
         threads={workspace ? threads : threads.slice(0, 6)}
         onMore={hasMoreThreads ? loadMoreThreads : undefined}
-      />
+      /> : null}
 
       <div className="ask-message-stream" aria-busy={isLoadingMessages} aria-live="polite">
         {isLoadingMessages ? (
@@ -1068,7 +1086,7 @@ export function PaperQaPanel({
         </div>
         <textarea
           className="ask-input"
-          disabled={!isReady || isStreaming}
+          disabled={!isReady || isStreaming || isLoadingMessages}
           onChange={(event) => setDraftQuestion(event.currentTarget.value)}
           onKeyDown={(event) => {
             if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
@@ -1090,7 +1108,7 @@ export function PaperQaPanel({
           ) : (
             <button
               className="ask-action-button"
-              disabled={!isReady || !draftQuestion.trim()}
+              disabled={!isReady || isLoadingMessages || !draftQuestion.trim()}
               type="submit"
             >
               <Send aria-hidden="true" size={15} strokeWidth={2.2} />
@@ -1200,6 +1218,7 @@ function QaMessageBubble({
   operatingMessageId?: string;
 }) {
   const { t } = useI18n();
+  const [sourcesExpanded, setSourcesExpanded] = useState(false);
   const isAssistant = message.role === "assistant";
   const evidence = message.retrievalSnapshot?.evidence ?? [];
   const handleCitationToken = isAssistant
@@ -1215,7 +1234,7 @@ function QaMessageBubble({
         <div className="ask-message-role">
           {isAssistant ? t("ask.assistant") : t("ask.you")}
         </div>
-        {isAssistant && message.agentSteps?.length ? <AgentActivity steps={message.agentSteps} /> : null}
+        {isAssistant && message.agentSteps?.length ? <AgentActivity steps={message.agentSteps} streaming={message.status === "streaming"} /> : null}
         <div className="ask-message-content">
           {isAssistant && message.reasoningText ? (
             <ReasoningPanel
@@ -1226,18 +1245,20 @@ function QaMessageBubble({
           {message.content
             ? <QaMarkdown content={message.content} onCitationToken={handleCitationToken} citationIds={evidence.filter((item) => message.citations.some((citation) => sameQaSource(citation, item))).map((item) => item.evidenceId)} />
             : message.status === "streaming" && !message.reasoningText
-              ? <span className="ask-thinking">{t("ask.thinking")}</span>
+              ? <span className="ask-thinking" role="status">{message.agentSteps?.some(step => step.kind === 'tool_call' && step.status === 'running') ? null : t(message.agentSteps?.some(step => step.kind === 'tool_call') ? "ask.preparingAnswer" : "ask.thinking")}</span>
               : null}
         </div>
-        {isAssistant && message.agentSteps?.length ? (
+        {isAssistant && message.agentSteps?.length && !workspace ? (
           <AgentStepsPanel steps={message.agentSteps} />
         ) : null}
         {message.errorMessage ? (
           <div className="ask-detail ask-detail--error">{message.errorMessage}</div>
         ) : null}
         {message.citations.length > 0 ? (
-          <div className="ask-citation-list" aria-label={t("ask.citations")}>
-            {message.citations.map((citation) => {
+          <div className="ask-sources" aria-label={t("ask.citations")}>
+            <div className="ask-sources-heading"><FileText size={14} aria-hidden="true" />{t("ask.sourcesCount", { count: message.citations.length })}</div>
+            <div className="ask-citation-list">
+            {(sourcesExpanded ? message.citations : message.citations.slice(0, 3)).map((citation) => {
               const linkedEvidence = evidence.find((item) => sameQaSource(item, citation));
               const canOpen = workspace || citation.cloudDocumentId === activeDocumentId;
               const label = linkedEvidence
@@ -1273,9 +1294,12 @@ function QaMessageBubble({
                 </span>
               );
             })}
+            </div>
+            {message.citations.length > 3 ? <button className="ask-sources-toggle" type="button" aria-expanded={sourcesExpanded}
+              onClick={() => setSourcesExpanded(value => !value)}>{t(sourcesExpanded ? 'ask.collapseSources' : 'ask.expandSources', { count: message.citations.length - 3 })}</button> : null}
           </div>
         ) : null}
-        {isAssistant && evidence.length > 0 ? (
+        {isAssistant && evidence.length > 0 && !message.citations.length ? (
           <div className="ask-evidence-link-row" aria-label={t("ask.evidence")}>
             {evidence.slice(0, 4).map((item) => (
               <button
@@ -1418,24 +1442,42 @@ function ReasoningPanel({ text, isStreaming }: { text: string; isStreaming: bool
   );
 }
 
-function AgentActivity({ steps }: { steps: QaAgentStep[] }) {
+type ReadingActivity = {
+  version: number; query?: string; resultCount?: number; citationCount?: number; hasMore?: boolean;
+  locations: { documentId?: string; title: string; pageStart?: number; pageEnd?: number; sectionPath?: string[]; current?: boolean }[];
+};
+function AgentActivity({ steps, streaming }: { steps: QaAgentStep[]; streaming: boolean }) {
   const { t } = useI18n();
-  const visible = [...steps].sort((a, b) => a.stepIndex - b.stepIndex).filter(step => step.kind === "commentary"
-    || step.kind === "tool_call" && ["get_document_outline", "search_document_text", "read_document", "finish_reading", "unknown_tool", "discover_documents", "document_outline", "search_document", "cite_sources"].includes(step.toolName ?? ""));
+  const [expanded, setExpanded] = useState(streaming);
+  useEffect(() => { if (!streaming) setExpanded(false); }, [streaming]);
+  const visible = [...steps].sort((a, b) => a.stepIndex - b.stepIndex).filter(step => step.kind === 'commentary' || step.kind === 'tool_call');
   if (!visible.length) return null;
-  return (
-    <div className="ask-agent-activity" aria-label={t("ask.activity")}>
-      {visible.map(step => step.kind === "commentary" ? (
-        <p className="ask-agent-commentary" key={step.stepIndex}>{step.summary}</p>
-      ) : (
-        <div className={`ask-agent-tool ask-agent-tool--${step.status}`} key={step.stepIndex}>
-          {step.status === "running" ? <LoaderCircle className="spin" size={13} aria-hidden="true" />
-            : step.status === "error" ? <AlertTriangle size={13} aria-hidden="true" /> : <Check size={13} aria-hidden="true" />}
+  const shown = expanded ? visible : visible.slice(-3);
+  return <div className="ask-agent-activity" aria-label={t('ask.activity')}>
+    {shown.map(step => {
+      if (step.kind === 'commentary') return <p className="ask-agent-commentary" key={step.stepIndex}>{step.summary}</p>;
+      const payload = step.payload as { activity?: ReadingActivity } | undefined;
+      const activity = payload?.activity?.version === 1 ? payload.activity : undefined;
+      return <div className={`ask-reading-step ask-agent-tool--${step.status}`} key={step.stepIndex}>
+        <div className="ask-reading-step-label">
+          {step.status === 'running' ? <LoaderCircle className="ask-spin-icon" size={14} aria-hidden="true" />
+            : step.status === 'error' ? <AlertTriangle size={14} aria-hidden="true" /> : <Check size={14} aria-hidden="true" />}
           <span>{step.summary}</span>
         </div>
-      ))}
-    </div>
-  );
+        {activity?.query ? <div className="ask-reading-query">“{activity.query}”</div> : null}
+        {activity?.resultCount !== undefined ? <small>{t(activity.resultCount ? 'ask.activityDocuments' : 'ask.activityNoMatches', { count: activity.resultCount })}</small> : null}
+        {activity?.locations?.map((location, index) => <div className="ask-reading-location" key={index}>
+          <FileText size={13} aria-hidden="true" /><span><strong>{location.title}</strong>
+            {location.pageStart ? <small>p.{location.pageStart}{location.pageEnd && location.pageEnd !== location.pageStart ? `–${location.pageEnd}` : ''}</small> : null}
+            {location.sectionPath?.length ? <small>{location.sectionPath.join(' / ')}</small> : null}
+            {location.current ? <small>{t('ask.currentDocument')}</small> : null}</span>
+        </div>)}
+        {activity?.hasMore ? <small>{t('ask.activityRemaining')}</small> : null}
+      </div>;
+    })}
+    {visible.length > 3 ? <button className="ask-sources-toggle" type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>
+      {t(expanded ? 'ask.activityLess' : 'ask.activityMore', { count: visible.length })}</button> : null}
+  </div>;
 }
 
 function AgentStepsPanel({ steps }: { steps: QaAgentStep[] }) {

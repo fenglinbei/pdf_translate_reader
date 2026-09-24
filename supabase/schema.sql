@@ -2186,6 +2186,7 @@ create table if not exists public.user_qa_threads (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   active_user_document_id uuid references public.user_documents(id) on delete set null,
+  pinned_at timestamptz,
   title text not null,
   scope text not null check (scope in ('current', 'current-plus-references', 'library', 'general')),
   reference_document_ids uuid[] not null default '{}',

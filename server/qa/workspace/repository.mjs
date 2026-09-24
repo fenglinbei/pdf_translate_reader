@@ -2,7 +2,7 @@ import { requireSupabaseServiceClient } from '../../supabase/service.mjs';
 import { DocumentToolError } from '../documents/errors.mjs';
 
 export async function checkWorkspaceSchema(client = requireSupabaseServiceClient()) {
-  const { error } = await client.from('user_qa_threads').select('origin_scope,origin_user_document_id,workspace_upgraded_at').limit(0);
+  const { error } = await client.from('user_qa_threads').select('origin_scope,origin_user_document_id,workspace_upgraded_at,pinned_at').limit(0);
   if (error) throw new Error('Apply supabase/migrations/20260925_qa_workspace.sql to the isolated QA database first.');
 }
 

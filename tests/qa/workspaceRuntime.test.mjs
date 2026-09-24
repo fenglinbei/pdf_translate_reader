@@ -90,3 +90,31 @@ test('failed older requests retain a closed assistant turn instead of becoming p
   assert.match(messages[2].content, /不是待执行/);
   assert.equal(messages.at(-1).content, '你是什么模型');
 });
+
+test('reading events persist harness provenance without extending the model context', async () => {
+  const run = setup(); const fake = adapter([
+    { tool_calls: [tool('discover', 'discover_documents', { query: 'Alpha' })] },
+    { tool_calls: [tool('read', 'read_document', { document: 'D1', pageStart: 1, pageEnd: 1 })] },
+    { tool_calls: [tool('cite', 'cite_sources', { selections: [{ sources: ['R1'], quote: 'Alpha uses gating.' }] })] },
+    { content: 'Uses gating.[C1]' },
+  ]);
+  await runWorkspaceAgent({ ...run, adapter: fake.adapter, model: 'deepseek-flash', question: 'Method?', activeDocumentId: 'a' });
+  const activity = run.steps.find(step => step.toolName === 'read_document').payload.activity;
+  assert.equal(activity.version, 1);
+  assert.deepEqual(activity.locations, [{ documentId: 'a', title: 'a', pageStart: 1, pageEnd: 1, sectionPath: ['Method'] }]);
+  assert.equal(run.steps.find(step => step.toolName === 'discover_documents').payload.activity.query, 'Alpha');
+  assert.equal(run.steps.find(step => step.toolName === 'cite_sources').payload.activity.citationCount, 1);
+  assert(run.emitted.some(([name, data]) => name === 'tool_call' && data.step.payload.activity?.locations?.[0]?.pageStart === 1));
+  for (const request of fake.requests) for (const message of request.messages.filter(m => m.role === 'tool')) {
+    assert(!Object.hasOwn(JSON.parse(message.content).data ?? {}, 'activity'));
+  }
+});
+
+test('continuation activity reports the actual completed range and failures claim no read locations', async () => {
+  const { workspace } = setup();
+  await workspace.execute('read_document', { document: 'current' });
+  const failed = workspace.describeActivity('read_document', { document: 'current', pageStart: 99, pageEnd: 99 }, { ok: false, error: { code: 'INVALID_PAGE_RANGE' } });
+  assert.deepEqual(failed.locations, []);
+  const read = await workspace.execute('read_document', { source: 'R1' });
+  assert.equal(workspace.describeActivity('read_document', { source: 'R1' }, { ok: true, data: read }).locations[0].pageStart, 1);
+});

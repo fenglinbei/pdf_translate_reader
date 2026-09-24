@@ -643,6 +643,7 @@ export type QaAgentStep = {
 };
 
 export type QaThread = {
+  pinnedAt?: number;
   id: string;
   activeCloudDocumentId?: string;
   title: string;

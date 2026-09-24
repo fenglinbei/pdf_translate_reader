@@ -37,6 +37,7 @@ import {
   listQaMessagesForThread,
   listQaThreadsForDocument,
   updateQaMessage,
+  updateWorkspaceThread,
 } from "../supabase/qa.mjs";
 import { SupabaseServiceError } from "../supabase/service.mjs";
 
@@ -77,6 +78,14 @@ export async function handleQaRoute(request, response, url, user) {
 
     if (request.method === "DELETE" && messageMatch) {
       await handleDeleteMessage(messageMatch[1], response, user);
+      return;
+    }
+
+    if (request.method === 'PATCH' && threadMatch) {
+      const threadId = normalizeUuidLike(decodeURIComponent(threadMatch[1]));
+      const patch = normalizeWorkspaceThreadPatch(await readJsonBody(request));
+      if (!threadId) throw new SupabaseServiceError(400, 'invalid_thread', 'Invalid conversation.');
+      writeJson(response, 200, { thread: await updateWorkspaceThread({ threadId, userId: user.id, patch }) });
       return;
     }
 
@@ -732,6 +741,16 @@ async function handleQaStream(request, response, user) {
   }
 }
 
+export function normalizeWorkspaceThreadPatch(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input) || !Object.keys(input).length
+    || Object.keys(input).some(key => !['title', 'pinned', 'deleted'].includes(key))
+    || input.title !== undefined && (typeof input.title !== 'string' || !input.title.trim() || input.title.trim().length > 200)
+    || input.pinned !== undefined && typeof input.pinned !== 'boolean'
+    || input.deleted !== undefined && typeof input.deleted !== 'boolean')
+    throw new SupabaseServiceError(400, 'invalid_thread_update', 'Invalid conversation update.');
+  return { ...input, ...(input.title !== undefined ? { title: input.title.trim() } : {}) };
+}
+
 async function handleGetThreads(url, response, user) {
   const userDocumentId = normalizeUuidLike(url.searchParams.get("documentId"));
   const scope = normalizeQaScope(url.searchParams.get('scope'));
@@ -752,6 +771,7 @@ async function handleGetThreads(url, response, user) {
   }
   const threads = await listQaThreadsForDocument({
     offset,
+    search: (url.searchParams.get("search") ?? "").trim().slice(0, 200),
     userDocumentId,
     userId: user.id,
     scope,
