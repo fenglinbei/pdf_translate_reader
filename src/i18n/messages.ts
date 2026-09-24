@@ -2,6 +2,7 @@ import type { UiLocale } from "./uiLocales";
 
 export const MESSAGES = {
   "en-US": {
+    "ask.moreThreads": "Older conversations",
     "ask.workspaceTitle": "Workspace AI chat",
     "ask.workspaceReady": "Ask freely, or explore your documents",
     "ask.workspaceEmpty": "Ask an everyday question, read a paper, or compare several documents.",
@@ -651,6 +652,7 @@ export const MESSAGES = {
     "pdf.addedRegion": "Added region {count}.",
   },
   "zh-CN": {
+    "ask.moreThreads": "更多历史会话",
     "ask.workspaceTitle": "工作区 AI 问答",
     "ask.workspaceReady": "自由提问，按需查阅工作区资料",
     "ask.workspaceEmpty": "聊日常问题，查阅一篇文章，或比较多篇文档。",

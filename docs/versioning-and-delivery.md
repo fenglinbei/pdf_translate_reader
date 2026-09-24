@@ -14,7 +14,7 @@
 | 对象 | 唯一版本来源 | Git 标签 | 当前开发版本 |
 | --- | --- | --- | --- |
 | 应用（阅读器、翻译、文库） | 根 `package.json`，同步 lockfile | `vX.Y.Z` | `0.1.0`，沿用已有声明，不追认历史正式发布 |
-| QA 服务 | `server/qa/package.json` | `qa-vX.Y.Z[-alpha.N/-beta.N/-rc.N]` | `0.4.0-alpha.2` |
+| QA 服务 | `server/qa/package.json` | `qa-vX.Y.Z[-alpha.N/-beta.N/-rc.N]` | `0.4.0-alpha.3` |
 | 检索、提示词、索引协议 | `server/qa/config.mjs` | 随服务发布 | 首次拆分保持原值 |
 
 公共兼容面包含 HTTP 请求、SSE 事件、持久化数据和配置；内部重排不应改变它们。

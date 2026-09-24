@@ -137,6 +137,7 @@ export function PaperQaPanel({
   const [selectedEvidenceRef, setSelectedEvidenceRef] = useState<SelectedEvidenceRef>();
   const [threadId, setThreadId] = useState<string>();
   const [threads, setThreads] = useState<QaThread[]>([]);
+  const [hasMoreThreads, setHasMoreThreads] = useState(false);
   const [verifierWarnings, setVerifierWarnings] = useState<string[]>([]);
   const [highlightedEvidenceId, setHighlightedEvidenceId] = useState<string>();
   const abortControllerRef = useRef<AbortController>();
@@ -241,6 +242,7 @@ export function PaperQaPanel({
       }
 
       setThreads(nextThreads);
+      setHasMoreThreads(workspace && nextThreads.length === 30);
 
       if (options.selectLatest) {
         const latestThread = nextThreads[0];
@@ -261,7 +263,23 @@ export function PaperQaPanel({
         setIsLoadingThreads(false);
       }
     }
-  }, [conversationDocumentId, scope, historyEnabled, t]);
+  }, [conversationDocumentId, scope, historyEnabled, workspace, t]);
+
+  const loadMoreThreads = useCallback(async () => {
+    if (isLoadingThreads || !hasMoreThreads) return;
+    const request = ++historyRequestRef.current;
+    setIsLoadingThreads(true);
+    try {
+      const next = await getQaThreads(conversationDocumentId, scope, threads.length);
+      if (request !== historyRequestRef.current) return;
+      setThreads(current => [...current, ...next.filter(thread => !current.some(item => item.id === thread.id))]);
+      setHasMoreThreads(next.length === 30);
+    } catch (error) {
+      if (request === historyRequestRef.current) setHistoryError(error instanceof Error ? error.message : t("ask.historyFailed"));
+    } finally {
+      if (request === historyRequestRef.current) setIsLoadingThreads(false);
+    }
+  }, [conversationDocumentId, scope, threads.length, isLoadingThreads, hasMoreThreads, t]);
 
   useEffect(() => {
     abortControllerRef.current?.abort();
@@ -981,7 +999,8 @@ export function PaperQaPanel({
         isLoading={isLoadingThreads}
         onDelete={handleThreadDelete}
         onSelect={handleThreadSelect}
-        threads={threads}
+        threads={workspace ? threads : threads.slice(0, 6)}
+        onMore={hasMoreThreads ? loadMoreThreads : undefined}
       />
 
       <div className="ask-message-stream" aria-busy={isLoadingMessages} aria-live="polite">
@@ -1086,6 +1105,7 @@ export function PaperQaPanel({
 }
 
 function ThreadHistory({
+  onMore,
   activeThreadId,
   deletingThreadId,
   disabled,
@@ -1098,6 +1118,7 @@ function ThreadHistory({
   deletingThreadId?: string;
   disabled: boolean;
   isLoading: boolean;
+  onMore?: () => void;
   onDelete: (thread: QaThread) => void;
   onSelect: (threadId: string) => void;
   threads: QaThread[];
@@ -1113,9 +1134,10 @@ function ThreadHistory({
       <div className="ask-history-heading">
         <History aria-hidden="true" size={14} strokeWidth={2.1} />
         <span>{t("ask.recentThreads")}</span>
+        {onMore ? <button className="ask-icon-button" disabled={disabled || isLoading} type="button" onClick={onMore}>{t("ask.moreThreads")}</button> : null}
       </div>
       <div className="ask-history-list">
-        {threads.slice(0, 6).map((thread) => (
+        {threads.map((thread) => (
           <div
             aria-current={thread.id === activeThreadId ? "true" : undefined}
             className="ask-history-item"
@@ -1234,7 +1256,7 @@ function QaMessageBubble({
                     title={citation.quotedText}
                     type="button"
                   >
-                    {label}{citation.pageEnd > citation.pageStart ? `–${citation.pageEnd}` : ""}
+                    {workspace ? `${citation.documentTitle} · ` : ""}{label}{citation.pageEnd > citation.pageStart ? `–${citation.pageEnd}` : ""}
                     {citation.sectionPath?.length ? ` · ${citation.sectionPath.join(" / ")}` : ""}
                   </button>
                   {citation.sourceKind === "document_text" && citation.pageEnd > citation.pageStart ? (

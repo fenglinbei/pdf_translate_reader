@@ -746,7 +746,12 @@ async function handleGetThreads(url, response, user) {
     return;
   }
 
+  const offset = Number(url.searchParams.get("offset") ?? 0);
+  if (!Number.isSafeInteger(offset) || offset < 0) {
+    writeJson(response, 400, { error: { code: "invalid_offset", message: "Invalid history offset." } }); return;
+  }
   const threads = await listQaThreadsForDocument({
+    offset,
     userDocumentId,
     userId: user.id,
     scope,

@@ -149,7 +149,7 @@ export async function getLatestQaIndexJob({ userDocumentId, userId }) {
   return data ? rowToQaIndexJob(data) : undefined;
 }
 
-export async function listQaThreadsForDocument({ userDocumentId, userId, scope = 'current' }) {
+export async function listQaThreadsForDocument({ userDocumentId, userId, scope = 'current', offset = 0 }) {
   validateThreadScope(scope, userDocumentId);
   if (scope === 'current') await requireUserDocument({ userDocumentId, userId });
 
@@ -160,7 +160,7 @@ export async function listQaThreadsForDocument({ userDocumentId, userId, scope =
     .eq("scope", scope)
     .is("deleted_at", null)
     .order("updated_at", { ascending: false })
-    .limit(30);
+    .order("id", { ascending: false }).range(offset, offset + 29);
   query = scope !== 'current' ? query.is('active_user_document_id', null) : query.eq('active_user_document_id', userDocumentId);
   const { data, error } = await query;
 

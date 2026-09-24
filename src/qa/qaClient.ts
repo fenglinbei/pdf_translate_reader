@@ -162,8 +162,8 @@ export async function createQaIndexJob(input: {
   return response.json() as Promise<CreateQaIndexJobResponse>;
 }
 
-export async function getQaThreads(cloudDocumentId?: string, scope: 'current' | 'general' | 'workspace' = 'current') {
-  const query = new URLSearchParams({ scope });
+export async function getQaThreads(cloudDocumentId?: string, scope: 'current' | 'general' | 'workspace' = 'current', offset = 0) {
+  const query = new URLSearchParams({ scope, offset: String(offset) });
   if (cloudDocumentId) query.set('documentId', cloudDocumentId);
   const response = await fetch(
     `${apiBaseUrl}/qa/threads?${query}`,
