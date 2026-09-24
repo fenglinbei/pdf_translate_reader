@@ -64,8 +64,9 @@ import { LibraryWorkspaceContainer } from "../library/LibraryWorkspaceContainer"
 import { metadataIsPending } from "../library/MetadataRecognition";
 import { createPdfFingerprint } from "../pdf/pdfFingerprint";
 import { PdfViewer, type PinLocateRequest } from "../pdf/PdfViewer";
+import { WorkspaceQaHost } from "../qa/WorkspaceQaHost";
 import { PaperQaPanel } from "../qa/PaperQaPanel";
-import { createQaIndexJob, getQaIndexJob, getQaDocumentReadiness, type QaDocumentReadiness } from "../qa/qaClient";
+import { createQaIndexJob, getQaIndexJob, getQaDocumentReadiness, getQaCapabilities, type QaDocumentReadiness } from "../qa/qaClient";
 import {
   deletePin,
   deletePinsByPdf,
@@ -492,6 +493,16 @@ export function ReaderShell() {
   const [isPaneResizing, setIsPaneResizing] = useState(false);
   // QA chat fullscreen. While on, the right pane is widened in place and the
   // resizer range is expanded. The user's normal pane width is restored on exit.
+  const [workspaceQa, setWorkspaceQa] = useState(false);
+  const [workspaceQaPage, setWorkspaceQaPage] = useState(false);
+  const [pendingQaLocation, setPendingQaLocation] = useState<{ source: QaCitation | QaRetrievedEvidence; page?: number }>();
+  const qaOpenRequestRef = useRef(0);
+  useEffect(() => {
+    let disposed = false;
+    setWorkspaceQa(false); setWorkspaceQaPage(false);
+    if (readerSessionUserId) void getQaCapabilities().then(cap => { if (!disposed) setWorkspaceQa(Boolean(cap?.workspaceChat)); }).catch(() => {});
+    return () => { disposed = true; };
+  }, [readerSessionUserId]);
   const [isQaFullscreen, setIsQaFullscreen] = useState(false);
   const preFullscreenPaneWidthRef = useRef(PINS_PANE_DEFAULT_WIDTH);
   const [paperContext, setPaperContext] = useState<PaperContextRecord>();
@@ -2355,12 +2366,35 @@ export function ReaderShell() {
     setMobilePanel(null);
   }, [currentEntry?.cloudDocumentId, currentEntry?.fingerprint, t]);
 
+  const openQaSource = useCallback(async (source: QaCitation | QaRetrievedEvidence, page?: number) => {
+    const request = ++qaOpenRequestRef.current;
+    setWorkspaceQaPage(false); setIsLibraryWorkbenchOpen(false);
+    setRightPaneTab("ask"); setIsPinsPaneOpen(true);
+    if (source.cloudDocumentId === currentEntry?.cloudDocumentId) {
+      await locateQaSource(source, page); return;
+    }
+    if (!workspaceQa) return;
+    setStatusMessage(t("ask.checkingCitationSource"));
+    try {
+      const document = await getLibraryDocument(source.cloudDocumentId);
+      if (request !== qaOpenRequestRef.current) return;
+      if (await handleOpenHistory(document) && request === qaOpenRequestRef.current) setPendingQaLocation({ source, page });
+    } catch (error) {
+      if (request === qaOpenRequestRef.current) setStatusMessage(error instanceof Error ? error.message : t("ask.readinessFailed"));
+    }
+  }, [currentEntry?.cloudDocumentId, workspaceQa, handleOpenHistory, locateQaSource, t]);
+  useEffect(() => {
+    if (pendingQaLocation && pendingQaLocation.source.cloudDocumentId === currentEntry?.cloudDocumentId) {
+      setPendingQaLocation(undefined);
+      void locateQaSource(pendingQaLocation.source, pendingQaLocation.page);
+    }
+  }, [currentEntry?.cloudDocumentId, pendingQaLocation, locateQaSource]);
   const handleLocateQaCitation = useCallback((citation: QaCitation, pageNumber?: number) => {
-    void locateQaSource(citation, pageNumber);
-  }, [locateQaSource]);
+    void openQaSource(citation, pageNumber);
+  }, [openQaSource]);
   const handleLocateQaEvidence = useCallback((evidence: QaRetrievedEvidence) => {
-    void locateQaSource(evidence);
-  }, [locateQaSource]);
+    void openQaSource(evidence);
+  }, [openQaSource]);
 
   const handleRevealPinCard = useCallback((pin: TranslationPin) => {
     pinPanelFocusRequestIdRef.current += 1;
@@ -2398,6 +2432,7 @@ export function ReaderShell() {
   }, [isNarrowViewport, rightPaneTab]);
 
   const handleAskPaneToggle = useCallback(() => {
+    setWorkspaceQaPage(false);
     if (isNarrowViewport) {
       setRightPaneTab("ask");
       setMobilePanel((panel) => (panel === "ask" ? null : "ask"));
@@ -2409,6 +2444,11 @@ export function ReaderShell() {
   }, [isNarrowViewport, rightPaneTab]);
 
   const handleQaFullscreenChange = useCallback((fullscreen: boolean) => {
+    if (workspaceQa) {
+      setWorkspaceQaPage(fullscreen); setRightPaneTab("ask"); setIsPinsPaneOpen(true);
+      if (isNarrowViewport) setMobilePanel(fullscreen ? null : "ask");
+      return;
+    }
     setIsQaFullscreen((wasFullscreen) => {
       if (fullscreen === wasFullscreen) {
         return wasFullscreen;
@@ -2433,7 +2473,7 @@ export function ReaderShell() {
 
       return fullscreen;
     });
-  }, [pinsPaneWidth]);
+  }, [pinsPaneWidth, workspaceQa, isNarrowViewport]);
 
   const handleRightPaneTabSelect = useCallback(
     (tab: RightPaneTab) => {
@@ -2653,6 +2693,7 @@ export function ReaderShell() {
     </>
   );
   const renderAskPaneContent = (closeButton: ReactNode) => {
+    if (workspaceQa) return <><div className="pane-heading-row">{renderRightPaneTabs()}<div className="pins-clear-actions">{closeButton}</div></div><div className="workspace-qa-slot" /></>;
     const nativeRuntime = qaReadiness?.documentId === currentEntry?.cloudDocumentId && qaReadiness?.runtime === "document-tools-v1";
     const isMathpixRunning = mathpixPipelineState === "running";
     const mathpixTitle = mathpixProcessView?.title ?? t("ask.mathpixNotStarted");
@@ -2948,13 +2989,16 @@ export function ReaderShell() {
 
   return (
     <I18nProvider locale={settings.uiLocale}>
-    <div className="app-shell">
+    <div className={`app-shell ${workspaceQaPage ? "app-shell--qa-page" : ""}`}>
       <header className="topbar">
         <div className="brand-lockup" aria-label={t("app.name")}>
           <span className="brand-mark">P</span>
           <span className="brand-text">{t("app.name")}</span>
         </div>
         <div className="topbar-actions">
+          {workspaceQa ? <button className="workspace-qa-trigger" aria-pressed={workspaceQaPage} onClick={() => {
+            setWorkspaceQaPage(!workspaceQaPage); setIsLibraryWorkbenchOpen(false); setMobilePanel(null);
+          }} type="button"><MessageSquareText size={17} aria-hidden="true" />{t("ask.workspaceEntry")}</button> : null}
           <button
             aria-label={
               isLibraryWorkbenchOpen
@@ -2971,6 +3015,7 @@ export function ReaderShell() {
               if (isLibraryWorkbenchOpen) {
                 closeLibraryWorkbench();
               } else {
+                setWorkspaceQaPage(false);
                 setIsLibraryWorkbenchOpen(true);
               }
             }}
@@ -3265,6 +3310,16 @@ export function ReaderShell() {
               )}
         </aside>
       </main>
+      {workspaceQa ? <WorkspaceQaHost pageOpen={workspaceQaPage} narrow={isNarrowViewport}
+        mobileOpen={mobilePanel === "ask"} sideOpen={isPinsPaneOpen && rightPaneTab === "ask"}>
+        <div className="workspace-qa-context"><span>{currentEntry?.cloudDocumentId ? t("ask.workspaceFocus", { title: currentEntry.fileName }) : t("ask.workspaceNoFocus")}</span>
+          {workspaceQaPage ? <button className="secondary-button" type="button" onClick={() => {
+            setWorkspaceQaPage(false); setRightPaneTab("ask"); setIsPinsPaneOpen(true);
+          }}>{t("ask.workspaceBack")}</button> : null}</div>
+        <PaperQaPanel key={readerSessionUserId} workspace activeDocumentId={currentEntry?.cloudDocumentId}
+          isFullscreen={workspaceQaPage} onFullscreenChange={handleQaFullscreenChange}
+          onCitationClick={handleLocateQaCitation} onEvidenceClick={handleLocateQaEvidence} />
+      </WorkspaceQaHost> : null}
       {isLibraryWorkbenchOpen ? (
         <LibraryWorkspaceContainer
           activeDocumentId={currentEntry?.cloudDocumentId}

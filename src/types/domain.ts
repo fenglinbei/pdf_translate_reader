@@ -481,7 +481,7 @@ export type ApiCallLog = {
   promptCacheMissTokens?: number;
 };
 
-export type QaScope = "current" | "current-plus-references" | "library" | "general";
+export type QaScope = "current" | "current-plus-references" | "library" | "general" | "workspace";
 export type QaChatModel = ModelId;
 export type QaExecutionMode = "agentic";
 export type QaReasoningEffort = "auto" | "quick" | "standard" | "deep";
@@ -511,6 +511,10 @@ export type QaAgentToolName =
   | "get_document_outline"
   | "search_document_text"
   | "read_document"
+  | "discover_documents"
+  | "document_outline"
+  | "search_document"
+  | "cite_sources"
   | "finish_reading"
   | "unknown_tool"
   | "search_current_paper"
@@ -715,7 +719,7 @@ export type QaAnswerStreamRequest = {
   question: string;
   reasoningEffort: QaReasoningEffort;
   regenerateMessageId?: string;
-  scope: "current" | "general";
+  scope: "current" | "general" | "workspace";
   threadId?: string;
 };
 

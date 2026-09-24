@@ -57,6 +57,7 @@ import { qaSourceKey, sameQaSource } from "./sourceIdentity";
 import type { MessageKey } from "../i18n/messages";
 
 type PaperQaPanelProps = {
+  workspace?: boolean;
   activeDocumentId?: string;
   isFullscreen?: boolean;
   onFullscreenChange?: (fullscreen: boolean) => void;
@@ -91,6 +92,7 @@ const QA_MODELS = getAvailableModelIds("qa");
 const QA_REASONING_EFFORTS: QaReasoningEffort[] = ["auto", "quick", "standard", "deep"];
 
 export function PaperQaPanel({
+  workspace = false,
   activeDocumentId,
   isFullscreen: isFullscreenProp,
   onCitationClick,
@@ -123,7 +125,7 @@ export function PaperQaPanel({
   const [reasoningEffort, setReasoningEffort] = useState<QaReasoningEffort>("auto");
   // Scope binds history and permissions. The agent chooses whether this
   // individual question needs document tools within the same conversation.
-  const scope = activeDocumentId ? 'current' : 'general';
+  const scope = workspace ? 'workspace' : activeDocumentId ? 'current' : 'general';
   const conversationDocumentId = scope === 'current' ? activeDocumentId : undefined;
   const scopeKey = `${scope}:${conversationDocumentId ?? ''}`;
   const scopeKeyRef = useRef(scopeKey);
@@ -147,11 +149,11 @@ export function PaperQaPanel({
   const [readiness, setReadiness] = useState<QaDocumentReadiness>();
   const [readinessLoading, setReadinessLoading] = useState(true);
   const [readinessError, setReadinessError] = useState<string>();
-  const nativeRuntime = capabilities?.runtime === "document-tools-v1" || readiness?.documentId === activeDocumentId && readiness?.runtime === "document-tools-v1";
-  const enabledModels = scope === 'general' ? capabilities?.models : readiness?.models ?? capabilities?.models;
+  const nativeRuntime = workspace || capabilities?.runtime === "document-tools-v1" || readiness?.documentId === activeDocumentId && readiness?.runtime === "document-tools-v1";
+  const enabledModels = scope !== 'current' ? capabilities?.models : readiness?.models ?? capabilities?.models;
   const availableModels = nativeRuntime ? QA_MODELS.filter((id) => enabledModels?.includes(id)) : QA_MODELS;
-  const historyEnabled = scope === 'general' ? Boolean(capabilities?.generalChat) : Boolean(conversationDocumentId);
-  const isReady = scope === 'general'
+  const historyEnabled = scope !== 'current' ? Boolean(capabilities?.generalChat) : Boolean(conversationDocumentId);
+  const isReady = scope !== 'current'
     ? Boolean(!capabilitiesLoading && !capabilitiesError && capabilities?.generalChat && availableModels.includes(model))
     : Boolean(conversationDocumentId && !readinessLoading && !readinessError && (nativeRuntime
     ? availableModels.includes(model)
@@ -165,7 +167,7 @@ export function PaperQaPanel({
         const next = await getQaCapabilities();
         if (disposed) return;
         setCapabilities(next); setCapabilitiesError(undefined);
-        if (next?.runtime === 'document-tools-v1') {
+        if (next && ['document-tools-v1', 'workspace-tools-v1'].includes(next.runtime)) {
           const enabled = QA_MODELS.filter(id => next.models.includes(id));
           setModel(current => enabled.includes(current) ? current : enabled[0] ?? current);
         }
@@ -210,7 +212,7 @@ export function PaperQaPanel({
   const warnings = useMemo(
     () => uniqueStrings([
       ...(scope === 'current' && readinessError ? [readinessError] : []),
-      ...(scope === 'general' && capabilitiesError ? [capabilitiesError] : []),
+      ...(scope !== 'current' && capabilitiesError ? [capabilitiesError] : []),
       ...retrievalWarnings,
       ...verifierWarnings,
       ...(historyError ? [historyError] : []),
@@ -526,7 +528,7 @@ export function PaperQaPanel({
       setIsStreaming(true);
       await streamQaAnswer(
         {
-          activeDocumentId: conversationDocumentId,
+          activeDocumentId: workspace ? activeDocumentId : conversationDocumentId,
           answerLanguage,
           executionMode: "agentic",
           model,
@@ -652,6 +654,8 @@ export function PaperQaPanel({
     }
   }, [
     conversationDocumentId,
+    activeDocumentId,
+    workspace,
     scope,
     scopeKey,
     answerLanguage,
@@ -717,11 +721,11 @@ export function PaperQaPanel({
 
       const citation = message.citations.find((item) => sameQaSource(item, evidence));
 
-      if (citation && citation.cloudDocumentId === activeDocumentId) {
+      if (citation && (workspace || citation.cloudDocumentId === activeDocumentId)) {
         onCitationClick(citation);
       }
     }
-  }, [activeDocumentId, flashEvidence, onCitationClick]);
+  }, [activeDocumentId, workspace, flashEvidence, onCitationClick]);
 
   const handleSubmit = useCallback(async () => {
     const question = draftQuestion.trim();
@@ -766,7 +770,7 @@ export function PaperQaPanel({
     try {
       await streamQaAnswer(
         {
-          activeDocumentId: conversationDocumentId,
+          activeDocumentId: workspace ? activeDocumentId : conversationDocumentId,
           answerLanguage,
           executionMode: "agentic",
           model,
@@ -897,6 +901,8 @@ export function PaperQaPanel({
     }
   }, [
     conversationDocumentId,
+    activeDocumentId,
+    workspace,
     scope,
     scopeKey,
     answerLanguage,
@@ -918,14 +924,14 @@ export function PaperQaPanel({
   return (
     <>
       <section
-        aria-label={t(nativeRuntime ? 'ask.autoChat' : scope === 'general' ? 'ask.generalChat' : "ask.chatSection")}
+        aria-label={t(workspace ? "ask.workspaceTitle" : nativeRuntime ? 'ask.autoChat' : scope !== 'current' ? 'ask.generalChat' : "ask.chatSection")}
         className={`ask-workbench ${isFullscreen ? "ask-workbench--fullscreen" : ""}`}
       >
       <header className="ask-workbench-header">
         <div className="ask-workbench-title-block">
-          <div className="ask-workbench-title">{t(nativeRuntime ? 'ask.autoChat' : scope === 'general' ? 'ask.generalChat' : "ask.chatTitle")}</div>
+          <div className="ask-workbench-title">{t(workspace ? "ask.workspaceTitle" : nativeRuntime ? 'ask.autoChat' : scope !== 'current' ? 'ask.generalChat' : "ask.chatTitle")}</div>
           <div className="ask-workbench-status">
-            {scope === 'general' ? t(isReady ? 'ask.generalReady' : capabilitiesLoading ? 'ask.connecting' : 'ask.generalUnavailable')
+            {workspace ? t("ask.workspaceReady") : scope !== 'current' ? t(isReady ? 'ask.generalReady' : capabilitiesLoading ? 'ask.connecting' : 'ask.generalUnavailable')
               : isReady ? t(nativeRuntime ? readiness?.state === 'readable' ? 'ask.autoReady' : 'ask.autoNeedsParsing' : "ask.chatReady")
                 : nativeRuntime ? t('ask.connecting') : t("ask.chatWaitingForIndex")}
             {isStreaming ? <span>{t("ask.streaming")}</span> : null}
@@ -987,11 +993,12 @@ export function PaperQaPanel({
         ) : messages.length === 0 ? (
           <div className="ask-chat-empty">
             <Search aria-hidden="true" size={18} strokeWidth={2} />
-            <span>{t(scope === 'general' ? 'ask.generalEmpty' : nativeRuntime ? 'ask.autoEmpty' : "ask.emptyChat")}</span>
+            <span>{t(workspace ? 'ask.workspaceEmpty' : scope !== 'current' ? 'ask.generalEmpty' : nativeRuntime ? 'ask.autoEmpty' : "ask.emptyChat")}</span>
           </div>
         ) : messages.map((message) => (
           <QaMessageBubble
             activeDocumentId={activeDocumentId}
+            workspace={workspace}
             copiedMessageId={copiedMessageId}
             isStreaming={isStreaming}
             key={message.id}
@@ -1050,7 +1057,7 @@ export function PaperQaPanel({
               void handleSubmit();
             }
           }}
-          placeholder={nativeRuntime && isReady ? t('ask.generalPlaceholder') : scope === 'general' ? t(isReady ? 'ask.generalPlaceholder' : 'ask.generalUnavailable')
+          placeholder={nativeRuntime && isReady ? t('ask.generalPlaceholder') : scope !== 'current' ? t(isReady ? 'ask.generalPlaceholder' : 'ask.generalUnavailable')
             : isReady ? t("ask.placeholder") : nativeRuntime ? t("ask.waitingForParsing") : t("ask.disabledPlaceholder")}
           rows={3}
           value={draftQuestion}
@@ -1144,6 +1151,7 @@ function ThreadHistory({
 }
 
 function QaMessageBubble({
+  workspace,
   activeDocumentId,
   copiedMessageId,
   isStreaming,
@@ -1156,6 +1164,7 @@ function QaMessageBubble({
   onRegenerate,
   operatingMessageId,
 }: {
+  workspace?: boolean;
   activeDocumentId?: string;
   copiedMessageId?: string;
   isStreaming: boolean;
@@ -1208,7 +1217,7 @@ function QaMessageBubble({
           <div className="ask-citation-list" aria-label={t("ask.citations")}>
             {message.citations.map((citation) => {
               const linkedEvidence = evidence.find((item) => sameQaSource(item, citation));
-              const canOpen = citation.cloudDocumentId === activeDocumentId;
+              const canOpen = workspace || citation.cloudDocumentId === activeDocumentId;
               const label = linkedEvidence
                 ? t("ask.citationEvidencePage", {
                     evidenceId: linkedEvidence.evidenceId,
@@ -1390,7 +1399,7 @@ function ReasoningPanel({ text, isStreaming }: { text: string; isStreaming: bool
 function AgentActivity({ steps }: { steps: QaAgentStep[] }) {
   const { t } = useI18n();
   const visible = [...steps].sort((a, b) => a.stepIndex - b.stepIndex).filter(step => step.kind === "commentary"
-    || step.kind === "tool_call" && ["get_document_outline", "search_document_text", "read_document", "finish_reading", "unknown_tool"].includes(step.toolName ?? ""));
+    || step.kind === "tool_call" && ["get_document_outline", "search_document_text", "read_document", "finish_reading", "unknown_tool", "discover_documents", "document_outline", "search_document", "cite_sources"].includes(step.toolName ?? ""));
   if (!visible.length) return null;
   return (
     <div className="ask-agent-activity" aria-label={t("ask.activity")}>
@@ -1787,7 +1796,7 @@ function getAgentStatusLabelKey(status: QaAgentStep["status"]): MessageKey {
 }
 
 function getAgentToolNameLabel(toolName?: QaAgentStep["toolName"]) {
-  if (toolName && ["get_document_outline", "search_document_text", "read_document", "finish_reading", "unknown_tool"].includes(toolName)) return toolName;
+  if (toolName && ["get_document_outline", "search_document_text", "read_document", "finish_reading", "unknown_tool", "discover_documents", "document_outline", "search_document", "cite_sources"].includes(toolName)) return toolName;
   if (toolName === "search_current_paper") {
     return "search_current_paper";
   }

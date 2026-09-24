@@ -881,6 +881,44 @@ button {
   padding-bottom: 12px;
 }
 
+.workspace-qa-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text);
+  background: var(--surface);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.workspace-qa-trigger[aria-pressed="true"] { background: #e3eee8; }
+.workspace-qa-page {
+  position: fixed;
+  inset: 56px 0 0;
+  z-index: 70;
+  background: #fafaf7;
+  padding: 20px max(20px, calc((100vw - 1120px) / 2));
+}
+.workspace-qa-page[hidden] { display: none; }
+.workspace-qa-container {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.workspace-qa-container .ask-workbench { flex: 1; overflow: hidden; }
+.workspace-qa-slot { min-height: 0; flex: 1; overflow: hidden; }
+.workspace-qa-context { display: flex; gap: 12px; align-items: center; justify-content: space-between; color: var(--text-muted); font-size: 12px; }
+.workspace-qa-context > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-qa-context > button { flex-shrink: 0; }
+@media (max-width: 760px) {
+  .workspace-qa-page { padding: 12px; }
+  .workspace-qa-trigger { padding: 7px; }
+}
+
 /*
  * In-place fullscreen: the right pane is widened by ReaderShell (via the
  * isQaFullscreen state), so the workbench itself just needs to claim more
@@ -6262,3 +6300,5 @@ button {
     max-width: 34vw;
   }
 }
+
+.app-shell--qa-page > main { visibility: hidden; }

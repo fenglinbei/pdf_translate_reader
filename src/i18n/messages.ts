@@ -2,6 +2,13 @@ import type { UiLocale } from "./uiLocales";
 
 export const MESSAGES = {
   "en-US": {
+    "ask.workspaceTitle": "Workspace AI chat",
+    "ask.workspaceReady": "Ask freely, or explore your documents",
+    "ask.workspaceEmpty": "Ask an everyday question, read a paper, or compare several documents.",
+    "ask.workspaceEntry": "AI Chat",
+    "ask.workspaceBack": "Back to reader",
+    "ask.workspaceFocus": "Reading: {title}",
+    "ask.workspaceNoFocus": "No cloud document open",
     "library.recognition.title": "Metadata recognition",
     "library.recognition.details": "Recognition details",
     "library.recognition.hint": "New imports are recognized automatically. Existing values are preserved when their source is unknown. Select suggestions to replace them.",
@@ -644,6 +651,13 @@ export const MESSAGES = {
     "pdf.addedRegion": "Added region {count}.",
   },
   "zh-CN": {
+    "ask.workspaceTitle": "工作区 AI 问答",
+    "ask.workspaceReady": "自由提问，按需查阅工作区资料",
+    "ask.workspaceEmpty": "聊日常问题，查阅一篇文章，或比较多篇文档。",
+    "ask.workspaceEntry": "AI 问答",
+    "ask.workspaceBack": "返回阅读器",
+    "ask.workspaceFocus": "阅读环境：{title}",
+    "ask.workspaceNoFocus": "当前未打开云端文档",
     "library.recognition.title": "文献信息识别",
     "library.recognition.details": "识别详情",
     "library.recognition.hint": "新导入自动识别。来源不明的已有内容会保留，勾选建议后可确认替换。",

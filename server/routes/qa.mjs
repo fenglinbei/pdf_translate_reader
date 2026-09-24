@@ -1,4 +1,6 @@
 import { writeJson } from "../http/json.mjs";
+import { handleWorkspaceStream } from "../qa/workspace/stream.mjs";
+import { getWorkspaceTrace } from "../qa/workspace/repository.mjs";
 import { handleDocumentStream } from "../qa/documents/stream.mjs";
 import { createDocumentRunContext } from "../qa/documents/runContext.mjs";
 import { DocumentToolError } from "../qa/documents/errors.mjs";
@@ -53,7 +55,7 @@ export async function handleQaRoute(request, response, url, user) {
   try {
     if (request.method === 'GET' && url.pathname === '/api/qa/capabilities') {
       const runtime = process.env.QA_AGENT_RUNTIME ?? 'legacy-json-v1';
-      writeJson(response, 200, { runtime, generalChat: runtime === 'document-tools-v1', models: getDocumentToolModels() });
+      writeJson(response, 200, { runtime, generalChat: ['document-tools-v1', 'workspace-tools-v1'].includes(runtime), workspaceChat: runtime === 'workspace-tools-v1', models: getDocumentToolModels() });
       return;
     }
     if (request.method === 'GET' && url.pathname === '/api/qa/document-readiness') {
@@ -61,6 +63,12 @@ export async function handleQaRoute(request, response, url, user) {
       if (!userDocumentId) { writeJson(response, 400, { error: { code: 'invalid_document', message: 'activeDocumentId is required.' } }); return; }
       const readiness = await getDocumentReadiness({ userId: user.id, userDocumentId });
       writeJson(response, 200, { ...readiness, models: getDocumentToolModels() });
+      return;
+    }
+    const traceMatch = url.pathname.match(/^\/api\/qa\/messages\/([^/]+)\/trace$/);
+    if (request.method === 'GET' && traceMatch) {
+      const trace = await getWorkspaceTrace({ userId: user.id, messageId: traceMatch[1] });
+      writeJson(response, 200, trace);
       return;
     }
     const threadMatch = url.pathname.match(/^\/api\/qa\/threads\/([^/]+)$/);
@@ -135,6 +143,14 @@ async function handleQaStream(request, response, user) {
     return;
   }
 
+  if (process.env.QA_AGENT_RUNTIME === 'workspace-tools-v1') {
+    await handleWorkspaceStream(request, response, user, requestBody);
+    return;
+  }
+  if (requestBody.scope === 'workspace') {
+    writeJson(response, 409, { error: { code: 'qa_workspace_unavailable', message: '工作区问答尚未开启。' } });
+    return;
+  }
   if (process.env.QA_AGENT_RUNTIME === 'document-tools-v1') {
     await handleDocumentStream(request, response, user, requestBody);
     return;
@@ -878,7 +894,7 @@ export function normalizeQaStreamRequest(body) {
   }
 
   const question = typeof body.question === "string"
-    ? body.question.replace(/\s+/g, " ").trim()
+    ? body.question.trim()
     : "";
   const activeDocumentId = normalizeUuidLike(
     body.activeDocumentId ?? body.activeUserDocumentId ?? body.userDocumentId,
@@ -923,7 +939,7 @@ function normalizeReasoningEffort(value) {
 }
 
 function normalizeQaScope(value) {
-  if (value && value !== "current" && value !== 'general') {
+  if (value && value !== "current" && value !== 'general' && value !== 'workspace') {
     throw new Error("Only current-paper QA and general chat are supported.");
   }
 

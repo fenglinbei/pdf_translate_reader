@@ -161,7 +161,7 @@ export async function listQaThreadsForDocument({ userDocumentId, userId, scope =
     .is("deleted_at", null)
     .order("updated_at", { ascending: false })
     .limit(30);
-  query = scope === 'general' ? query.is('active_user_document_id', null) : query.eq('active_user_document_id', userDocumentId);
+  query = scope !== 'current' ? query.is('active_user_document_id', null) : query.eq('active_user_document_id', userDocumentId);
   const { data, error } = await query;
 
   if (error) {
@@ -489,7 +489,7 @@ export async function createOrReuseQaThread({
 }
 
 function validateThreadScope(scope, documentId) {
-  if (!['current', 'general'].includes(scope) || (scope === 'general' ? Boolean(documentId) : !documentId)) {
+  if (!['current', 'general', 'workspace'].includes(scope) || (scope !== 'current' ? Boolean(documentId) : !documentId)) {
     throw new SupabaseServiceError(400, 'invalid_qa_scope', 'Document QA requires a document; general chat cannot be bound to one.');
   }
 }
@@ -632,7 +632,7 @@ async function validateDocumentCitationOwner({ citation, messageId, userId }) {
     .eq('id', messageId).eq('user_id', userId).is('deleted_at', null).maybeSingle();
   if (messageError || !message) throw new SupabaseServiceError(403, 'qa_citation_owner_mismatch', 'Citation message is not available.');
   const thread = await requireQaThread({ threadId: message.thread_id, userId });
-  if (thread.activeCloudDocumentId !== citation.cloudDocumentId) throw new SupabaseServiceError(403, 'qa_citation_owner_mismatch', 'Citation document differs from this thread.');
+  if (thread.scope !== 'workspace' && thread.activeCloudDocumentId !== citation.cloudDocumentId) throw new SupabaseServiceError(403, 'qa_citation_owner_mismatch', 'Citation document differs from this thread.');
   const prefix = `${document.content_sha256}:`;
   const locator = citation.sourceLocator;
   if (!citation.sourceRecordId?.startsWith(prefix) || locator?.version !== 'citation-locator-v1'

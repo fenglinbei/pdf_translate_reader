@@ -3,7 +3,7 @@ import { DOCUMENT_PROMPT_VERSION, DOCUMENT_RUNTIME_VERSION } from './runtime.mjs
 
 export function createDocumentRunContext({ userId, userDocumentId, messageId, threadId, model, emit,
   persistStep = insertQaAgentStep, persistTool = insertQaToolCall, persistLog = insertQaApiLog,
-  runtimeVersion = DOCUMENT_RUNTIME_VERSION, promptVersion = DOCUMENT_PROMPT_VERSION, terminalLog = true }) {
+  runtimeVersion = DOCUMENT_RUNTIME_VERSION, promptVersion = DOCUMENT_PROMPT_VERSION, terminalLog = true, duplicateObservations = true, recordToolTrace = false }) {
   const startedAt = Date.now(), steps = [], modelCalls = [];
   let nextIndex = 0, phase = 'document_load', activeUsage, terminalWritten = false, commentary;
   const pendingTools = new Map();
@@ -64,15 +64,16 @@ export function createDocumentRunContext({ userId, userDocumentId, messageId, th
       const toolCall = await persistTool({ userId, stepId: row.id, toolName, input, outputSummary: summary,
         resultEvidenceIds: evidenceIds, startedAt: toolStarted, finishedAt: Date.now(), status: error ? 'error' : 'success',
         errorMessage: error ? result.error.message : undefined });
+      if (recordToolTrace) await persistLog({ ...logScope, requestKind: 'retrieval', requestStartedAt: toolStarted, requestFinishedAt: Date.now(), status: error ? 'error' : 'success', payload: { phase: 'tool_result', callId: call.id, tool: call.name, input, result } });
       Object.assign(row, { toolCall }); emit('tool_call', { step: row, toolCall });
-      await step('observation', summary, { callId: call.id, ok: result.ok, errorCode: result.error?.code,
+      if (duplicateObservations) await step('observation', summary, { callId: call.id, ok: result.ok, errorCode: result.error?.code,
         cacheHit: Boolean(result.data?.cacheHit), hasMore: result.data?.hasMore }, toolName, evidenceIds, error ? 'error' : 'success');
     },
   };
   return {
     events, steps, modelCalls, insertStep,
     setPhase: (value) => { phase = value; },
-    async modelCall(callPhase, operation) {
+    async modelCall(callPhase, operation, trace) {
       phase = callPhase; activeUsage = undefined;
       const callStart = Date.now(); let error;
       try { return await operation(); } catch (failure) { error = failure; throw failure; }
@@ -84,7 +85,7 @@ export function createDocumentRunContext({ userId, userDocumentId, messageId, th
         try {
           await persistLog({ ...logScope, requestKind: 'model-call', requestStartedAt: callStart, requestFinishedAt: call.finishedAt,
             status: call.status, usage: activeUsage, errorMessage: error?.message,
-            payload: { phase: callPhase, callIndex: call.callIndex, usageComplete: call.usageComplete, errorCode: error?.code } });
+            payload: { phase: callPhase, callIndex: call.callIndex, usageComplete: call.usageComplete, errorCode: error?.code, ...(trace ? { publicTrace: trace } : {}) } });
         } catch (failure) { failure.criticalPersistence = true; throw failure; }
       }
     },
@@ -112,9 +113,13 @@ export function createDocumentRunContext({ userId, userDocumentId, messageId, th
 }
 
 function knownToolName(name) {
-  return ['get_document_outline', 'search_document_text', 'read_document', 'finish_reading'].includes(name) ? name : 'unknown_tool';
+  return ['get_document_outline', 'search_document_text', 'read_document', 'finish_reading', 'discover_documents', 'document_outline', 'search_document', 'cite_sources'].includes(name) ? name : 'unknown_tool';
 }
 function toolDescription(name, input) {
+  if (name === 'discover_documents') return '查找工作区文档';
+  if (name === 'cite_sources') return '标记重要原文';
+  if (name === 'document_outline') return '查看文档目录';
+  if (name === 'search_document') return '查找原文';
   if (name === 'get_document_outline') return '查看文档目录';
   if (name === 'search_document_text') return '查找原文';
   if (name === 'read_document') return input?.mode === 'pages' ? `阅读第 ${input.pageStart}–${input.pageEnd} 页${input.cursor ? '的后续内容' : ''}` : '阅读原文';

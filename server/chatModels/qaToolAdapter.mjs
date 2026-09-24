@@ -17,13 +17,14 @@ export function createQaToolAdapter({ model, reasoningEffort = 'standard', fetch
   const definition = requireModelDefinition(model);
   const provider = getModelProviderConfig(definition.provider, env);
   requireCondition(provider.apiKeyConfigured && provider.apiBaseUrlConfigured, 'QA_PROVIDER_NOT_CONFIGURED', '新版问答所选模型的服务配置不完整。', { retryable: false, statusCode: 503 });
-  async function request({ messages, tools, signal, stream, maxTokens }) {
+  async function request({ messages, tools, signal, stream, maxTokens, onRequest }) {
     signal?.throwIfAborted();
     const body = createModelChatBody({ model, messages, stream, maxTokens, temperature: 0.2,
       thinking: resolveQaThinking(model, reasoningEffort) });
     // Keep the provider's serialized tool prefix stable through the final turn.
     // The harness closes execution after finish_reading, not tool_choice=none.
     if (tools?.length) { body.tools = tools; body.tool_choice = 'auto'; }
+    onRequest?.(structuredClone(body));
     const combined = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(timeoutMs)]);
     let response;
     try {
@@ -55,8 +56,8 @@ export function createQaToolAdapter({ model, reasoningEffort = 'standard', fetch
       onUsage?.(usage);
       return normalizeCompletion(payload.choices?.[0]?.message, payload.choices?.[0]?.finish_reason, usage);
     },
-    async stream({ messages, tools, signal, onDelta, onUsage }) {
-      const { response } = await request({ messages, tools, signal, stream: true, maxTokens: Math.min(16384, definition.context.maxOutputTokens) });
+    async stream({ messages, tools, signal, onDelta, onUsage, onRequest }) {
+      const { response } = await request({ messages, tools, signal, stream: true, onRequest, maxTokens: Math.min(16384, definition.context.maxOutputTokens) });
       return readToolStream(response, { signal, onDelta, onUsage });
     },
   };

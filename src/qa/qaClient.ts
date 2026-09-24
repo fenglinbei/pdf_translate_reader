@@ -17,7 +17,7 @@ import type {
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
-export type QaCapabilities = { runtime: string; generalChat: boolean; models: string[] };
+export type QaCapabilities = { runtime: string; generalChat: boolean; workspaceChat?: boolean; models: string[] };
 export async function getQaCapabilities(): Promise<QaCapabilities | undefined> {
   const response = await fetch(`${apiBaseUrl}/qa/capabilities`, { headers: { Authorization: `Bearer ${await getSupabaseAccessToken()}` } });
   if (response.status === 404) return undefined; // Existing QA deployments remain usable.
@@ -29,7 +29,7 @@ export type QaDocumentReadiness = {
   documentId: string;
   state: "readable" | "parsing" | "missing" | "error";
   documentVersion?: string;
-  runtime: "legacy-json-v1" | "document-tools-v1";
+  runtime: "legacy-json-v1" | "document-tools-v1" | "workspace-tools-v1";
   models: string[];
 };
 
@@ -87,7 +87,7 @@ export type QaStreamMeta = {
   model: string;
   promptVersion: string;
   reasoningEffort: QaReasoningEffort;
-  scope: "current" | "general";
+  scope: "current" | "general" | "workspace";
   threadId: string;
   userMessageId: string;
 };
@@ -162,7 +162,7 @@ export async function createQaIndexJob(input: {
   return response.json() as Promise<CreateQaIndexJobResponse>;
 }
 
-export async function getQaThreads(cloudDocumentId?: string, scope: 'current' | 'general' = 'current') {
+export async function getQaThreads(cloudDocumentId?: string, scope: 'current' | 'general' | 'workspace' = 'current') {
   const query = new URLSearchParams({ scope });
   if (cloudDocumentId) query.set('documentId', cloudDocumentId);
   const response = await fetch(
