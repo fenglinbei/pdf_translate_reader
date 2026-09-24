@@ -91,6 +91,8 @@ type PdfViewerProps = {
 };
 
 export type PinLocateRequest = {
+  strictCitationLocation?: boolean;
+  anchorLineNumber?: number;
   pageIndex?: number;
   pin?: TranslationPin;
   quotedText?: string;
@@ -1186,7 +1188,7 @@ export function PdfViewer({
     if (request.lineRegions && request.lineRegions.length > 0) {
       // A chunk can span multiple pages. Pick the page with the most regions
       // as the highlight target so the user sees the bulk of the evidence.
-      const pageNumber = pickDensestLineNumber(request.lineRegions) ?? pageIndex + 1;
+      const pageNumber = request.strictCitationLocation ? pageIndex + 1 : pickDensestLineNumber(request.lineRegions) ?? pageIndex + 1;
       const targetPageIndex = pageNumber - 1;
       const pageDescriptor = pages[targetPageIndex];
       // The overlay lives inside .pdf-page whose CSS size uses pdfRenderScale.
@@ -1210,7 +1212,10 @@ export function PdfViewer({
         if (rects.length > 0) {
           // The scroll offset uses displayScale (actual viewport size) to match
           // pageLayout.tops which is also displayScale-based.
-          const anchorTopDisplay = Math.min(...rects.map((rect) => rect.top))
+          const anchorRegion = matching.find((entry) => entry.lineNumber === request.anchorLineNumber);
+          const anchorTopDisplay = (request.strictCitationLocation
+            ? (anchorRegion?.region.y ?? 0) * overlayHeight
+            : Math.min(...rects.map((rect) => rect.top)))
             * (displayScale / pdfRenderScale);
           const scrollElement = scrollRef.current;
           const pageScrollTop = pageLayout.tops[targetPageIndex];
@@ -1240,7 +1245,7 @@ export function PdfViewer({
     }
 
     // Path 2 (fallback): match quotedText against the pdf.js text layer.
-    if (!request.quotedText) {
+    if (request.strictCitationLocation || !request.quotedText) {
       return false;
     }
 

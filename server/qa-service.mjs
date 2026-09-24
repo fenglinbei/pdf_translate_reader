@@ -10,11 +10,15 @@ if (!["development", "staging", "production"].includes(process.env.QA_ENVIRONMEN
   throw new Error("QA_ENVIRONMENT must be development, staging, or production.");
 }
 const port = Number(process.env.QA_PORT ?? 8788);
+const runtime = process.env.QA_AGENT_RUNTIME ?? 'legacy-json-v1';
+if (!['legacy-json-v1', 'document-tools-v1'].includes(runtime)) throw new Error('Invalid QA_AGENT_RUNTIME.');
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid QA_PORT.");
 
 const { createQaServer } = await import("./qa/httpServer.mjs");
 const { requireAuthenticatedUser } = await import("./supabase/auth.mjs");
 const { handleQaRoute } = await import("./routes/qa.mjs");
+const { checkQaDocumentSchema } = await import('./qa/documents/schema.mjs');
+await checkQaDocumentSchema();
 const { version } = JSON.parse(readFileSync(new URL("./qa/package.json", import.meta.url), "utf8"));
 let sha = "development";
 try {
@@ -26,7 +30,7 @@ try {
 const server = createQaServer({
   authenticate: requireAuthenticatedUser,
   handleRoute: handleQaRoute,
-  release: { version, sha, environment: process.env.QA_ENVIRONMENT },
+  release: { version, sha, environment: process.env.QA_ENVIRONMENT, runtime },
 });
 server.listen(port, "127.0.0.1", () => {
   console.log(`QA service listening on http://127.0.0.1:${port}`);

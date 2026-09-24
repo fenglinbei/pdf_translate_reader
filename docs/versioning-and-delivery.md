@@ -2,8 +2,8 @@
 
 状态：仓库实现；生产切流与部署另行验收。本文是后续开发与发布的约束。
 
-2026-09-24：[P1 已收尾](qa-agent-stage-1-closeout.md)，[P2 设计已交付](qa-agent-stage-2-plan.md)，尚未实施。
-文档收尾不递增服务版本或触发发布；P2 涉及引用数据与 QA 界面时，需同时验证兼容迁移、读取端和服务端的发布顺序。
+2026-09-24：[P1 已收尾](qa-agent-stage-1-closeout.md)，[P2 已实现](qa-agent-stage-2-implementation.md)，QA 版本递增为 `0.2.0-alpha.1`。
+部署顺序为：独立测试库兼容迁移 → 兼容前端 → QA 制品 → 显式开启 `document-tools-v1`；生产继续保持既有发布。
 
 ## 版本规则
 
@@ -12,7 +12,7 @@
 | 对象 | 唯一版本来源 | Git 标签 | 当前开发版本 |
 | --- | --- | --- | --- |
 | 应用（阅读器、翻译、文库） | 根 `package.json`，同步 lockfile | `vX.Y.Z` | `0.1.0`，沿用已有声明，不追认历史正式发布 |
-| QA 服务 | `server/qa/package.json` | `qa-vX.Y.Z[-alpha.N/-beta.N/-rc.N]` | `0.1.1-alpha.1` |
+| QA 服务 | `server/qa/package.json` | `qa-vX.Y.Z[-alpha.N/-beta.N/-rc.N]` | `0.2.0-alpha.1` |
 | 检索、提示词、索引协议 | `server/qa/config.mjs` | 随服务发布 | 首次拆分保持原值 |
 
 公共兼容面包含 HTTP 请求、SSE 事件、持久化数据和配置；内部重排不应改变它们。
@@ -88,7 +88,7 @@ Environment 指定 `QA_ENV_FILE=<QA_DEPLOY_ROOT>/qa.env`。
 
 自动回滚只覆盖重启/健康失败；业务验收失败时由部署账号把 `current` 原子切回已验证的版本目录，再重启同一个 QA 服务并核对健康 SHA。
 保留旧 release 和其依赖；禁止现场 `git pull` 覆盖正在运行的目录。
-当前拆分不含数据库迁移，旧 API 保持兼容。后续迁移采用增量兼容、单独审核、备份与演练；代码回滚不等于数据回滚。
+P2 包含增量迁移 `supabase/migrations/20260924_qa_document_tools.sql`，先备份再应用到独立测试库；保留 chunk 引用与旧运行制品。关闭新执行器或回退代码不删除新引用字段；代码回滚不等于数据回滚。
 原 `deploy-linux-nginx.sh` 仍是整站部署入口，只能用于明确授权的应用发布，QA CD 不调用它。
 
 ## 交付状态必须分开

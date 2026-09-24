@@ -65,7 +65,7 @@ import { metadataIsPending } from "../library/MetadataRecognition";
 import { createPdfFingerprint } from "../pdf/pdfFingerprint";
 import { PdfViewer, type PinLocateRequest } from "../pdf/PdfViewer";
 import { PaperQaPanel } from "../qa/PaperQaPanel";
-import { createQaIndexJob, getQaIndexJob } from "../qa/qaClient";
+import { createQaIndexJob, getQaIndexJob, getQaDocumentReadiness, type QaDocumentReadiness } from "../qa/qaClient";
 import {
   deletePin,
   deletePinsByPdf,
@@ -521,6 +521,7 @@ export function ReaderShell() {
   const [mathpixRuntimeError, setMathpixRuntimeError] = useState<string>();
   const [qaIndexError, setQaIndexError] = useState<string>();
   const [qaIndexJob, setQaIndexJob] = useState<QaIndexJob>();
+  const [qaReadiness, setQaReadiness] = useState<QaDocumentReadiness>();
   const [isAskStatusExpanded, setIsAskStatusExpanded] = useState(false);
   const [isCreatingQaIndexJob, setIsCreatingQaIndexJob] = useState(false);
   const [isLoadingQaIndexJob, setIsLoadingQaIndexJob] = useState(false);
@@ -2308,35 +2309,44 @@ export function ReaderShell() {
     return () => { disposed = true; };
   }, [currentEntry?.cloudDocumentId, currentEntry?.metadataRevision, currentEntry?.metadataState?.status]);
 
-  const handleLocateQaCitation = useCallback((citation: QaCitation) => {
-    if (!currentEntry?.cloudDocumentId || citation.cloudDocumentId !== currentEntry.cloudDocumentId) {
-      return;
+  const locateQaSource = useCallback(async (source: QaCitation | QaRetrievedEvidence, pageNumber?: number) => {
+    if (!currentEntry?.cloudDocumentId || source.cloudDocumentId !== currentEntry.cloudDocumentId) return;
+    const fingerprint = currentEntry.fingerprint;
+    const requestId = ++locateRequestIdRef.current;
+    if (source.sourceKind === "document_text") {
+      try {
+        const current = await getQaDocumentReadiness(source.cloudDocumentId);
+        if (activeFingerprintRef.current !== fingerprint || requestId !== locateRequestIdRef.current) return;
+        if (current?.state !== "readable" || current.documentVersion !== source.sourceVersion
+          || (source.pdfFingerprint && source.pdfFingerprint !== fingerprint)) {
+          setStatusMessage(t("ask.sourceVersionChanged")); return;
+        }
+      } catch (error) {
+        if (requestId === locateRequestIdRef.current && activeFingerprintRef.current === fingerprint)
+          setStatusMessage(error instanceof Error ? error.message : t("ask.readinessFailed"));
+        return;
+      }
     }
-
-    locateRequestIdRef.current += 1;
+    const target = Math.max(source.pageStart, Math.min(pageNumber ?? source.pageStart, source.pageEnd));
+    const native = source.sourceKind === "document_text";
+    const anchorLine = native ? source.sourceLocator.sourceSpans.find((span) => span.pageNumber === target)?.lineNumber : undefined;
     setLocateRequest({
-      pageIndex: Math.max(0, citation.pageStart - 1),
-      lineRegions: citation.lineRegions,
-      quotedText: citation.quotedText,
-      requestId: locateRequestIdRef.current,
+      pageIndex: target - 1,
+      lineRegions: source.lineRegions,
+      strictCitationLocation: native,
+      anchorLineNumber: anchorLine,
+      quotedText: native ? undefined : "quotedText" in source ? source.quotedText : source.textPreview,
+      requestId,
     });
     setMobilePanel(null);
-  }, [currentEntry?.cloudDocumentId]);
+  }, [currentEntry?.cloudDocumentId, currentEntry?.fingerprint, t]);
 
+  const handleLocateQaCitation = useCallback((citation: QaCitation, pageNumber?: number) => {
+    void locateQaSource(citation, pageNumber);
+  }, [locateQaSource]);
   const handleLocateQaEvidence = useCallback((evidence: QaRetrievedEvidence) => {
-    if (!currentEntry?.cloudDocumentId || evidence.cloudDocumentId !== currentEntry.cloudDocumentId) {
-      return;
-    }
-
-    locateRequestIdRef.current += 1;
-    setLocateRequest({
-      pageIndex: Math.max(0, evidence.pageStart - 1),
-      lineRegions: evidence.lineRegions,
-      quotedText: evidence.textPreview,
-      requestId: locateRequestIdRef.current,
-    });
-    setMobilePanel(null);
-  }, [currentEntry?.cloudDocumentId]);
+    void locateQaSource(evidence);
+  }, [locateQaSource]);
 
   const handleRevealPinCard = useCallback((pin: TranslationPin) => {
     pinPanelFocusRequestIdRef.current += 1;
@@ -2629,6 +2639,7 @@ export function ReaderShell() {
     </>
   );
   const renderAskPaneContent = (closeButton: ReactNode) => {
+    const nativeRuntime = qaReadiness?.documentId === currentEntry?.cloudDocumentId && qaReadiness?.runtime === "document-tools-v1";
     const isMathpixRunning = mathpixPipelineState === "running";
     const mathpixTitle = mathpixProcessView?.title ?? t("ask.mathpixNotStarted");
     const mathpixDetail = mathpixProcessView?.detail ?? t("ask.mathpixNotStartedDetail");
@@ -2658,7 +2669,7 @@ export function ReaderShell() {
               type="button"
             >
               <span className="ask-status-summary-label">
-                {qaIndexJob?.status === "ready"
+                {nativeRuntime ? t(qaReadiness?.state === "readable" ? "ask.statusReadySummary" : "ask.waitingForParsing") : qaIndexJob?.status === "ready"
                   ? t("ask.statusReadySummary")
                   : qaIndexJob?.status === "error"
                     ? t("ask.indexStatus.error")
@@ -2704,7 +2715,7 @@ export function ReaderShell() {
                 </button>
               </div>
             </section>
-            <section className="ask-status-item" aria-label={t("ask.indexSection")}>
+            {!nativeRuntime ? <section className="ask-status-item" aria-label={t("ask.indexSection")}>
               <div className="ask-status-main">
                 <div className="ask-section-title">{t("ask.indexTitle")}</div>
                 <div className="ask-section-status">{qaIndexStatus}</div>
@@ -2746,7 +2757,7 @@ export function ReaderShell() {
                 <MessageSquareText aria-hidden="true" size={16} strokeWidth={2} />
               </button>
               </div>
-            </section>
+            </section> : null}
               </div>
             ) : null}
           </div>
@@ -2756,6 +2767,7 @@ export function ReaderShell() {
             onCitationClick={handleLocateQaCitation}
             onEvidenceClick={handleLocateQaEvidence}
             onFullscreenChange={handleQaFullscreenChange}
+            onReadinessChange={setQaReadiness}
             qaIndexJob={qaIndexJob}
           />
         </div>

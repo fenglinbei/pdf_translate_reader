@@ -1,0 +1,78 @@
+{
+  "date": "2026-09-24",
+  "fixtureSource": "tests/fixtures/documentAgentCases.mjs",
+  "scope": "Synthetic engineering verification; no baseline superiority or semantic acceptance claim",
+  "pricing": "Token counts only; provider invoice and cache-creation fees are not independently reconciled.",
+  "runs": [
+    {
+      "model": "deepseek-flash",
+      "effort": "quick",
+      "cases": 24,
+      "protocolPassed": 24,
+      "calls": 98,
+      "inputTokens": 173508,
+      "outputTokens": 9840,
+      "usageCoverage": 1,
+      "cacheHitTokens": 126336,
+      "cacheHitRatio": 0.7281278096687185,
+      "meanElapsedMs": 3881,
+      "keywordMisses": []
+    },
+    {
+      "model": "deepseek-flash",
+      "effort": "standard",
+      "cases": 2,
+      "protocolPassed": 2,
+      "calls": 7,
+      "inputTokens": 12463,
+      "outputTokens": 1411,
+      "usageCoverage": 1,
+      "cacheHitTokens": 7296,
+      "cacheHitRatio": 0.5854128219529808,
+      "meanElapsedMs": 5643,
+      "keywordMisses": []
+    },
+    {
+      "model": "deepseek-v4-pro",
+      "effort": "standard",
+      "cases": 2,
+      "protocolPassed": 2,
+      "calls": 8,
+      "inputTokens": 15066,
+      "outputTokens": 862,
+      "usageCoverage": 1,
+      "cacheHitTokens": 9728,
+      "cacheHitRatio": 0.6456922872693482,
+      "meanElapsedMs": 9212,
+      "keywordMisses": []
+    },
+    {
+      "model": "qwen3.8-flash",
+      "effort": "standard",
+      "cases": 2,
+      "protocolPassed": 2,
+      "calls": 8,
+      "inputTokens": 13977,
+      "outputTokens": 746,
+      "usageCoverage": 1,
+      "cacheHitTokens": 6656,
+      "cacheHitRatio": 0.47621091793661013,
+      "meanElapsedMs": 13983,
+      "keywordMisses": []
+    },
+    {
+      "model": "qwen3.8-max",
+      "effort": "quick",
+      "cases": 2,
+      "protocolPassed": 2,
+      "calls": 8,
+      "inputTokens": 13540,
+      "outputTokens": 364,
+      "usageCoverage": 1,
+      "cacheHitTokens": 5760,
+      "cacheHitRatio": 0.4254062038404727,
+      "meanElapsedMs": 4883,
+      "keywordMisses": []
+    }
+  ]
+}

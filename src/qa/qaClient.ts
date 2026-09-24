@@ -17,6 +17,28 @@ import type {
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
+export type QaDocumentReadiness = {
+  documentId: string;
+  state: "readable" | "parsing" | "missing" | "error";
+  documentVersion?: string;
+  runtime: "legacy-json-v1" | "document-tools-v1";
+  models: string[];
+};
+
+export async function getQaDocumentReadiness(documentId: string): Promise<QaDocumentReadiness | undefined> {
+  const response = await fetch(`${apiBaseUrl}/qa/document-readiness?activeDocumentId=${encodeURIComponent(documentId)}`, {
+    headers: { Accept: "application/json", ...await getAuthHeader() },
+  });
+  // A compatible frontend can still read a pre-P2 legacy server.
+  if (response.status === 404) {
+    const payload = await response.json();
+    if (payload?.error?.code === 'not_found') return undefined;
+    throw new Error(payload?.error?.message ?? 'Document is not available.');
+  }
+  if (!response.ok) throw new Error(await readErrorMessage(response));
+  return response.json() as Promise<QaDocumentReadiness>;
+}
+
 type QaIndexJobResponse = {
   job: QaIndexJob | null;
 };
@@ -301,6 +323,7 @@ async function readQaEventStream(
   let buffer = "";
   let eventName = "message";
   let dataLines: string[] = [];
+  let seenDone = false;
 
   function dispatchEvent() {
     if (dataLines.length === 0) {
@@ -351,6 +374,7 @@ async function readQaEventStream(
     } else if (eventName === "verifier") {
       handlers.onVerifier?.(payload);
     } else if (eventName === "done") {
+      seenDone = true;
       handlers.onDone?.(payload);
     } else if (eventName === "error") {
       throw new Error(getStreamErrorMessage(payload));
@@ -360,40 +384,47 @@ async function readQaEventStream(
     dataLines = [];
   }
 
-  while (true) {
-    const { done, value } = await reader.read();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
 
-    if (done) {
-      break;
-    }
+      if (done) {
+        break;
+      }
 
-    onActivity();
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split(/\r?\n/);
-    buffer = lines.pop() ?? "";
+      onActivity();
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() ?? "";
 
-    for (const line of lines) {
-      if (line === "") {
-        dispatchEvent();
-      } else if (line.startsWith("event:")) {
-        eventName = line.slice("event:".length).trim();
-      } else if (line.startsWith("data:")) {
-        dataLines.push(line.slice("data:".length).trim());
+      for (const line of lines) {
+        if (line === "") {
+          dispatchEvent();
+        } else if (line.startsWith("event:")) {
+          eventName = line.slice("event:".length).trim();
+        } else if (line.startsWith("data:")) {
+          dataLines.push(line.slice("data:".length).trim());
+        }
       }
     }
-  }
 
-  if (buffer.trim()) {
-    for (const line of buffer.split(/\r?\n/)) {
-      if (line.startsWith("event:")) {
-        eventName = line.slice("event:".length).trim();
-      } else if (line.startsWith("data:")) {
-        dataLines.push(line.slice("data:".length).trim());
+    buffer += decoder.decode();
+    if (buffer.trim()) {
+      for (const line of buffer.split(/\r?\n/)) {
+        if (line.startsWith("event:")) {
+          eventName = line.slice("event:".length).trim();
+        } else if (line.startsWith("data:")) {
+          dataLines.push(line.slice("data:".length).trim());
+        }
       }
     }
-  }
 
-  dispatchEvent();
+    dispatchEvent();
+    if (!seenDone) throw new Error("QA stream ended before completion. 已保留已收到的内容，请重试。");
+  } finally {
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
 }
 
 function normalizeQaAgentStepPayload(payload: unknown) {

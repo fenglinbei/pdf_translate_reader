@@ -70,6 +70,7 @@ export async function runReasoningAgenticRetrieval({
     }
 
     for (let turnIndex = 0; turnIndex < budget.maxControllerCalls; turnIndex += 1) {
+      signal?.throwIfAborted();
       const controllerResult = await callController({
         budget,
         chatContext: summarizeChatContextForController(
@@ -86,6 +87,7 @@ export async function runReasoningAgenticRetrieval({
         turnIndex,
       });
       const action = normalizeControllerAction(controllerResult);
+      signal?.throwIfAborted();
 
       if (action.action === "direct_answer") {
         directAnswer = action;
@@ -182,6 +184,8 @@ export async function runReasoningAgenticRetrieval({
         kind: "answer_outline",
         payload: {
           directAnswer: true,
+          stopReason: 'direct_answer',
+          action: directAnswer,
           reason: directAnswer.reason,
           replyOutline: directAnswer.replyOutline,
         },
@@ -220,6 +224,8 @@ export async function runReasoningAgenticRetrieval({
       kind: "answer_outline",
       payload: {
         answerOutline: finishAction?.answerOutline,
+        stopReason: finishAction ? 'model_finish' : 'budget_stop',
+        action: finishAction,
         evidenceCount: selectedEvidence.length,
       },
       summary: finishAction?.answerOutline ||

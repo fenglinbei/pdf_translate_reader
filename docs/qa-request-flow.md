@@ -1,5 +1,7 @@
 # 一次 QA 请求的逻辑图
 
+`QA_AGENT_RUNTIME=document-tools-v1` 的新流程是：解析来源授权 → 原生工具规划循环 → `finish_reading` 原文匹配 → 禁用新工具的最终回答 → 引用校验与保存。无需 QA 索引、embedding 或 rerank。详细实现见 [P2 实施记录](qa-agent-stage-2-implementation.md)。下文为 `legacy-json-v1` 的旧检索/全文流程，保留作为对照。
+
 对着 `server/routes/qa.mjs`、`server/qa/agent/loop.mjs` 和 `server/qa/queryRouter.mjs` 画的实际流程。
 这是**逻辑**（任何一次运行都成立），不是某次运行的数据；具体查询词、证据编号、轮数因问题而异。
 全文读取字段已在 `0.1.1-alpha.1` 修复。下面的事件持久化缺口仍是现状，

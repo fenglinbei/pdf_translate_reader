@@ -2,7 +2,9 @@ import { createServer } from "node:http";
 import { writeJson } from "../http/json.mjs";
 
 /** The QA process owns only /api/qa/*; no library/translation workers run here. */
-export function createQaServer({ authenticate, handleRoute, release }) {
+export function createQaServer({ authenticate, handleRoute, release, maxConcurrentStreams = 2 }) {
+  let activeStreams = 0;
+  const users = new Set();
   return createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", "http://localhost");
@@ -15,7 +17,14 @@ export function createQaServer({ authenticate, handleRoute, release }) {
         return;
       }
       const user = await authenticate(request);
-      await handleRoute(request, response, url, user);
+      const streaming = request.method === 'POST' && url.pathname === '/api/qa/stream';
+      if (streaming && (activeStreams >= maxConcurrentStreams || users.has(user.id))) {
+        writeJson(response, 429, { error: { code: 'qa_busy', message: '问答服务正在处理请求，请稍后再试。' } });
+        return;
+      }
+      if (streaming) { activeStreams++; users.add(user.id); }
+      try { await handleRoute(request, response, url, user); }
+      finally { if (streaming) { activeStreams--; users.delete(user.id); } }
     } catch (error) {
       if (response.headersSent) {
         response.end();

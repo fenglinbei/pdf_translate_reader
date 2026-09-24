@@ -42,6 +42,12 @@ afterEach(() => {
 });
 
 describe("classifyQuestionType", () => {
+  it('never converts caller cancellation or a failed critical write into routing fallback', async () => {
+    process.env.DEEPSEEK_API_KEY = 'test-key';
+    await assert.rejects(classifyQuestionType({ model: 'deepseek-flash', question: 'test', signal: AbortSignal.abort() }), { name: 'AbortError' });
+    await assert.rejects(classifyQuestionType({ model: 'deepseek-flash', question: 'test',
+      onModelCall: async () => { throw Object.assign(new Error('critical write failed'), { criticalPersistence: true }); } }), /critical write failed/);
+  });
   it("parses a valid global classification from the router LLM", async () => {
     process.env.DEEPSEEK_API_KEY = "test-key";
     mockFetchReturn('{"type":"global","confidence":"high","reason":"asks for a whole-paper summary"}');

@@ -25,10 +25,15 @@ export async function runCurrentPaperAgenticRetrieval(input) {
 }
 
 export async function runCurrentPaperReasoningRetrieval(input) {
+  const controller = input.runContext ? createQaControllerAdapter({ complete: async args => input.runContext.modelCall('agent_retrieval', async () => {
+    const result = await createQaChatCompletion(args);
+    input.runContext.events.modelUsage(result.usage);
+    return result;
+  }) }) : callReasoningController;
   return runReasoningAgenticRetrieval({
     ...input,
-    callController: input.callController ?? callReasoningController,
-    insertStep: insertQaAgentStep,
+    callController: input.callController ?? controller,
+    insertStep: input.runContext?.insertStep ?? insertQaAgentStep,
     insertToolCall: insertQaToolCall,
     retrieveEvidence: retrieveCurrentPaperEvidence,
   });

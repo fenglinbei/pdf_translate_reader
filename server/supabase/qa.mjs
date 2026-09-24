@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { DOCUMENT_VIEW_VERSION, hash } from "../qa/documents/view.mjs";
 import {
   QA_CHUNKER_VERSION,
   QA_REFERENCE_MATCHER_VERSION,
@@ -73,24 +74,6 @@ const QA_MESSAGE_COLUMNS = [
   "thread_id",
   "updated_at",
   "usage",
-  "user_id",
-].join(",");
-
-const QA_CITATION_COLUMNS = [
-  "chunk_id",
-  "confidence",
-  "created_at",
-  "deleted_at",
-  "document_title",
-  "id",
-  "line_regions",
-  "message_id",
-  "page_end",
-  "page_start",
-  "pdf_fingerprint",
-  "quoted_text",
-  "section_path",
-  "user_document_id",
   "user_id",
 ].join(",");
 
@@ -210,7 +193,8 @@ export async function listQaMessagesForThread({ threadId, userId }) {
 
   const { data: citationRows, error: citationError } = await requireSupabaseServiceClient()
     .from("user_qa_citations")
-    .select(QA_CITATION_COLUMNS)
+    // Reads remain compatible before the additive migration and after rollback.
+    .select('*')
     .eq("user_id", userId)
     .in("message_id", messageIds)
     .is("deleted_at", null)
@@ -591,6 +575,10 @@ export async function insertQaCitations({ citations, messageId, userId }) {
     return [];
   }
 
+  for (const citation of citations.filter((item) => item.sourceKind === 'document_text')) {
+    await validateDocumentCitationOwner({ citation, messageId, userId });
+  }
+
   const rows = citations.map((citation) => ({
     chunk_id: citation.chunkId,
     confidence: citation.confidence,
@@ -604,12 +592,17 @@ export async function insertQaCitations({ citations, messageId, userId }) {
     section_path: citation.sectionPath ?? null,
     user_document_id: citation.cloudDocumentId,
     user_id: userId,
+    ...(citation.sourceKind === 'document_text' ? {
+      chunk_id: null, source_kind: 'document_text', source_version: citation.sourceVersion,
+      evidence_key: citation.evidenceKey, source_record_id: citation.sourceRecordId,
+      source_locator: citation.sourceLocator,
+    } : {}),
   }));
 
   const { data, error } = await requireSupabaseServiceClient()
     .from("user_qa_citations")
     .insert(rows)
-    .select(QA_CITATION_COLUMNS);
+    .select('*');
 
   if (error) {
     throw toSupabaseServiceError(
@@ -620,6 +613,32 @@ export async function insertQaCitations({ citations, messageId, userId }) {
   }
 
   return (data ?? []).map(rowToQaCitation);
+}
+
+async function validateDocumentCitationOwner({ citation, messageId, userId }) {
+  const client = requireSupabaseServiceClient();
+  const document = await requireUserDocument({ userDocumentId: citation.cloudDocumentId, userId });
+  const { data: message, error: messageError } = await client.from('user_qa_messages').select('id,thread_id')
+    .eq('id', messageId).eq('user_id', userId).is('deleted_at', null).maybeSingle();
+  if (messageError || !message) throw new SupabaseServiceError(403, 'qa_citation_owner_mismatch', 'Citation message is not available.');
+  const thread = await requireQaThread({ threadId: message.thread_id, userId });
+  if (thread.activeCloudDocumentId !== citation.cloudDocumentId) throw new SupabaseServiceError(403, 'qa_citation_owner_mismatch', 'Citation document differs from this thread.');
+  const prefix = `${document.content_sha256}:`;
+  const locator = citation.sourceLocator;
+  if (!citation.sourceRecordId?.startsWith(prefix) || locator?.version !== 'citation-locator-v1'
+    || locator.viewVersion !== DOCUMENT_VIEW_VERSION || !Array.isArray(locator.sourceSpans) || !locator.sourceSpans.length
+    || locator.sourceSpans.some((s) => !Number.isInteger(s.pageNumber) || s.pageNumber < 1 || !Number.isInteger(s.lineNumber)
+      || s.lineNumber < 1 || !Number.isInteger(s.startOffset) || !Number.isInteger(s.endOffset) || s.startOffset < 0 || s.endOffset <= s.startOffset)) {
+    throw new SupabaseServiceError(400, 'qa_citation_source_invalid', 'Citation source locator is invalid.');
+  }
+  const { data: record, error } = await client.from('user_mathpix_documents')
+    .select('updated_at,pages_storage_path,mathpix_options_hash')
+    .eq('user_id', userId).eq('user_document_id', citation.cloudDocumentId).eq('content_sha256', document.content_sha256)
+    .eq('mathpix_options_hash', citation.sourceRecordId.slice(prefix.length)).eq('status', 'completed').is('deleted_at', null).maybeSingle();
+  const version = record ? hash([document.content_sha256, record.mathpix_options_hash, record.updated_at, record.pages_storage_path, DOCUMENT_VIEW_VERSION]) : undefined;
+  if (error || !record || citation.sourceVersion !== version || locator.sourceUpdatedAt !== record.updated_at) {
+    throw new SupabaseServiceError(409, 'qa_citation_source_changed', 'Citation source is no longer available at this version.');
+  }
 }
 
 export async function insertQaAgentStep({
@@ -1086,7 +1105,12 @@ function rowToQaToolCall(row) {
 
 function rowToQaCitation(row) {
   return {
-    chunkId: row.chunk_id,
+    chunkId: row.chunk_id ?? undefined,
+    sourceKind: row.source_kind ?? 'indexed_chunk',
+    sourceVersion: row.source_version ?? undefined,
+    evidenceKey: row.evidence_key ?? undefined,
+    sourceRecordId: row.source_record_id ?? undefined,
+    sourceLocator: row.source_locator ?? undefined,
     cloudDocumentId: row.user_document_id,
     confidence: row.confidence,
     createdAt: parseIsoTime(row.created_at) ?? Date.now(),
@@ -1131,7 +1155,7 @@ function normalizeCitationLineRegions(value) {
       continue;
     }
 
-    regions.push({ pageNumber, region });
+    regions.push({ pageNumber, region, ...(Number.isInteger(entry.lineNumber) ? { lineNumber: entry.lineNumber } : {}) });
   }
 
   return regions.length > 0 ? regions : undefined;

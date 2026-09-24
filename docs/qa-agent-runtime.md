@@ -1,5 +1,7 @@
 # QA Agent 第一阶段：可阅读、可测试的执行内核
 
+新版阅读主链见 [P2 实施记录](qa-agent-stage-2-implementation.md)，离线运行 `npm run demo:qa-document` 可观察原生工具消息、结果回传与软件引用映射。下文保留 P1 兼容执行器的学习说明。
+
 状态：代码已实现，独立 QA 服务已完成 [真实运行与全文路径本地人工验收](qa-local-runs-2026-09-23.md)；生产尚未部署。
 版本与发布按 [交付规范](versioning-and-delivery.md) 执行。
 `0.1.1-alpha.1` 已修复全文读取的字段契约，实际文档读取、合成路由测试和发布版 1cc80bd 的全文路径人工验收通过；

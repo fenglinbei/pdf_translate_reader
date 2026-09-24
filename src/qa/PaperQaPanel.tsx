@@ -45,18 +45,22 @@ import {
   deleteQaMessage,
   deleteQaThread,
   getQaThreadMessages,
+  getQaDocumentReadiness,
+  type QaDocumentReadiness,
   getQaThreads,
   streamQaAnswer,
   type QaVerifierPayload,
 } from "./qaClient";
+import { qaSourceKey, sameQaSource } from "./sourceIdentity";
 import type { MessageKey } from "../i18n/messages";
 
 type PaperQaPanelProps = {
   activeDocumentId?: string;
   isFullscreen?: boolean;
   onFullscreenChange?: (fullscreen: boolean) => void;
+  onReadinessChange?: (readiness?: QaDocumentReadiness) => void;
   qaIndexJob?: QaIndexJob;
-  onCitationClick: (citation: QaCitation) => void;
+  onCitationClick: (citation: QaCitation, pageNumber?: number) => void;
   onEvidenceClick: (evidence: QaRetrievedEvidence) => void;
 };
 
@@ -76,7 +80,7 @@ type LocalQaMessage = {
 };
 
 type SelectedEvidenceRef = {
-  chunkId?: string;
+  sourceKey?: string;
   evidenceId?: string;
   messageId: string;
 };
@@ -90,6 +94,7 @@ export function PaperQaPanel({
   onCitationClick,
   onEvidenceClick,
   onFullscreenChange,
+  onReadinessChange,
   qaIndexJob,
 }: PaperQaPanelProps) {
   const { t } = useI18n();
@@ -127,19 +132,51 @@ export function PaperQaPanel({
   // Set right after a stream finishes so the threadId effect can skip refetching
   // the messages we already have from onDone.
   const justFinishedStreamRef = useRef(false);
-  const isReady = Boolean(
-    activeDocumentId
-    && qaIndexJob?.status === "ready"
-    && qaIndexJob?.chunkerVersion === PROJECT_CONFIG.qa.chunkerVersion,
-  );
+  const [readiness, setReadiness] = useState<QaDocumentReadiness>();
+  const [readinessLoading, setReadinessLoading] = useState(true);
+  const [readinessError, setReadinessError] = useState<string>();
+  const nativeRuntime = readiness?.documentId === activeDocumentId && readiness?.runtime === "document-tools-v1";
+  const availableModels = nativeRuntime ? QA_MODELS.filter((id) => readiness?.models.includes(id)) : QA_MODELS;
+  const isReady = Boolean(activeDocumentId && !readinessLoading && !readinessError && (nativeRuntime
+    ? readiness?.state === "readable" && availableModels.includes(model)
+    : qaIndexJob?.status === "ready" && qaIndexJob?.chunkerVersion === PROJECT_CONFIG.qa.chunkerVersion));
+
+  useEffect(() => {
+    let disposed = false;
+    let timer: number | undefined;
+    setReadiness(undefined); setReadinessError(undefined); setReadinessLoading(true);
+    onReadinessChange?.(undefined);
+    if (!activeDocumentId) { setReadinessLoading(false); return; }
+    const refresh = async () => {
+      try {
+        const next = await getQaDocumentReadiness(activeDocumentId);
+        if (disposed) return;
+        setReadiness(next); setReadinessError(undefined);
+        onReadinessChange?.(next);
+        if (next?.runtime === "document-tools-v1") {
+          const enabled = QA_MODELS.filter((id) => next.models.includes(id));
+          setModel((current) => enabled.includes(current) ? current : enabled[0] ?? current);
+        }
+      } catch (error) {
+        if (!disposed) {
+          setReadinessError(error instanceof Error ? error.message : t("ask.readinessFailed"));
+          onReadinessChange?.(undefined);
+        }
+      }
+      finally { if (!disposed) { setReadinessLoading(false); timer = window.setTimeout(refresh, 15000); } }
+    };
+    void refresh();
+    return () => { disposed = true; window.clearTimeout(timer); };
+  }, [activeDocumentId, t, onReadinessChange]);
 
   const warnings = useMemo(
     () => uniqueStrings([
+      ...(readinessError ? [readinessError] : []),
       ...retrievalWarnings,
       ...verifierWarnings,
       ...(historyError ? [historyError] : []),
     ]),
-    [historyError, retrievalWarnings, verifierWarnings],
+    [historyError, readinessError, retrievalWarnings, verifierWarnings],
   );
 
   const refreshThreads = useCallback(async (options: { selectLatest?: boolean; silent?: boolean } = {}) => {
@@ -593,12 +630,13 @@ export function PaperQaPanel({
   const handleCitationChipClick = useCallback((
     message: LocalQaMessage,
     citation: QaCitation,
+    pageNumber?: number,
   ) => {
     const linkedEvidence = (message.retrievalSnapshot?.evidence ?? [])
-      .find((item) => item.chunkId === citation.chunkId);
-    onCitationClick(citation);
+      .find((item) => sameQaSource(item, citation));
+    onCitationClick(citation, pageNumber);
     setSelectedEvidenceRef({
-      chunkId: citation.chunkId,
+      sourceKey: qaSourceKey(citation),
       messageId: message.id,
     });
     if (linkedEvidence) {
@@ -622,7 +660,7 @@ export function PaperQaPanel({
     const evidence = evidenceList.find((item) => item.evidenceId === evidenceId);
 
     setSelectedEvidenceRef({
-      chunkId: evidence?.chunkId,
+      sourceKey: evidence ? qaSourceKey(evidence) : undefined,
       evidenceId,
       messageId: message.id,
     });
@@ -630,7 +668,7 @@ export function PaperQaPanel({
     if (evidence) {
       flashEvidence(evidence.evidenceId);
 
-      const citation = message.citations.find((item) => item.chunkId === evidence.chunkId);
+      const citation = message.citations.find((item) => sameQaSource(item, evidence));
 
       if (citation && citation.cloudDocumentId === activeDocumentId) {
         onCitationClick(citation);
@@ -833,7 +871,7 @@ export function PaperQaPanel({
         <div className="ask-workbench-title-block">
           <div className="ask-workbench-title">{t("ask.chatTitle")}</div>
           <div className="ask-workbench-status">
-            {isReady ? t("ask.chatReady") : t("ask.chatWaitingForIndex")}
+            {isReady ? t("ask.chatReady") : nativeRuntime ? t("ask.waitingForParsing") : t("ask.chatWaitingForIndex")}
             {isStreaming ? <span>{t("ask.streaming")}</span> : null}
           </div>
         </div>
@@ -940,7 +978,7 @@ export function PaperQaPanel({
               onChange={(event) => setModel(event.currentTarget.value as QaChatModel)}
               value={model}
             >
-              {QA_MODELS.map((option) => (
+              {availableModels.map((option) => (
                 <option key={option} value={option}>{getQaModelLabel(option)}</option>
               ))}
             </select>
@@ -956,7 +994,7 @@ export function PaperQaPanel({
               void handleSubmit();
             }
           }}
-          placeholder={isReady ? t("ask.placeholder") : t("ask.disabledPlaceholder")}
+          placeholder={isReady ? t("ask.placeholder") : nativeRuntime ? t("ask.waitingForParsing") : t("ask.disabledPlaceholder")}
           rows={3}
           value={draftQuestion}
         />
@@ -1065,7 +1103,7 @@ function QaMessageBubble({
   copiedMessageId?: string;
   isStreaming: boolean;
   message: LocalQaMessage;
-  onCitationClick: (message: LocalQaMessage, citation: QaCitation) => void;
+  onCitationClick: (message: LocalQaMessage, citation: QaCitation, pageNumber?: number) => void;
   onCitationToken: (message: LocalQaMessage, evidenceId: string) => void;
   onCopy: (message: LocalQaMessage) => void;
   onDelete: (message: LocalQaMessage) => void;
@@ -1097,7 +1135,7 @@ function QaMessageBubble({
             />
           ) : null}
           {message.content
-            ? <QaMarkdown content={message.content} onCitationToken={handleCitationToken} />
+            ? <QaMarkdown content={message.content} onCitationToken={handleCitationToken} citationIds={evidence.filter((item) => message.citations.some((citation) => sameQaSource(citation, item))).map((item) => item.evidenceId)} />
             : message.status === "streaming" && !message.reasoningText
               ? <span className="ask-thinking">{t("ask.thinking")}</span>
               : null}
@@ -1111,7 +1149,7 @@ function QaMessageBubble({
         {message.citations.length > 0 ? (
           <div className="ask-citation-list" aria-label={t("ask.citations")}>
             {message.citations.map((citation) => {
-              const linkedEvidence = evidence.find((item) => item.chunkId === citation.chunkId);
+              const linkedEvidence = evidence.find((item) => sameQaSource(item, citation));
               const canOpen = citation.cloudDocumentId === activeDocumentId;
               const label = linkedEvidence
                 ? t("ask.citationEvidencePage", {
@@ -1121,16 +1159,29 @@ function QaMessageBubble({
                 : t("ask.citationPage", { page: citation.pageStart });
 
               return (
-                <button
-                  className="ask-citation-chip"
-                  disabled={!canOpen}
-                  key={citation.id}
-                  onClick={() => onCitationClick(message, citation)}
-                  title={canOpen ? t("ask.openCitation") : t("ask.citationUnavailable")}
-                  type="button"
-                >
-                  {label}
-                </button>
+                <span key={citation.id}>
+                  <button
+                    className="ask-citation-chip"
+                    disabled={!canOpen}
+                    onClick={() => onCitationClick(message, citation)}
+                    title={citation.quotedText}
+                    type="button"
+                  >
+                    {label}{citation.pageEnd > citation.pageStart ? `–${citation.pageEnd}` : ""}
+                    {citation.sectionPath?.length ? ` · ${citation.sectionPath.join(" / ")}` : ""}
+                  </button>
+                  {citation.sourceKind === "document_text" && citation.pageEnd > citation.pageStart ? (
+                    <select aria-label={t("ask.citationJumpPage")} defaultValue={citation.pageStart} disabled={!canOpen}
+                      onChange={(event) => onCitationClick(message, citation, Number(event.currentTarget.value))}>
+                      {Array.from({ length: citation.pageEnd - citation.pageStart + 1 }, (_, index) => citation.pageStart + index)
+                        .map((page) => <option key={page} value={page}>p.{page}</option>)}
+                    </select>
+                  ) : null}
+                  {citation.sourceKind === "document_text" && citation.sourceLocator.locationPrecision === "page"
+                    ? <small>{t("ask.pageLocationOnly")}</small>
+                    : citation.sourceKind === "document_text" && citation.sourceLocator.locationPrecision === "partial-line"
+                      ? <small>{t("ask.partialLineLocation")}</small> : null}
+                </span>
               );
             })}
           </div>
@@ -1406,10 +1457,10 @@ function EvidenceDrawer({
 
       <div className="ask-evidence-score-grid">
         <ScoreReadout label={t("ask.scoreHybrid")} value={evidence.score} />
-        <ScoreReadout label={t("ask.scoreVector")} value={evidence.scoreBreakdown.vector} />
-        <ScoreReadout label={t("ask.scoreFullText")} value={evidence.scoreBreakdown.fullText} />
-        <ScoreReadout label={t("ask.scoreMetadata")} value={evidence.scoreBreakdown.metadataBoost} />
-        <ScoreReadout label={t("ask.scoreRerank")} value={evidence.scoreBreakdown.rerank} />
+        <ScoreReadout label={t("ask.scoreVector")} value={evidence.scoreBreakdown?.vector} />
+        <ScoreReadout label={t("ask.scoreFullText")} value={evidence.scoreBreakdown?.fullText} />
+        <ScoreReadout label={t("ask.scoreMetadata")} value={evidence.scoreBreakdown?.metadataBoost} />
+        <ScoreReadout label={t("ask.scoreRerank")} value={evidence.scoreBreakdown?.rerank} />
         <ScoreReadout
           label={t("ask.verification")}
           value={relatedCitation ? t(getConfidenceLabelKey(relatedCitation.confidence)) : undefined}
@@ -1480,7 +1531,7 @@ function findSelectedEvidence(
   const evidence = (message.retrievalSnapshot?.evidence ?? []).find((item) =>
     selectedRef.evidenceId
       ? item.evidenceId === selectedRef.evidenceId
-      : item.chunkId === selectedRef.chunkId
+      : Boolean(selectedRef.sourceKey && qaSourceKey(item) === selectedRef.sourceKey)
   );
 
   if (!evidence) {
@@ -1488,7 +1539,7 @@ function findSelectedEvidence(
   }
 
   return {
-    citation: message.citations.find((citation) => citation.chunkId === evidence.chunkId),
+    citation: message.citations.find((citation) => sameQaSource(citation, evidence)),
     evidence,
     message,
   };
@@ -1503,23 +1554,25 @@ const CITATION_TOKEN_PATTERN = /\[C(\d+)\]/g;
 function QaMarkdown({
   content,
   onCitationToken,
+  citationIds,
 }: {
+  citationIds?: string[];
   content: string;
   onCitationToken?: (evidenceId: string) => void;
 }) {
   const components = useMemo(
     () => ({
       p: ({ children }: { children?: ReactNode }) => (
-        <p>{splitCitationTokens(children, onCitationToken)}</p>
+        <p>{splitCitationTokens(children, onCitationToken, citationIds)}</p>
       ),
       li: ({ children }: { children?: ReactNode }) => (
-        <li>{splitCitationTokens(children, onCitationToken)}</li>
+        <li>{splitCitationTokens(children, onCitationToken, citationIds)}</li>
       ),
       td: ({ children }: { children?: ReactNode }) => (
-        <td>{splitCitationTokens(children, onCitationToken)}</td>
+        <td>{splitCitationTokens(children, onCitationToken, citationIds)}</td>
       ),
       th: ({ children }: { children?: ReactNode }) => (
-        <th>{splitCitationTokens(children, onCitationToken)}</th>
+        <th>{splitCitationTokens(children, onCitationToken, citationIds)}</th>
       ),
       a: ({ href, children }: { href?: string; children?: ReactNode }) => (
         <a href={href} rel="noreferrer" target="_blank">
@@ -1527,7 +1580,7 @@ function QaMarkdown({
         </a>
       ),
     }),
-    [onCitationToken],
+    [onCitationToken, citationIds],
   );
 
   return (
@@ -1543,7 +1596,7 @@ function QaMarkdown({
   );
 }
 
-function splitCitationTokens(node: ReactNode, onCitationToken?: (evidenceId: string) => void): ReactNode {
+function splitCitationTokens(node: ReactNode, onCitationToken?: (evidenceId: string) => void, citationIds?: string[]): ReactNode {
   if (!onCitationToken || node === null || node === undefined || typeof node === "boolean") {
     return node;
   }
@@ -1551,7 +1604,7 @@ function splitCitationTokens(node: ReactNode, onCitationToken?: (evidenceId: str
   if (Array.isArray(node)) {
     let touched = false;
     const next = node.map((child, index) => {
-      const processed = splitCitationTokens(child, onCitationToken);
+      const processed = splitCitationTokens(child, onCitationToken, citationIds);
 
       if (processed !== child) {
         touched = true;
@@ -1581,6 +1634,9 @@ function splitCitationTokens(node: ReactNode, onCitationToken?: (evidenceId: str
     const raw = match[0];
     const evidenceId = `C${match[1]}`;
 
+    if (citationIds && !citationIds.includes(evidenceId)) {
+      segments.push(raw); matchIndex += 1; lastIndex = start + raw.length; continue;
+    }
     segments.push(
       <button
         className="ask-citation-inline"
@@ -1651,6 +1707,7 @@ function getAgentStatusLabelKey(status: QaAgentStep["status"]): MessageKey {
 }
 
 function getAgentToolNameLabel(toolName?: QaAgentStep["toolName"]) {
+  if (toolName && ["get_document_outline", "search_document_text", "read_document", "finish_reading", "unknown_tool"].includes(toolName)) return toolName;
   if (toolName === "search_current_paper") {
     return "search_current_paper";
   }

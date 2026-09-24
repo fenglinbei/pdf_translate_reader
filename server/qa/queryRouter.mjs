@@ -4,20 +4,22 @@ import { QA_QUERY_ROUTER_VERSION } from "./config.mjs";
 const VALID_TYPES = new Set(["global", "detail", "chitchat", "follow_up"]);
 const VALID_CONFIDENCES = new Set(["high", "medium", "low"]);
 
-export async function classifyQuestionType({ chatContext, model, question, signal }) {
+export async function classifyQuestionType({ chatContext, model, question, signal, onUsage, onModelCall = operation => operation() }) {
   try {
-    const result = await createQaChatCompletion({
+    const result = await onModelCall(async () => {
+      const completion = await createQaChatCompletion({
       messages: buildRouterMessages({ chatContext, question }),
       model,
       signal,
       temperature: 0,
+      });
+      onUsage?.(completion.usage);
+      return completion;
     });
     const parsed = parseRouterJson(result.content);
     const normalized = normalizeRouterResult(parsed);
 
     console.log("[query-router]", JSON.stringify({
-      question: String(question ?? "").slice(0, 80),
-      rawContent: String(result.content ?? "").slice(0, 200),
       normalizedType: normalized?.type,
       confidence: normalized?.confidence,
     }));
@@ -28,6 +30,8 @@ export async function classifyQuestionType({ chatContext, model, question, signa
 
     return normalized;
   } catch (error) {
+    signal?.throwIfAborted();
+    if (error.criticalPersistence) throw error;
     console.log("[query-router] error:", error instanceof Error ? error.message : error);
     return createFallbackResult(error instanceof Error ? error.message : "router call failed");
   }

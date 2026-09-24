@@ -341,6 +341,7 @@ export type TokenUsage = {
   totalTokens?: number;
   promptCacheHitTokens?: number;
   promptCacheMissTokens?: number;
+  promptCacheCreationTokens?: number;
 };
 
 export type FreeTranslationTerminologyEntry = {
@@ -506,6 +507,11 @@ export type QaAgentStepKind =
   | "answer_outline"
   | "fallback";
 export type QaAgentToolName =
+  | "get_document_outline"
+  | "search_document_text"
+  | "read_document"
+  | "finish_reading"
+  | "unknown_tool"
   | "search_current_paper"
   | "open_chunk"
   | "verify_citation"
@@ -533,10 +539,26 @@ export type QaChunk = {
   deletedAt?: number;
 };
 
-export type QaCitation = {
+export type QaSourceLocator = {
+  version: "citation-locator-v1";
+  kind: "lines" | "section" | "range";
+  sourceSpans: Array<{ pageNumber: number; lineNumber: number; startOffset: number; endOffset: number }>;
+  anchor: { pageNumber: number; lineNumber?: number };
+  locationPrecision: "line" | "partial-line" | "page" | "section";
+  sectionId?: string;
+  viewVersion: string;
+  sourceUpdatedAt: string;
+  quoteTruncated?: boolean;
+  selectionOrigin?: "model_quote" | "model_source" | "budget_stop";
+};
+
+export type QaSourceIdentity =
+  | { sourceKind?: "indexed_chunk"; chunkId: string; evidenceKey?: never; sourceVersion?: never; sourceRecordId?: never; sourceLocator?: never }
+  | { sourceKind: "document_text"; chunkId?: never; evidenceKey: string; sourceVersion: string; sourceRecordId: string; sourceLocator: QaSourceLocator };
+
+export type QaCitation = QaSourceIdentity & {
   id: string;
   messageId: string;
-  chunkId: string;
   cloudDocumentId: string;
   pdfFingerprint: string;
   documentTitle: string;
@@ -550,9 +572,8 @@ export type QaCitation = {
   deletedAt?: number;
 };
 
-export type QaRetrievedEvidence = {
+export type QaRetrievedEvidence = QaSourceIdentity & {
   evidenceId: string;
-  chunkId: string;
   cloudDocumentId: string;
   pdfFingerprint: string;
   documentTitle: string;
@@ -561,8 +582,8 @@ export type QaRetrievedEvidence = {
   pageEnd: number;
   sectionPath?: string[];
   lineRegions?: MathpixLineRegionRef[];
-  score: number;
-  scoreBreakdown: {
+  score?: number;
+  scoreBreakdown?: {
     vector?: number;
     fullText?: number;
     metadataBoost?: number;
@@ -673,7 +694,7 @@ export type QaApiLog = {
   pdfFingerprint?: string;
   threadId?: string;
   messageId?: string;
-  requestKind: "index-job" | "answer-stream" | "retrieval" | "rerank" | "citation-verification";
+  requestKind: "index-job" | "answer-stream" | "retrieval" | "rerank" | "citation-verification" | "model-call";
   status: "success" | "error" | "aborted";
   model?: TranslationModel | QaChatModel;
   promptVersion?: string;
@@ -721,6 +742,7 @@ export type MathpixLineRegion = {
 // A line region tied to a page, with coordinates normalized to 0..1 of the
 // source page dimensions so the frontend can scale to any render size.
 export type MathpixLineRegionRef = {
+  lineNumber?: number;
   pageNumber: number;
   region: MathpixLineRegion;
 };

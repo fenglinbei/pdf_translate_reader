@@ -14,13 +14,19 @@ export async function loadMathpixStructuredDocument({ userId, userDocumentId, co
     }
   }
 
-  const record = await getCompletedMathpixRecord({ userId, userDocumentId, contentSha256 });
-  const pagesPayload = await downloadStorageJson(record.pages_storage_path);
-  const pages = normalizeStoredPages(pagesPayload);
+  let record, pages;
+  try {
+    record = await getCompletedMathpixRecord({ userId, userDocumentId, contentSha256 });
+    const pagesPayload = await downloadStorageJson(record.pages_storage_path);
+    pages = normalizeStoredPages(pagesPayload);
+  } catch (error) {
+    error.code = 'mathpix_cache_unavailable';
+    throw error;
+  }
   const bodyPages = createBodyPages(pages);
 
   if (bodyPages.length === 0) {
-    throw new Error("MathPix cache did not contain usable body text.");
+    throw Object.assign(new Error("MathPix cache did not contain usable body text."), { code: 'mathpix_cache_unavailable' });
   }
 
   return {

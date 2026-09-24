@@ -1,4 +1,9 @@
 import { writeJson } from "../http/json.mjs";
+import { handleDocumentStream } from "../qa/documents/stream.mjs";
+import { createDocumentRunContext } from "../qa/documents/runContext.mjs";
+import { DocumentToolError } from "../qa/documents/errors.mjs";
+import { getDocumentReadiness } from "../qa/documents/source.mjs";
+import { getDocumentToolModels } from "../chatModels/qaToolAdapter.mjs";
 import {
   normalizeQaChatModel,
   streamQaChatCompletion,
@@ -46,6 +51,13 @@ const NO_EVIDENCE_ANSWER_ZH = "我没有在当前论文索引中找到能支撑�
 
 export async function handleQaRoute(request, response, url, user) {
   try {
+    if (request.method === 'GET' && url.pathname === '/api/qa/document-readiness') {
+      const userDocumentId = normalizeUuidLike(url.searchParams.get('activeDocumentId'));
+      if (!userDocumentId) { writeJson(response, 400, { error: { code: 'invalid_document', message: 'activeDocumentId is required.' } }); return; }
+      const readiness = await getDocumentReadiness({ userId: user.id, userDocumentId });
+      writeJson(response, 200, { ...readiness, models: getDocumentToolModels() });
+      return;
+    }
     const threadMatch = url.pathname.match(/^\/api\/qa\/threads\/([^/]+)$/);
     const threadMessagesMatch = url.pathname.match(/^\/api\/qa\/threads\/([^/]+)\/messages$/);
     const messageMatch = url.pathname.match(/^\/api\/qa\/messages\/([^/]+)$/);
@@ -118,9 +130,26 @@ async function handleQaStream(request, response, user) {
     return;
   }
 
+  if (process.env.QA_AGENT_RUNTIME === 'document-tools-v1') {
+    await handleDocumentStream(request, response, user, requestBody);
+    return;
+  }
+
   const abortController = new AbortController();
   let assistantMessage;
   let heartbeat;
+  let runContext;
+  let partialAnswer = '';
+  const runAnswer = async (input) => {
+    const result = await runContext.modelCall(input.phase ?? 'answer_generate', () => streamQaChatCompletion({
+    ...input,
+    onDelta: text => { partialAnswer += text; input.onDelta?.(text); },
+    onUsage: usage => { requestUsage = usage; runContext.events.modelUsage(usage); input.onUsage?.(usage); },
+    }));
+    abortController.signal.throwIfAborted();
+    runContext.setPhase('persist_answer');
+    return result;
+  };
 
   response.on("close", () => {
     clearInterval(heartbeat);
@@ -187,6 +216,9 @@ async function handleQaStream(request, response, user) {
       userId: user.id,
     });
     requestMessageId = assistantMessage.id;
+    runContext = createDocumentRunContext({ userId: user.id, userDocumentId: requestBody.activeDocumentId,
+      messageId: assistantMessage.id, threadId: thread.id, model: requestBody.model,
+      emit: (event, payload) => writeSse(response, event, payload), runtimeVersion: 'legacy-json-v1', promptVersion: QA_PROMPT_VERSION, terminalLog: false });
 
     writeSseHeaders(response);
     heartbeat = setInterval(() => {
@@ -206,16 +238,21 @@ async function handleQaStream(request, response, user) {
 
     const retrievalStartedAt = Date.now();
     let retrieval;
-    let agentSteps = [];
+    let agentSteps = runContext.steps;
 
     const questionType = await classifyQuestionType({
       chatContext,
       model: requestBody.model,
       question: requestBody.question,
       signal: abortController.signal,
+      onUsage: runContext.events.modelUsage,
+      onModelCall: operation => runContext.modelCall('routing', operation),
     });
+    abortController.signal.throwIfAborted();
+    await runContext.events.step('plan', '已完成问题分类，准备查阅当前论文。', {
+      phase: 'routing', questionType, selectedPath: questionType.type === 'global' ? 'long-context' : 'agentic' });
 
-    console.log("[qa-stream] questionType =", questionType.type, "| question:", String(requestBody.question ?? "").slice(0, 60));
+    console.log("[qa-stream] questionType =", questionType.type);
 
     if (questionType.type === "global") {
       console.log("[qa-stream] -> long context path");
@@ -234,32 +271,22 @@ async function handleQaStream(request, response, user) {
           threadId: thread.id,
           userDocumentId: requestBody.activeDocumentId,
           userId: user.id,
+          runContext,
+          runAnswer,
         });
         return;
       } catch (error) {
-        try {
-          writeSse(response, "agent_step", {
-            step: {
-              kind: "fallback",
-              messageId: assistantMessage.id,
-              payload: {
-                errorMessage: error instanceof Error ? error.message : "Long-context answering failed.",
-                reason: "long_context_failed",
-              },
-              status: "error",
-              stepIndex: 0,
-              summary: "长上下文回答失败，已退回 agentic 检索。",
-            },
-          });
-        } catch {
-          // writeSse is best-effort here; ignore failures so we still fall through.
-        }
+        abortController.signal.throwIfAborted();
+        if (!error.allowLegacyRetrievalFallback) throw error;
+        await runContext.events.step('fallback', '全文缓存不可用，转入检索。',
+          { phase: 'fulltext_load', errorCode: error.code, from: 'long-context', to: 'agentic' }, undefined, [], 'error');
         // fall through to agentic retrieval below
       }
     }
 
     try {
       retrieval = await runCurrentPaperReasoningRetrieval({
+        runContext,
         emit: (eventName, payload) => writeSse(response, eventName, payload),
         messageId: assistantMessage.id,
         model: requestBody.model,
@@ -270,7 +297,7 @@ async function handleQaStream(request, response, user) {
         userDocumentId: requestBody.activeDocumentId,
         userId: user.id,
       });
-      agentSteps = retrieval.agentSteps ?? [];
+      agentSteps = runContext.steps;
 
       await writeQaLogSilent({
         messageId: assistantMessage.id,
@@ -342,7 +369,7 @@ async function handleQaStream(request, response, user) {
       let directAnswerText = "";
       let directUsage;
 
-      await streamQaChatCompletion({
+      await runAnswer({
         messages: buildQaAnswerMessages({
           answerLanguage: requestBody.answerLanguage,
           budget: computeAnswerContextBudget({ model: requestBody.model, mode: "direct" }),
@@ -366,7 +393,7 @@ async function handleQaStream(request, response, user) {
         },
         onUsage: (usage) => {
           directUsage = usage;
-          writeSse(response, "usage", { usage });
+          writeSse(response, "usage", usage);
         },
         signal: abortController.signal,
       });
@@ -376,6 +403,7 @@ async function handleQaStream(request, response, user) {
         messageId: assistantMessage.id,
         retrievalSnapshot,
         status: "success",
+        usage: directUsage,
         userId: user.id,
       });
       await writeQaLogSilent({
@@ -401,6 +429,7 @@ async function handleQaStream(request, response, user) {
         rejected: [],
         warnings: [],
       });
+      await runContext.terminal({ status: 'success', stopReason: 'direct_answer', usage: directUsage });
       writeSse(response, "done", {
         assistantMessage: {
           ...updatedMessage,
@@ -463,6 +492,7 @@ async function handleQaStream(request, response, user) {
         rejected: [],
         warnings: ["No evidence chunks were retrieved for this question."],
       });
+      await runContext.terminal({ status: 'success', stopReason: 'no_evidence' });
       writeSse(response, "done", {
         assistantMessage: {
           ...updatedMessage,
@@ -478,7 +508,7 @@ async function handleQaStream(request, response, user) {
     let answerText = "";
     let usage;
 
-    await streamQaChatCompletion({
+    await runAnswer({
       messages: buildQaAnswerMessages({
         answerLanguage: requestBody.answerLanguage,
         budget: computeAnswerContextBudget({ model: requestBody.model, mode: "answer" }),
@@ -586,6 +616,7 @@ async function handleQaStream(request, response, user) {
       rejected: verification.rejected,
       warnings: verification.warnings,
     });
+    await runContext.terminal({ status: 'success', stopReason: 'model_finish', usage });
     writeSse(response, "done", {
       assistantMessage: {
         ...updatedMessage,
@@ -597,11 +628,17 @@ async function handleQaStream(request, response, user) {
     });
     response.end();
   } catch (error) {
+    await runContext?.terminal({ status: abortController.signal.aborted ? 'aborted' : 'error',
+      error, stopReason: abortController.signal.aborted ? 'cancelled' : error.code ?? 'runtime_error', usage: requestUsage }).catch(() => {
+      console.error('[qa-legacy] terminal persistence failed', requestMessageId);
+    });
     if (abortController.signal.aborted) {
       if (assistantMessage?.id) {
         await updateQaMessage({
           errorMessage: "Request was aborted.",
           messageId: assistantMessage.id,
+          content: partialAnswer,
+          usage: requestUsage,
           status: "aborted",
           userId: user.id,
         }).catch(() => undefined);
@@ -632,6 +669,8 @@ async function handleQaStream(request, response, user) {
       await updateQaMessage({
         errorMessage: error instanceof Error ? error.message : "QA request failed.",
         messageId: assistantMessage.id,
+        content: partialAnswer,
+        usage: requestUsage,
         status: "error",
         userId: user.id,
       }).catch(() => undefined);
@@ -903,8 +942,18 @@ async function handleLongContextAnswer({
   threadId,
   userDocumentId,
   userId,
+  runContext,
+  runAnswer,
 }) {
-  const fullText = await loadCurrentPaperFullText({ userDocumentId, userId, model });
+  runContext.setPhase('fulltext_load');
+  await runContext.events.step('observation', '开始读取全文缓存。', { phase: 'fulltext_load', state: 'started' });
+  let fullText;
+  try { fullText = await loadCurrentPaperFullText({ userDocumentId, userId, model }); }
+  catch (error) {
+    if (['mathpix_cache_unavailable', 'long_context_unavailable'].includes(error.code)) error.allowLegacyRetrievalFallback = true;
+    throw error;
+  }
+  abortController.signal.throwIfAborted();
   const retrievalSnapshot = createRetrievalSnapshot({
     activeDocumentId: userDocumentId,
     evidence: [],
@@ -928,10 +977,8 @@ async function handleLongContextAnswer({
     stepIndex: 1,
     summary: "将基于论文全文生成回答。",
   };
-  agentSteps.push(planStep, outlineStep);
-
-  writeSse(response, "agent_step", { step: planStep });
-  writeSse(response, "agent_step", { step: outlineStep });
+  await runContext.events.step(planStep.kind, planStep.summary, { ...planStep.payload, phase: 'fulltext_load', state: 'completed', textChars: fullText.text.length });
+  await runContext.events.step(outlineStep.kind, outlineStep.summary, { ...outlineStep.payload, phase: 'fulltext_generate' });
   writeSse(response, "retrieval", {
     diagnostics: { agent: { longContext: true, questionType }, candidateCount: 0 },
     snapshot: retrievalSnapshot,
@@ -941,7 +988,8 @@ async function handleLongContextAnswer({
   let answerText = "";
   let usage;
 
-  await streamQaChatCompletion({
+  await runAnswer({
+    phase: 'fulltext_generate',
     messages: buildQaAnswerMessages({
       answerLanguage,
       budget: computeAnswerContextBudget({ model, mode: "long_context" }),
@@ -966,16 +1014,18 @@ async function handleLongContextAnswer({
     },
     onUsage: (usageValue) => {
       usage = usageValue;
-      writeSse(response, "usage", { usage: usageValue });
+      writeSse(response, "usage", usageValue);
     },
     signal: abortController.signal,
   });
 
+  runContext.setPhase('persist_answer');
   const updatedMessage = await updateQaMessage({
     content: answerText,
     messageId: assistantMessageId,
     retrievalSnapshot,
     status: "success",
+    usage,
     userId,
   });
   await writeQaLogSilent({
@@ -983,6 +1033,8 @@ async function handleLongContextAnswer({
     model,
     payload: {
       estimatedTokens: fullText.estimatedTokens,
+      ...runContext.summary(),
+      usageAccounting: 'per-model-call',
       longContext: true,
       questionType: questionType.type,
       truncated: fullText.truncated,
@@ -990,6 +1042,7 @@ async function handleLongContextAnswer({
     promptVersion: QA_PROMPT_VERSION,
     requestFinishedAt: Date.now(),
     requestKind: "answer-stream",
+    requestStartedAt: agentSteps[0]?.createdAt ?? Date.now(),
     status: "success",
     threadId,
     usage,
@@ -998,6 +1051,7 @@ async function handleLongContextAnswer({
   });
 
   writeSse(response, "verifier", { rejected: [], warnings: [] });
+  await runContext.terminal({ status: 'success', stopReason: 'long_context_complete', usage });
   writeSse(response, "done", {
     assistantMessage: { ...updatedMessage, agentSteps },
     citations: [],
@@ -1202,7 +1256,7 @@ function normalizeUuidLike(value) {
 }
 
 function serializeError(error) {
-  if (error instanceof QaChatModelError) {
+  if (error instanceof QaChatModelError || error instanceof DocumentToolError) {
     return {
       code: error.code,
       message: error.message,
@@ -1235,6 +1289,7 @@ function getErrorStatusCode(error) {
     error instanceof QaChatModelError ||
     error instanceof EmbeddingProviderError ||
     error instanceof RerankerProviderError
+    || error instanceof DocumentToolError
   ) {
     return error.statusCode;
   }

@@ -18,7 +18,6 @@ const REQUIRED = [
   "SUPABASE_ANON_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
   "DEEPSEEK_API_KEY",
-  "VOYAGE_API_KEY",
   "VITE_SUPABASE_URL",
   "VITE_SUPABASE_ANON_KEY",
 ];
@@ -30,6 +29,7 @@ try {
   process.exit(2);
 }
 loadDotenv({ path: ENV_FILE, override: true });
+if (process.env.QA_AGENT_RUNTIME !== 'document-tools-v1') REQUIRED.push('VOYAGE_API_KEY');
 
 function roleOf(value) {
   if (!value) return null;
@@ -82,7 +82,7 @@ for (const { level, key, message } of findings) {
 }
 const blocking = findings.filter(({ level }) => level === "BAD" || level === "FATAL" || level === "MISSING");
 if (blocking.length === 0) {
-  console.log(`  ${ENV_FILE} 检查通过：7 个凭据已填，两对值与角色归属都正确。`);
+  console.log(`  ${ENV_FILE} 检查通过：${REQUIRED.length} 个必要配置已填，两对值与角色归属都正确。`);
   process.exit(0);
 }
 console.error(`\n${blocking.length} 项需要修正后再启动。`);

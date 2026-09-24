@@ -1,6 +1,7 @@
 import { getAppDb } from "../cache";
 import { listCloudApiCallLogs } from "../cloud/apiLogCloudRepository";
 import { listCloudQaApiLogs } from "../cloud/qaApiLogCloudRepository";
+import { qaLogsForUsage } from "../qa/usageLogs";
 import { getCloudSettings, putCloudSettings } from "../cloud/settingsCloudRepository";
 import { runCloudSync } from "../cloud/syncStatus";
 import { PROJECT_CONFIG } from "../config/projectConfig";
@@ -129,7 +130,7 @@ export async function getApiUsageSummary(input: {
   if (cloudLogs || qaCloudLogs) {
     return summarizeApiLogs([
       ...(cloudLogs ?? []).map(translationLogToUsageLog),
-      ...(qaCloudLogs ?? []).map(qaLogToUsageLog),
+      ...qaLogsForUsage(qaCloudLogs ?? []).map(qaLogToUsageLog),
     ]);
   }
 

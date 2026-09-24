@@ -38,6 +38,7 @@ test("QA heartbeats extend an active stream beyond the previous fixed timeout",a
     assert.equal(stream.signal.aborted,false);
   }
   stream.write('event: delta\ndata: {"text":"answer"}\n\n');
+  stream.write('event: done\ndata: {}\n\n');
   stream.close();await stream.promise;
   t.mock.timers.tick(600000);
   assert.equal(stream.signal.aborted,false);
@@ -60,4 +61,10 @@ test("caller cancellation aborts an active QA request",async t=>{
   const rejected=assert.rejects(stream.promise,error=>error.name==="AbortError");await flush();
   parent.abort();await rejected;
   assert.equal(stream.signal.aborted,true);
+});
+
+test("EOF after partial output is an error, never a successful completion",async t=>{
+  const stream=start(t);const rejected=assert.rejects(stream.promise,/before completion/);await flush();
+  stream.write('event: delta\ndata: {"text":"partial"}\n\n');
+  stream.close();await rejected;
 });

@@ -1,5 +1,7 @@
 # QA 开发环境：跑通一次真实问答
 
+P2 使用 `QA_AGENT_RUNTIME=document-tools-v1`：MathPix 原文可读即可问答，无需建立 QA 索引或配置 Voyage。首次启动前必须给**独立测试库**应用 [兼容迁移](../supabase/migrations/20260924_qa_document_tools.sql)，再用 `node --env-file=.env.qa.local scripts/check-qa-document-schema.mjs` 检查。部署和人工验收步骤见 [P2 实施记录](qa-agent-stage-2-implementation.md)。下文涉及 QA 索引/Voyage 的步骤只用于显式旧路径。
+
 状态（2026-09-23 更新）：Agent 路径已跑通；修复后的长上下文路径已通过本地人工验收，并核对真实模型回答成功落库。
 具体结果、证据范围和待修复问题见 [两轮真实运行核验](qa-local-runs-2026-09-23.md)，文末清单已同步。
 全文读取缺陷已在 `0.1.1-alpha.1` 修复，验收源码为 `1cc80bdd4cc71871b55d83175dee4ea9eca23804`。

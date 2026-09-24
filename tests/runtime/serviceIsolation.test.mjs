@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { once } from "node:events";
+import { once, EventEmitter } from "node:events";
 import { spawn } from "node:child_process";
 import { cpSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -72,4 +72,25 @@ test("standalone QA refuses implicit environment configuration", async () => {
   const [code] = await once(child, "exit");
   assert.notEqual(code, 0);
   assert.match(error, /QA_ENV_FILE is required/);
+});
+
+test('QA stream concurrency is bounded and slots release on completion', async t => {
+  const started = new EventEmitter(), releases = new Map();
+  const server = createQaServer({ authenticate: async req => ({ id: req.headers.authorization }), release: {},
+    handleRoute: async (_req, res, _url, user) => {
+      await new Promise(resolve => { releases.set(user.id, resolve); started.emit('start'); });
+      res.end('finished');
+    } });
+  t.after(() => { for (const resolve of releases.values()) resolve(); server.closeAllConnections(); server.close(); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const url = `http://127.0.0.1:${server.address().port}/api/qa/stream`;
+  const send = user => fetch(url, { method: 'POST', headers: { authorization: user } });
+  const aStarted = once(started, 'start'), a = send('a'); await aStarted;
+  assert.equal((await send('a')).status, 429);
+  const bStarted = once(started, 'start'), b = send('b'); await bStarted;
+  assert.equal((await send('c')).status, 429);
+  releases.get('a')(); assert.equal((await a).status, 200);
+  const cStarted = once(started, 'start'), c = send('c'); await cStarted;
+  releases.get('b')(); releases.get('c')();
+  assert.equal((await b).status, 200); assert.equal((await c).status, 200);
 });
