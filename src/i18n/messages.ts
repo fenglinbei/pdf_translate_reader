@@ -2,6 +2,14 @@ import type { UiLocale } from "./uiLocales";
 
 export const MESSAGES = {
   "en-US": {
+    "support.title": "Support & community",
+    "support.qqGroup": "QQ discussion group",
+    "support.copy": "Copy",
+    "support.copyGroup": "Copy QQ group number",
+    "support.copyFailed": "Could not copy. Select and copy the group number manually.",
+    "support.appreciation": "Support via WeChat",
+    "support.qrAlt": "WeChat appreciation QR code",
+    "support.qrCaption": "Scan in WeChat to support the project. Thank you!",
     "settings.selectionContinuous": "Continuous drag",
     "settings.selectionCross": "Across regions",
     "settings.mobilePan": "Pan to read",
@@ -699,6 +707,14 @@ export const MESSAGES = {
     "pdf.addedRegion": "Added region {count}.",
   },
   "zh-CN": {
+    "support.title": "支持与交流",
+    "support.qqGroup": "QQ 交流群",
+    "support.copy": "复制",
+    "support.copyGroup": "复制 QQ 群号",
+    "support.copyFailed": "复制失败，请选中群号手动复制。",
+    "support.appreciation": "微信赞赏",
+    "support.qrAlt": "微信赞赏二维码",
+    "support.qrCaption": "微信扫一扫，感谢你对项目的支持",
     "settings.selectionContinuous": "连续拖拽",
     "settings.selectionCross": "跨区域选择",
     "settings.mobilePan": "划动浏览",

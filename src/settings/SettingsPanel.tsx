@@ -15,6 +15,7 @@ import type {
   PdfLibraryEntry,
 } from "../types/domain";
 import { PaperContextEditor } from "./PaperContextEditor";
+import { SupportAndCommunity } from "./SupportAndCommunity";
 import { API_LOGS_UPDATED_EVENT } from "../translation/apiLogRepository";
 import {
   getTranslationModelShortLabel,
@@ -98,7 +99,7 @@ export function SettingsPanel({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeRef.current(); }
       if (event.key !== 'Tab' || !panel) return;
-      const focusable = [...panel.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]')].filter(element => element.getClientRects().length);
+      const focusable = [...panel.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex="0"]')].filter(element => element.getClientRects().length);
       const first = focusable[0], last = focusable.at(-1);
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
@@ -214,6 +215,8 @@ export function SettingsPanel({
           {workspaceStatus}
           {accountControl}
         </section> : null}
+
+        <SupportAndCommunity />
 
         <section className="settings-section" aria-label={t("settings.interfaceLanguage")}>
           <div className="settings-section-heading">{t("settings.interfaceLanguage")}</div>
