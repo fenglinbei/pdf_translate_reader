@@ -63,3 +63,15 @@ test('ordinary questions finish with zero tools; document answers directly cite 
   assert.equal(result.metrics.toolCalls,ordinary?0:1);assert.equal(calls,ordinary?1:2);assert(result.verified.valid);assert.equal(result.verified.citations.length,ordinary?0:1);
  }
 });
+
+test('searching many small paragraphs uses one authorized batch without granting internally scanned text',async()=>{
+ const paragraphs=Array.from({length:90},(_,i)=>`Paragraph ${i} contains independent facts about the synthetic evaluation.`);
+ const {artifact}=await buildDocumentArtifact({pdfSha256:'a'.repeat(64),mmd:paragraphs.join('\n\n'),pages:[{pageIndex:0,lines:paragraphs.map((text,lineIndex)=>({text,lineIndex}))}]});
+ const packed=await packDocumentArtifact(artifact),files=new Map(packed.files.map(f=>[f.id,f.text]));let access=0;
+ const loader=createArtifactLoader({authorize:async()=>{access++;},loadText:async s=>s.partId==='manifest'?packed.manifestText:files.get(s.partId)});
+ const workspace=createArtifactWorkspace({userId:'alice',activeDocumentId:'doc',load:async scope=>({...await loader.open({...scope,revision:artifact.revision,manifestSha256:packed.manifestSha256}),title:'Many paragraphs'})});
+ await workspace.execute('document_outline',{document:'current'});const before=access;
+ const result=await workspace.execute('search_document',{documents:['current'],queries:['not-present-in-this-text']});
+ assert.equal(result.hasMore,false);assert.equal(access-before,2);assert.equal(workspace.metrics.returnedChars,0);assert(workspace.metrics.scanChars>5000);
+ assert.throws(()=>workspace.ledger.resolve('R1'),{code:'UNKNOWN_READ_REFERENCE'});
+});

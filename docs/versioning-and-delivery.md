@@ -1,8 +1,6 @@
 # 版本、CI/CD 与 QA 隔离规范
 
-2026-09-25：[版本化文档与直接引用](qa-document-artifacts-plan.md) 已获授权分步实施，使用独立工作树。应用开发版本 `0.3.0-alpha.1` / QA `0.5.0-alpha.1` 为基础模块阶段，尚未切换运行路径或部署；旧测试入口继续使用已部署版本。
-
-2026-09-25：[工作区 UI 候选](qa-workspace-ui-review.md) 的代码版本为应用 `0.2.0-alpha.3` / QA `0.4.0-alpha.4`，已完成本地检查。本轮已获授权更新 5175 的 UI；引用执行链路仍待讨论，5174 / 8789 验收入口保留上一版。
+2026-09-25：[版本化文档与直接引用](qa-document-artifacts-plan.md) 已完成 S1–S5 实现与隔离验证，应用 `0.3.0-alpha.5` / QA `0.5.0-alpha.5`，新 runtime 为 `workspace-artifacts-v1`。沿用已验收的紧凑工作区 UI，部署目标仅为 5175 / 8791；5174 / 8789 保留上一版，正式服务不切换。实际发布与人工验收状态见 [测试交付记录](qa-document-artifacts-acceptance.md)。
 
 状态：仓库实现；生产切流与部署另行验收。本文是后续开发与发布的约束。
 
@@ -17,8 +15,8 @@
 
 | 对象 | 唯一版本来源 | Git 标签 | 当前开发版本 |
 | --- | --- | --- | --- |
-| 应用（阅读器、翻译、文库） | 根 `package.json`，同步 lockfile | `vX.Y.Z` | `0.1.0`，沿用已有声明，不追认历史正式发布 |
-| QA 服务 | `server/qa/package.json` | `qa-vX.Y.Z[-alpha.N/-beta.N/-rc.N]` | `0.4.0-alpha.3` |
+| 应用（阅读器、翻译、文库） | 根 `package.json`，同步 lockfile | `vX.Y.Z` | `0.3.0-alpha.5` |
+| QA 服务 | `server/qa/package.json` | `qa-vX.Y.Z[-alpha.N/-beta.N/-rc.N]` | `0.5.0-alpha.5` |
 | 检索、提示词、索引协议 | `server/qa/config.mjs` | 随服务发布 | 首次拆分保持原值 |
 
 公共兼容面包含 HTTP 请求、SSE 事件、持久化数据和配置；内部重排不应改变它们。

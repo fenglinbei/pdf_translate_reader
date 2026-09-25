@@ -37,6 +37,9 @@ try {
 }
 const server = createQaServer({
   authenticate: requireAuthenticatedUser,
+  maxConcurrentStreams: Number(process.env.QA_MAX_CONCURRENT_STREAMS ?? 2),
+  maxQueuedStreams: Number(process.env.QA_MAX_QUEUED_STREAMS ?? (runtime === 'workspace-artifacts-v1' ? 8 : 0)),
+  queueWaitMs: Number(process.env.QA_QUEUE_WAIT_MS ?? 120000),
   handleRoute: handleQaRoute,
   release: { version, sha, environment: process.env.QA_ENVIRONMENT, runtime },
 });

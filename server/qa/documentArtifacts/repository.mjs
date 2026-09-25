@@ -31,6 +31,12 @@ export async function requireArtifactDocument({ userId, documentId }, client = c
   required(document, 'DOCUMENT_NOT_FOUND', '未找到这篇文档，或文档已删除。', 404);
   return document;
 }
+export async function requireArtifactDocuments(userId, documentIds, client = createArtifactServiceClient()) {
+  const ids = [...new Set(documentIds)];
+  required(ids.length > 0 && ids.length <= 8, 'INVALID_DOCUMENT_SCOPE', '无效的文档范围。', 400);
+  const owned = result(await client.from('user_documents').select('id').eq('user_id', userId).in('id', ids).is('deleted_at', null));
+  required(owned.length === ids.length, 'DOCUMENT_NOT_FOUND', '查阅的文档已删除或不再可访问。', 404);
+}
 export async function inspectArtifactSource(scope, client = createArtifactServiceClient()) {
   const document = await requireArtifactDocument(scope, client);
   const parsed = result(await client.from('user_mathpix_documents')

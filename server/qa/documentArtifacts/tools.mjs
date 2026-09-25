@@ -2,7 +2,7 @@ import Ajv from 'ajv';
 import { randomUUID } from 'node:crypto';
 import { requireCondition } from '../documents/errors.mjs';
 import { discoverWorkspaceDocuments } from '../workspace/repository.mjs';
-import { openCurrentArtifact, requireArtifactDocument } from './repository.mjs';
+import { openCurrentArtifact, requireArtifactDocument, requireArtifactDocuments } from './repository.mjs';
 import { createPublishedReferences } from './publishedReferences.mjs';
 import { sliceArtifactReceipt } from './loader.mjs';
 
@@ -27,7 +27,7 @@ async function loadPublished(scope,options) {
   const reader = await openCurrentArtifact(scope,options), document = await requireArtifactDocument(scope);
   return { ...reader, title:document.title || document.display_file_name || '文档', pdfFingerprint:document.pdf_fingerprint };
 }
-export function createArtifactWorkspace({ userId,runId = randomUUID(),activeDocumentId,signal,load = loadPublished,discover = discoverWorkspaceDocuments }) {
+export function createArtifactWorkspace({ userId,runId = randomUUID(),activeDocumentId,signal,load = loadPublished,discover = discoverWorkspaceDocuments,authorizeDocuments }) {
   const ids=new Map(), documents=new Map(), readers=new Map(), cursors=new Map();
   const ledger=createPublishedReferences({userId,runId}); let discoveryCalls=0, scanChars=0;
   function docRef(id) { if(!ids.has(id)){const ref=`D${ids.size+1}`;ids.set(id,ref);documents.set(ref,id);}return ids.get(id); }
@@ -38,7 +38,8 @@ export function createArtifactWorkspace({ userId,runId = randomUUID(),activeDocu
       requireCondition(readers.size<8,'DOCUMENT_BUDGET_EXHAUSTED','本次查阅文档数量达到上限。');
       const value=await load({userId,documentId:id},{signal});
       const nodes=value.snapshot.manifest.nodes, sections=new Map(nodes.filter(n=>n.kind==='section').map((n,i)=>[`S${i+1}`,n]));
-      readers.set(id,{...value,id,document:docRef(id),nodes,sections});
+      const bodyNodes=nodes.filter(n=>n.kind!=='section');
+      readers.set(id,{...value,id,document:docRef(id),nodes,sections,bodyNodes,bodyIndexes:new Map(bodyNodes.map((n,i)=>[n.id,i]))});
     }
     return readers.get(id);
   }
@@ -70,9 +71,9 @@ export function createArtifactWorkspace({ userId,runId = randomUUID(),activeDocu
     const patterns=args.queries.map(q=>new RegExp(escaped(q),'iu'));
     let docIndex=args.docIndex??0,index=args.index??0,offset=args.offset??0,scanned=0;const results=[];
     while(docIndex<args.documents.length&&scanned<128000&&scanChars<1000000&&results.reduce((s,r)=>s+r.evidence.length,0)<6){
-      const r=await reader(args.documents[docIndex]),nodes=r.nodes.filter(n=>n.kind!=='section'),batch=[];
+      const r=await reader(args.documents[docIndex]),nodes=r.bodyNodes,batch=[];
       let nextIndex=index,nextOffset=offset,requested=0;
-      while(nextIndex<nodes.length&&batch.length<8){const node=nodes[nextIndex],size=Math.min(16000,node.textLength-nextOffset,128000-scanned-requested,1000000-scanChars-requested);
+      while(nextIndex<nodes.length&&batch.length<256){const node=nodes[nextIndex],size=Math.min(16000,node.textLength-nextOffset,128000-scanned-requested,1000000-scanChars-requested);
         if(size<1)break;batch.push({nodeId:node.id,start:nextOffset,maxChars:size});requested+=size;nextOffset+=size;if(nextOffset===node.textLength){nextIndex++;nextOffset=0;}else break;}
       if(!batch.length){if(index>=nodes.length){docIndex++;index=0;offset=0;continue;}break;}
       const receipts=await r.readBatch(batch),snippets=[];
@@ -80,7 +81,7 @@ export function createArtifactWorkspace({ userId,runId = randomUUID(),activeDocu
         scanned+=receipt.text.length;scanChars+=receipt.text.length;
         const matches=patterns.flatMap(p=>{const m=p.exec(receipt.text);return m?[m]:[];}).sort((a,b)=>a.index-b.index);
         if(matches.length&&results.reduce((s,r)=>s+r.evidence.length,0)+snippets.length>=6)break;
-        index=nodes.findIndex(n=>n.id===receipt.nodeId);offset=receipt.range[1];if(offset===nodes[index].textLength){index++;offset=0;}
+        index=r.bodyIndexes.get(receipt.nodeId);offset=receipt.range[1];if(offset===nodes[index].textLength){index++;offset=0;}
         if(matches.length){const match=matches[0];let from=Math.max(0,match.index-240),to=Math.min(receipt.text.length,match.index+match[0].length+360);
           if(/[\uDC00-\uDFFF]/.test(receipt.text[from]??''))from--;if(/[\uDC00-\uDFFF]/.test(receipt.text[to]??''))to--;
           snippets.push(sliceArtifactReceipt(receipt,receipt.range[0]+from,receipt.range[0]+to));
@@ -124,5 +125,5 @@ export function createArtifactWorkspace({ userId,runId = randomUUID(),activeDocu
       query:input.query??input.queries?.join(' / '),...(data?.documents?{resultCount:data.documents.length}:{})};
   }
   return {execute,describeActivity,ledger,get metrics(){return {...ledger.metrics,scanChars,documentsRead:readers.size,discoveryCalls};},
-    async assertCurrent(){for(const r of readers.values())await r.assertAccess();}};
+    async assertCurrent(){if(!readers.size)return;const check=authorizeDocuments??(load===loadPublished?requireArtifactDocuments:undefined);if(check)await check(userId,[...readers.keys()]);else for(const r of readers.values())await r.assertAccess();}};
 }

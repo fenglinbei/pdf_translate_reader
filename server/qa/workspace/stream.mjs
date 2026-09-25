@@ -6,6 +6,7 @@ import { runWorkspaceAgent, WORKSPACE_PROMPT_VERSION as DOCUMENT_PROMPT_VERSION,
 import { createWorkspaceTools } from './tools.mjs';
 import { createArtifactWorkspace } from '../documentArtifacts/tools.mjs';
 import { createArtifactProtocol, ARTIFACT_RUNTIME_VERSION, ARTIFACT_PROMPT_VERSION } from '../documentArtifacts/protocol.mjs';
+import { createSseWriter } from '../sseWriter.mjs';
 import { requireCondition } from '../documents/errors.mjs';
 
 export async function handleWorkspaceStream(request, response, user, body, dependencies = {}) {
@@ -19,9 +20,8 @@ export async function handleWorkspaceStream(request, response, user, body, depen
   const runtimeVersion = artifacts ? ARTIFACT_RUNTIME_VERSION : DOCUMENT_RUNTIME_VERSION;
   const promptVersion = artifacts ? ARTIFACT_PROMPT_VERSION : DOCUMENT_PROMPT_VERSION;
   const scope = 'workspace';
-  const emit = (event, payload) => {
-    if (!response.destroyed && !response.writableEnded) response.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`);
-  };
+  const writer = createSseWriter(response, { onFailure: error => disconnected.abort(error) });
+  const emit = writer.emit;
   response.once('close', () => { clearInterval(heartbeat); disconnected.abort(); });
   try {
     assertDocumentToolModel(body.model);
@@ -43,7 +43,7 @@ export async function handleWorkspaceStream(request, response, user, body, depen
     context = makeContext({ userId: user.id, userDocumentId: body.activeDocumentId, messageId: assistant.id, threadId: thread.id, model: body.model, emit, runtimeVersion, promptVersion, duplicateObservations: false, recordToolTrace: true });
     response.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
     response.flushHeaders?.();
-    heartbeat = setInterval(() => { if (!response.destroyed && !response.writableEnded) response.write(': keep-alive\n\n'); }, 10000); heartbeat.unref?.();
+    heartbeat = setInterval(() => { if (!response.destroyed && !response.writableEnded) writer.heartbeat(); }, 10000); heartbeat.unref?.();
     emit('meta', { assistantMessageId: assistant.id, userMessageId: userMessage.id, threadId: thread.id,
       model: body.model, executionMode: 'agentic', runtime: runtimeVersion, promptVersion, reasoningEffort: body.reasoningEffort, scope });
     const recentMessages = previous.filter(m => m.id !== body.regenerateMessageId && (!body.regenerateMessageId || m.id !== userMessage.id));
@@ -82,7 +82,7 @@ export async function handleWorkspaceStream(request, response, user, body, depen
     catch { console.error('[qa-workspace] terminal log failed after answer commit'); }
     emit('citation', { citations }); emit('verifier', { warnings: verified.warnings, rejected: verified.rejected });
     emit('done', { threadId: thread.id, assistantMessage: { ...updated, agentSteps: context.steps, citations }, citations });
-    response.end();
+    await writer.end();
   } catch (error) {
     const aborted = disconnected.signal.aborted;
     const status = aborted ? 'aborted' : 'error';
@@ -93,7 +93,7 @@ export async function handleWorkspaceStream(request, response, user, body, depen
     }
     try { await context?.terminal({ status, error, usage, stopReason: aborted ? 'cancelled' : signal.aborted ? 'timeout' : error.code ?? 'runtime_error' }); }
     catch { console.error('[qa-workspace] terminal persistence failed'); }
-    if (response.headersSent) { emit('error', { code: error.code ?? (aborted ? 'qa_aborted' : 'qa_document_failed'), message }); response.end(); }
+    if (response.headersSent) { emit('error', { code: error.code ?? (aborted ? 'qa_aborted' : 'qa_document_failed'), message }); await writer.end(); }
     else writeJson(response, error.statusCode ?? 500, { error: { code: error.code ?? 'qa_document_failed', message } });
   } finally { clearInterval(heartbeat); }
 }
