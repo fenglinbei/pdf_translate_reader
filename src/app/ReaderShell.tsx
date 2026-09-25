@@ -68,6 +68,7 @@ import { metadataIsPending } from "../library/MetadataRecognition";
 import { createPdfFingerprint } from "../pdf/pdfFingerprint";
 import { PdfViewer, type PinLocateRequest } from "../pdf/PdfViewer";
 import { WorkspaceChat } from "../qa/WorkspaceChat";
+import { useDocumentPreparation } from '../qa/documentArtifacts/useDocumentPreparation';
 import { PaperQaPanel } from "../qa/PaperQaPanel";
 import { createQaIndexJob, getQaIndexJob, getQaDocumentReadiness, getQaCapabilities, type QaDocumentReadiness } from "../qa/qaClient";
 import {
@@ -497,6 +498,7 @@ export function ReaderShell() {
   // QA chat fullscreen. While on, the right pane is widened in place and the
   // resizer range is expanded. The user's normal pane width is restored on exit.
   const [workspaceQa, setWorkspaceQa] = useState(false);
+  const [artifactPreparation, setArtifactPreparation] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<'reading' | 'split' | 'chat'>('reading');
   const setWorkspaceQaPage = (open: boolean) => setWorkspaceView(open ? 'chat' : 'reading');
   const [navigationTab, setNavigationTab] = useState<'sessions' | 'documents'>('documents');
@@ -531,8 +533,8 @@ export function ReaderShell() {
   const qaOpenRequestRef = useRef(0);
   useEffect(() => {
     let disposed = false;
-    setWorkspaceQa(false); setWorkspaceQaPage(false);
-    if (readerSessionUserId) void getQaCapabilities().then(cap => { if (!disposed) { setWorkspaceQa(Boolean(cap?.workspaceChat)); if (cap?.workspaceChat) { setRightPaneTab("annotations"); setIsPinsPaneOpen(false); } } }).catch(() => {});
+    setWorkspaceQa(false); setWorkspaceQaPage(false); setArtifactPreparation(false);
+    if (readerSessionUserId) void getQaCapabilities().then(cap => { if (!disposed) { setWorkspaceQa(Boolean(cap?.workspaceChat)); setArtifactPreparation(Boolean(cap?.documentArtifacts)); if (cap?.workspaceChat) { setRightPaneTab("annotations"); setIsPinsPaneOpen(false); } } }).catch(() => {});
     return () => { disposed = true; };
   }, [readerSessionUserId]);
   const [isQaFullscreen, setIsQaFullscreen] = useState(false);
@@ -569,6 +571,9 @@ export function ReaderShell() {
   const [isCreatingQaIndexJob, setIsCreatingQaIndexJob] = useState(false);
   const [isLoadingQaIndexJob, setIsLoadingQaIndexJob] = useState(false);
   const [readerSessionHydratedUserId, setReaderSessionHydratedUserId] = useState<string>();
+  useDocumentPreparation({ enabled: artifactPreparation && readerSessionHydratedUserId === readerSessionUserId,
+    userId: readerSessionUserId, documentId: currentEntry?.cloudDocumentId,
+    sourceGeneration: `${mathpixRecord?.status ?? ''}:${mathpixRecord?.cloudMathpixSyncedAt ?? 0}` });
   const activeCloudDocumentIdRef = useRef<string>();
   const activeReaderSessionUserIdRef = useRef<string>();
   const activeFingerprintRef = useRef<string>();

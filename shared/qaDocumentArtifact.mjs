@@ -174,16 +174,23 @@ export function getSectionPath(artifact, nodeId) {
 
 export function resolveDocumentLocation(artifact, nodeId, range) {
   const node = getDocumentNode(artifact, nodeId);
+  const index = indexFor(artifact);
+  return resolveMappedNodeLocation(node, index.byMapping.get(nodeId), index.byRegion, range);
+}
+
+// For digest-verified location parts from a published manifest. This projection
+// deliberately performs no source authorization or publication verification.
+export function resolveMappedNodeLocation(node, mapping, byRegion, range) {
+  const nodeId = node.id;
   range ??= [0, node.text.length]; assertTextRange(node.text, range);
-  const index = indexFor(artifact), mapping = index.byMapping.get(nodeId);
   const intervals = [], sources = new Map();
   let firstAnchor;
   for (const segment of mapping?.segments ?? []) {
     const start = Math.max(range[0], segment.range[0]), end = Math.min(range[1], segment.range[1]);
     if (start >= end) continue;
-    const firstRegion = index.byRegion.get(segment.sources[0].regionId);
+    const firstRegion = byRegion.get(segment.sources[0].regionId);
     const partialSegment = start !== segment.range[0] || end !== segment.range[1];
-    if (partialSegment && (segment.sources.length > 1 || index.byRegion.get(segment.sources[0].regionId).kind === 'block')) {
+    if (partialSegment && (segment.sources.length > 1 || firstRegion.kind === 'block')) {
       // A partial range inside a coarse multi-line/table mapping does not tell
       // us which lines support it. Retain a page anchor, not invented precision.
       firstAnchor ??= { pageNumber: firstRegion.pageNumber };
@@ -192,7 +199,7 @@ export function resolveDocumentLocation(artifact, nodeId, range) {
     firstAnchor ??= { pageNumber: firstRegion.pageNumber, lineNumber: firstRegion.lineNumber };
     intervals.push([start, end]);
     for (const source of segment.sources) {
-      const region = index.byRegion.get(source.regionId);
+      const region = byRegion.get(source.regionId);
       // Whole-line highlighting may be wider than read coverage. Do not infer
       // that every character in these physical rectangles was sent to a model.
       sources.set(`${region.id}:${source.range[0]}:${source.range[1]}`, { region, range: source.range });

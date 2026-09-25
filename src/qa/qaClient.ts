@@ -17,7 +17,7 @@ import type {
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
-export type QaCapabilities = { runtime: string; generalChat: boolean; workspaceChat?: boolean; models: string[] };
+export type QaCapabilities = { runtime: string; generalChat: boolean; workspaceChat?: boolean; documentArtifacts?: boolean; models: string[] };
 export async function getQaCapabilities(): Promise<QaCapabilities | undefined> {
   const response = await fetch(`${apiBaseUrl}/qa/capabilities`, { headers: { Authorization: `Bearer ${await getSupabaseAccessToken()}` } });
   if (response.status === 404) return undefined; // Existing QA deployments remain usable.

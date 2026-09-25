@@ -1,4 +1,5 @@
 import { writeJson } from "../http/json.mjs";
+import { artifactPreparationEnabled, handleArtifactRoute } from '../qa/documentArtifacts/routes.mjs';
 import { handleWorkspaceStream } from "../qa/workspace/stream.mjs";
 import { getWorkspaceTrace } from "../qa/workspace/repository.mjs";
 import { handleDocumentStream } from "../qa/documents/stream.mjs";
@@ -54,9 +55,10 @@ const NO_EVIDENCE_ANSWER_ZH = "我没有在当前论文索引中找到能支撑�
 
 export async function handleQaRoute(request, response, url, user) {
   try {
+    if (await handleArtifactRoute(request, response, url, user)) return;
     if (request.method === 'GET' && url.pathname === '/api/qa/capabilities') {
       const runtime = process.env.QA_AGENT_RUNTIME ?? 'legacy-json-v1';
-      writeJson(response, 200, { runtime, generalChat: ['document-tools-v1', 'workspace-tools-v1'].includes(runtime), workspaceChat: runtime === 'workspace-tools-v1', models: getDocumentToolModels() });
+      writeJson(response, 200, { runtime, generalChat: ['document-tools-v1', 'workspace-tools-v1'].includes(runtime), workspaceChat: runtime === 'workspace-tools-v1', documentArtifacts: artifactPreparationEnabled(), models: getDocumentToolModels() });
       return;
     }
     if (request.method === 'GET' && url.pathname === '/api/qa/document-readiness') {

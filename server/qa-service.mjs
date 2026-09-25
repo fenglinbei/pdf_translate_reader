@@ -19,6 +19,10 @@ const { requireAuthenticatedUser } = await import("./supabase/auth.mjs");
 const { handleQaRoute } = await import("./routes/qa.mjs");
 const { checkQaDocumentSchema } = await import('./qa/documents/schema.mjs');
 await checkQaDocumentSchema();
+if (process.env.QA_DOCUMENT_ARTIFACTS_ENABLED === 'true') {
+  const { checkArtifactSchema } = await import('./qa/documentArtifacts/repository.mjs');
+  await checkArtifactSchema();
+}
 if (runtime === 'workspace-tools-v1') {
   const { checkWorkspaceSchema } = await import('./qa/workspace/repository.mjs');
   await checkWorkspaceSchema();

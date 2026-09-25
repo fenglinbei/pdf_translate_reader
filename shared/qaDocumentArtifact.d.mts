@@ -20,3 +20,4 @@ export function sealDocumentArtifact(artifact: DocumentArtifact): Promise<Docume
 export function getDocumentNode(artifact: DocumentArtifact, nodeId: string): DocumentNode;
 export function getSectionPath(artifact: DocumentArtifact, nodeId: string): string[];
 export function resolveDocumentLocation(artifact: DocumentArtifact, nodeId: string, range?: TextRange): DocumentLocation;
+export function resolveMappedNodeLocation(node: Pick<DocumentNode, 'id' | 'text'>, mapping: NodeMapping | undefined, regions: Map<string, DocumentRegion>, range?: TextRange): DocumentLocation;
