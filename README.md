@@ -4,15 +4,18 @@ Local-first web PDF reader scaffold for sentence-level translation workflows.
 
 ## License / 许可
 
-This project is **source-available for individual, non-commercial use only**.
-Personal learning, experimentation, noncommercial research, and deployments
-accessible only to the individual user are permitted under [LICENSE](LICENSE).
-Commercial use, organizational use, and services offered to other people
-(including free services) require separate written authorization.
+This project is source-available under the
+[PolyForm Noncommercial License 1.0.0](LICENSE)
+(`PolyForm-Noncommercial-1.0.0`).
+Use, modification, and distribution are allowed for the purposes permitted by
+the license, including its Noncommercial Organizations provision.
+Commercial operation outside those permissions requires separate authorization
+from the relevant rights holders. See [NOTICE](NOTICE) for copyright notices;
+third-party materials retain their own licenses.
 
-本项目仅授权个人非商业自用。权利人保留运营官方收费服务及另行商业
-授权的权利；第三方依赖继续适用各自许可证。本许可不替代官方托管服务
-的服务条款。具体边界见 [许可范围说明](docs/licensing.md)。
+本项目采用未经修改的官方英文许可正文。
+[中文阅读指引](docs/licensing.md) 仅作说明，不增加许可限制。
+官方托管服务的用户协议另行约定。
 
 ## Project docs
 
