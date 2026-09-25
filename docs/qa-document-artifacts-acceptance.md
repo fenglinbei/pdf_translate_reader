@@ -1,6 +1,6 @@
 # 版本化阅读与引用：测试交付记录
 
-2026-09-25，应用 `0.3.0-alpha.5` / QA `0.5.0-alpha.5`。S1–S5 代码已实现，隔离工程验证已通过；本记录在实际切换测试页后补充部署身份。真实模型和用户论文体验仍待人工验收。
+2026-09-25，应用 `0.3.0-alpha.5` / QA `0.5.0-alpha.5`。S1–S5 代码已实现，隔离工程验证已通过，已部署到 5175 测试页。真实模型和用户论文体验仍待人工验收。
 
 ## 已完成的验证
 
@@ -14,13 +14,21 @@
 
 ## 测试部署
 
-目标是已有候选测试页 `https://localhost:5175/` 及 QA 8791，运行 `workspace-artifacts-v1`。保持正式前端 5173、正式 API 8787、测试核心 API 8790、旧测试页 5174 和旧 QA 8789 不变。
+已于 2026-09-25 21:37（北京时间）部署到已有候选测试页 [工作区测试页](https://192.168.31.6:5175/)（服务器本机也可使用 `https://localhost:5175/`）及 QA 8791，运行 `workspace-artifacts-v1`。正式前端 5173、正式 API 8787、测试核心 API 8790、旧测试页 5174 和旧 QA 8789 的进程身份与启动时间保持不变。
+
+部署源码为 `b7bf491e0e7ef0f701b969dc9c3ac942b468f965`，[对应远程 CI 通过](https://github.com/fenglinbei/pdf_translate_reader/actions/runs/36141781529)。制品从提交打包，未带私有 PDF、凭据或测试脚本。临时 8794 启动预检通过后再切换；前端代理与 QA 直连均核对完整 SHA，未登录请求为 401，QA 服务不接管核心 API 路由。
+
+切换后再次使用临时账号在真实 Chrome 核验 capabilities、已保存回答中的两个引用标签及两行高亮，不发起真实模型问题。健康检查不代替用户的真实论文验收。
+
+验收后已删除本轮 10 个临时账号、22 条合成消息和 10 个存储对象，相关数据库行及存储对象复查为 0；现有用户不在清理范围。5182/8792/8793 辅助进程及 8794 预检进程均已关闭。
 
 必须先应用独立 QA 数据库兼容迁移 `20260925_qa_document_artifacts.sql` 与 `20260925_qa_artifact_answers.sql`；本轮已在备份后应用。生产数据库未迁移。
 
 新开关：QA `QA_DOCUMENT_ARTIFACTS_ENABLED=true`、`QA_AGENT_RUNTIME=workspace-artifacts-v1`；前端登录后从 capabilities 读取准备能力，不额外设置前端开关。索引恢复保持关闭；问答限额 `QA_MAX_CONCURRENT_STREAMS=2`、`QA_MAX_QUEUED_STREAMS=8`、`QA_QUEUE_WAIT_MS=120000`。
 
-发布使用已提交源码打包，健康接口核对完整 SHA。切换前保留旧 5175/8791 的配置和启动信息；失败恢复旧进程。兼容迁移不回滚删除数据。新版来源须用支持 `citation-locator-v2` 的前端；旧前端不能完整展示新来源，业务回退时优先保留新版前端并将 QA runtime 切回 `workspace-tools-v1`。
+本机部署记录位于主工作树的 `output/qa-local-server/document-artifacts-deployment.json`，记录完整 SHA、制品目录、前端工作树、端口、进程和回退记录位置；没有覆盖旧 5174/8789 的部署记录。旧 5175/8791 配置已备份，启动/健康失败的部署脚本会恢复旧进程。
+
+业务回退优先保留当前前后端代码及 `QA_DOCUMENT_ARTIFACTS_ENABLED=true`，仅把该独立 QA 的 runtime 改为 `workspace-tools-v1` 并重启 8791；这样新问答恢复旧工具协议，既有 v2 引用仍可打开。需要完全恢复旧进程时使用备份的启动信息；旧前端无法完整展示新来源。兼容迁移不回滚删除数据。
 
 ## 待人工验收
 
