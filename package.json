@@ -1,6 +1,6 @@
 {
   "name": "pdf-translate-reader",
-  "version": "0.2.0-alpha.3",
+  "version": "0.3.0-alpha.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,6 +10,7 @@
     "dev:qa": "node server/qa-service.mjs",
     "demo:qa": "node scripts/demo-qa-agent.mjs",
     "demo:qa-document": "node scripts/demo-document-agent.mjs",
+    "demo:qa-artifacts": "node scripts/demo-document-artifacts.mjs",
     "test": "node --test tests/*/*.test.mjs",
     "check:release": "node scripts/check-release.mjs",
     "check:qa-env": "node scripts/check-qa-env.mjs",

@@ -1,0 +1,22 @@
+export type NodeKind = 'section' | 'paragraph' | 'list' | 'table' | 'equation' | 'code';
+export type TextRange = [number, number];
+export type ArtifactSource = { pdfSha256: string; mmdSha256: string; pagesSha256: string; builderVersion: string; mappingVersion: string };
+export type DocumentNode = { id: string; kind: NodeKind; text: string; sourceRange: TextRange; parentId?: string; level?: number };
+export type DocumentRegion = { id: string; kind: 'line' | 'block'; pageNumber: number; lineNumber: number; text: string; rect?: { x: number; y: number; width: number; height: number } };
+export type NodeMapping = { nodeId: string; pageAnchor?: number; segments: Array<{ range: TextRange; sources: Array<{ regionId: string; range: TextRange }>; transform: 'identity' | 'reflow' | 'line-wrap' | 'structural' }> };
+export type DocumentArtifact = { version: 'document-artifact-v1'; revision: string; source: ArtifactSource; pageCount: number; nodes: DocumentNode[]; regions: DocumentRegion[]; mappings: NodeMapping[] };
+export type DocumentLocation = { nodeId: string; range: TextRange; anchor?: { pageNumber: number; lineNumber?: number }; mappingComplete: boolean; precision: 'line' | 'block' | 'partial-line' | 'page' | 'unavailable'; sourceSpans: Array<{ regionId: string; pageNumber: number; lineNumber: number; startOffset: number; endOffset: number }>; lineRegions: Array<{ pageNumber: number; lineNumber: number; region: NonNullable<DocumentRegion['rect']> }> };
+export const DOCUMENT_ARTIFACT_VERSION: 'document-artifact-v1';
+export const READ_REFERENCE_VERSION: 'read-reference-v1';
+export const ARTIFACT_LIMITS: Readonly<{ maxNodes: number; maxRegions: number; maxMappings: number; maxSegments: number; maxSourceRefs: number; maxTextChars: number; maxPages: number; maxDepth: number }>;
+export class ArtifactError extends Error { code: string; constructor(code: string, message: string); }
+export function artifactAssert(condition: unknown, code: string, message: string): asserts condition;
+export function isTextBoundary(text: string, offset: number): boolean;
+export function assertTextRange(text: string, range: TextRange): void;
+export function createDocumentRevision(source: ArtifactSource): Promise<string>;
+export function createNodeId(kind: NodeKind, sourceRange: TextRange, occurrence?: number): string;
+export function validateDocumentArtifact(artifact: DocumentArtifact): unknown;
+export function sealDocumentArtifact(artifact: DocumentArtifact): Promise<DocumentArtifact>;
+export function getDocumentNode(artifact: DocumentArtifact, nodeId: string): DocumentNode;
+export function getSectionPath(artifact: DocumentArtifact, nodeId: string): string[];
+export function resolveDocumentLocation(artifact: DocumentArtifact, nodeId: string, range?: TextRange): DocumentLocation;
