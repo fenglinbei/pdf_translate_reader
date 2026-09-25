@@ -1,0 +1,188 @@
+PDF Translate Reader 个人非商业使用许可 1.0
+PDF Translate Reader Personal Noncommercial License 1.0
+
+Copyright (c) 2026 fenglinbei.
+除本许可明确授予的权利外，保留所有权利。
+All rights reserved except as expressly granted below.
+
+项目 / Project: https://github.com/fenglinbei/pdf_translate_reader
+许可版本日期 / License version date: 2026-09-25
+
+中文条款为本许可的约束性文本，英文部分为对应说明。
+The Chinese terms control; the English section is a corresponding translation.
+
+一、适用范围
+
+“软件”指随附本许可、且相关权利人有权授权的本项目原创代码、
+项目文档及其修改版本。“许可人”指对相应材料拥有授权权利的人。
+本许可仅适用于附带本许可的版本或副本。
+
+第三方软件、库、字体、图片、文档、模型及另有许可说明的材料，
+继续适用各自的许可和权利声明。本许可不改变这些材料的授权，
+也不撤销此前已依法取得的其他许可或法律规定的不可排除权利。
+
+二、个人非商业使用授权
+
+在遵守本许可的前提下，许可人免费授予自然人一项非独占、
+不可转授权的许可：仅为本人个人学习、个人实验或个人非商业科研，
+下载、复制、阅读、修改、构建及运行软件。
+
+个人可以在本人控制的设备或服务器上部署软件，但该部署只能供本人
+使用，必须限制其他人访问软件功能。服务器位于云端并不扩大授权范围。
+
+“个人非商业使用”不包括为雇主、客户、组织或业务履行工作职责、
+提供交付物、取得商业利益或金钱报酬而使用软件，也不包括机构、
+团队或实验室的共同使用。正常的个人学习及个人非商业学术研究，
+不会仅因学习者具有学生或研究人员身份而被排除。
+
+三、未获授权的用途
+
+除相关权利人另行明确书面授权外，不得：
+
+1. 将软件用于商业活动、收费服务、付费产品、咨询交付、广告获利、
+   接口转售，或其他为商业利益或金钱报酬服务的活动。
+2. 以公司、学校、研究机构、实验室、团队或其他组织的名义部署或使用，
+   或提供供组织成员、雇员、客户、学生或其他第三人共同使用的实例。
+3. 向本人以外的人提供软件功能，包括 SaaS、网站、托管实例、
+   API 或代部署服务，无论该服务收费、免费、接受赞助还是接受捐赠。
+4. 出售、转授权、重新许可或向第三人分发软件或其修改版本，
+   包括改名、换界面、封装或集成后的版本；第四条允许的仓库协作除外。
+5. 删除或误述版权、许可及第三方权利声明，或声称软件已获其他许可。
+
+四、公开仓库与协作
+
+软件以源码可见形式提供，本许可不是 OSI 定义的开源许可证。
+GitHub 服务条款等独立授予的查看及 Fork 权利不受影响。
+
+个人可为符合本许可的学习、修改和向原项目提交修复的目的，
+使用公开代码托管平台提供的 Fork 和 Pull Request 功能。
+此类副本和修改应保留本许可及适用的第三方声明。
+该协作授权不允许部署对外服务，也不允许按不同许可重新发布项目。
+
+五、权利人及独立授权
+
+相关权利人保留自行商业使用软件、运营官方收费服务、发布其他版本，
+以及另行授予商业或机构使用许可的权利。获得独立书面授权者，
+按该授权约定使用相应材料；仓库可公开访问不构成这种授权。
+
+商业或机构使用授权可通过项目仓库所列维护者联系渠道申请。
+本许可不授予项目名称、标识、商标或官方身份的使用权。
+
+本许可约束软件副本的使用，不替代官方托管服务的服务条款，
+也不将本许可自动附加到用户自己的输入文档或通常生成的翻译、
+问答内容上。这些内容仍受其自身权利和适用服务条款约束。
+
+六、违反条件
+
+违反本许可条件时，本许可授予的权利终止；除另有合法授权外，
+应停止相关使用、复制、修改和分发。恢复授权需取得相关权利人的
+书面同意。本条不影响第三方许可或法律赋予的独立权利。
+
+七、免责声明
+
+在适用法律允许的最大范围内，软件按“现状”和“可用”状态提供，
+不提供适销性、特定用途适用性、不侵权或其他明示或默示担保。
+在同一法律范围内，许可人不对因软件或其使用产生的损失承担责任，
+无论该请求基于合同、侵权或其他理由。
+法律不得排除或限制的责任，不受上述条款排除或限制。
+
+-------------------------------------------------------------------------------
+
+English translation
+
+1. Scope
+
+"Software" means this project's original code and documentation, and their
+modified versions, accompanied by this license, to the extent the relevant
+rights holders are entitled to license them. "Licensor" means a person entitled
+to license the applicable material. This license applies only to versions or
+copies accompanied by it.
+
+Third-party software, libraries, fonts, images, documents, models, and material
+identified as separately licensed remain subject to their own licenses and
+notices. This license does not change those permissions, revoke rights validly
+obtained under other earlier licenses, or limit non-excludable statutory rights.
+
+2. Individual noncommercial grant
+
+Subject to these terms, the Licensor grants natural persons a royalty-free,
+nonexclusive, non-sublicensable license to download, copy, study, modify, build,
+and run the Software solely for their own personal learning, experimentation,
+or noncommercial academic research.
+
+You may deploy the Software on a device or server you control, including a cloud
+server, only for your own use. Access to the Software's functionality must be
+restricted to you. Cloud hosting does not expand this permission.
+
+Individual noncommercial use excludes use in performing duties or providing
+deliverables for an employer, client, organization, or business, use for
+commercial advantage or monetary compensation, and shared institutional, team,
+or laboratory use. Ordinary personal learning and noncommercial academic
+research are not excluded merely because the individual is a student or
+researcher.
+
+3. Uses not granted
+
+Unless the relevant rights holders expressly authorize it separately in writing,
+you may not:
+
+a. Use the Software commercially, including for paid services or products,
+   consulting deliverables, advertising revenue, API resale, or other activities
+   for commercial advantage or monetary compensation.
+b. Deploy or use the Software on behalf of a company, school, research
+   institution, laboratory, team, or other organization, or provide an instance
+   shared by its members, employees, clients, students, or other third parties.
+c. Provide the Software's functionality to anyone other than yourself, including
+   through a SaaS product, website, hosted instance, API, or deployment service,
+   whether paid, free, sponsored, or supported by donations.
+d. Sell, sublicense, relicense, or distribute the Software or modified versions
+   to third parties, including rebranded, repackaged, or integrated versions,
+   except for the repository collaboration permitted in section 4.
+e. Remove or misrepresent copyright, license, or third-party notices, or claim
+   that the Software is available under a different license.
+
+4. Public repository and collaboration
+
+The Software is source-available, not open source under the OSI definition.
+Independent rights to view and fork under GitHub's Terms of Service are
+unaffected.
+
+Individuals may use the fork and pull-request features of public code-hosting
+platforms for learning, modifications, and submitting fixes to the original
+project in accordance with this license. Such copies and modifications must
+retain this license and applicable third-party notices. This permission does
+not authorize operating a service for others or republishing the project under
+a different license.
+
+5. Rights holders and separate authorization
+
+The relevant rights holders reserve the right to use the Software commercially,
+operate official paid services, release other versions, and grant separate
+commercial or institutional licenses. A recipient of separate written
+authorization may use the applicable material under that authorization. Public
+repository access is not such authorization.
+
+Requests for commercial or institutional permission may be made through the
+maintainer contact channels listed in the project repository. No rights to the
+project name, logos, trademarks, or official identity are granted.
+
+This license governs copies of the Software; it does not replace the terms of
+an official hosted service or automatically apply this license to users' own
+input documents or ordinary generated translations or answers. Such content
+remains subject to its own rights and applicable service terms.
+
+6. Breach
+
+The rights granted by this license terminate upon breach. Unless independently
+authorized, you must stop the affected use, copying, modification, and
+distribution. Reinstatement requires the relevant rights holders' written
+consent. Third-party licenses and independent statutory rights are unaffected.
+
+7. Disclaimer
+
+To the maximum extent permitted by applicable law, the Software is provided
+"AS IS" and "AS AVAILABLE", without express or implied warranties, including
+merchantability, fitness for a particular purpose, or noninfringement. To that
+same extent, the Licensor is not liable for loss arising from the Software or
+its use, whether in contract, tort, or otherwise. Liability that cannot legally
+be excluded or limited is not excluded or limited.
