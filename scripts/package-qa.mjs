@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { checkRelease } from "./check-release.mjs";
 
 const { qa: version } = checkRelease();
-const paths = ["server", "shared", "package.json", "package-lock.json", ".nvmrc"];
+const paths = ["server", "shared", "package.json", "package-lock.json", ".nvmrc", "LICENSE", "NOTICE"];
 // Package committed input only; don't accidentally include credentials, PDFs,
 // developer output, or unrelated working-tree documentation.
 execFileSync("git", ["diff", "--exit-code", "HEAD", "--", ...paths], { stdio: "pipe" });

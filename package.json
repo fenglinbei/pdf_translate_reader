@@ -2,6 +2,7 @@
   "name": "pdf-translate-reader",
   "version": "0.3.0-alpha.2",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev.mjs",
