@@ -1,6 +1,7 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
+  ArrowUp,
   Check,
   ChevronRight,
   Copy,
@@ -13,7 +14,6 @@ import {
   Plus,
   RefreshCw,
   Search,
-  Send,
   Sparkles,
   Square,
   Trash2,
@@ -54,6 +54,7 @@ import {
   type QaCapabilities,
 } from "./qaClient";
 import { qaSourceKey, sameQaSource } from "./sourceIdentity";
+import { QaCitationSource } from "./QaCitationSource";
 import type { MessageKey } from "../i18n/messages";
 
 export type QaSessionState = { threadId?: string; streaming: boolean; title?: string };
@@ -115,6 +116,26 @@ export function PaperQaPanel({
   const [copiedMessageId, setCopiedMessageId] = useState<string>();
   const [deletingThreadId, setDeletingThreadId] = useState<string>();
   const [draftQuestion, setDraftQuestion] = useState("");
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const resizeInput = useCallback(() => {
+    const input = inputRef.current;
+    if (!input?.offsetWidth) return;
+    input.style.height = '0px';
+    input.style.height = `${input.scrollHeight}px`;
+  }, []);
+  useLayoutEffect(resizeInput, [draftQuestion, visible, resizeInput]);
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    let width = 0;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry.contentRect.width === width) return;
+      width = entry.contentRect.width;
+      resizeInput();
+    });
+    observer.observe(input);
+    return () => observer.disconnect();
+  }, [resizeInput]);
   const [isFullscreenInternal, setIsFullscreenInternal] = useState(false);
   const isFullscreen = onFullscreenChange ? Boolean(isFullscreenProp) : isFullscreenInternal;
   const setFullscreen = useCallback((next: boolean) => {
@@ -1060,61 +1081,64 @@ export function PaperQaPanel({
           void handleSubmit();
         }}
       >
-        <div className="ask-composer-toolbar">
-          <label className="ask-reasoning-menu">
-            <span>{t("ask.reasoningEffort")}</span>
-            <select
-              disabled={isStreaming}
-              onChange={(event) => setReasoningEffort(event.currentTarget.value as QaReasoningEffort)}
-              value={reasoningEffort}
-            >
-              {QA_REASONING_EFFORTS.map((option) => (
-                <option key={option} value={option}>{t(getReasoningEffortLabelKey(option))}</option>
-              ))}
-            </select>
-          </label>
-          <label className="ask-model-menu">
-            <span>{t("ask.model")}</span>
-            <select
-              disabled={isStreaming}
-              onChange={(event) => setModel(event.currentTarget.value as QaChatModel)}
-              value={model}
-            >
-              {availableModels.map((option) => (
-                <option key={option} value={option}>{getQaModelLabel(option)}</option>
-              ))}
-            </select>
-          </label>
-        </div>
         <textarea
+          ref={inputRef}
           className="ask-input"
+          aria-label={t("ask.question")}
           disabled={!isReady || isStreaming || isLoadingMessages}
           onChange={(event) => setDraftQuestion(event.currentTarget.value)}
           onKeyDown={(event) => {
-            if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+            if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && !event.nativeEvent.isComposing) {
               event.preventDefault();
               void handleSubmit();
             }
           }}
           placeholder={nativeRuntime && isReady ? t('ask.generalPlaceholder') : scope !== 'current' ? t(isReady ? 'ask.generalPlaceholder' : 'ask.generalUnavailable')
             : isReady ? t("ask.placeholder") : nativeRuntime ? t("ask.waitingForParsing") : t("ask.disabledPlaceholder")}
-          rows={3}
+          rows={2}
           value={draftQuestion}
         />
-        <div className="ask-composer-actions">
+        <div className="ask-composer-toolbar">
+          <div className="ask-composer-options">
+            <label className="ask-model-menu">
+              <Sparkles aria-hidden="true" size={14} />
+              <select
+                aria-label={t("ask.model")}
+                disabled={isStreaming}
+                onChange={(event) => setModel(event.currentTarget.value as QaChatModel)}
+                value={model}
+              >
+                {availableModels.map((option) => (
+                  <option key={option} value={option}>{getQaModelLabel(option)}</option>
+                ))}
+              </select>
+            </label>
+            <label className="ask-reasoning-menu">
+              <select
+                aria-label={t("ask.reasoningEffort")}
+                disabled={isStreaming}
+                onChange={(event) => setReasoningEffort(event.currentTarget.value as QaReasoningEffort)}
+                value={reasoningEffort}
+              >
+                {QA_REASONING_EFFORTS.map((option) => (
+                  <option key={option} value={option}>{t(getReasoningEffortLabelKey(option))}</option>
+                ))}
+              </select>
+            </label>
+          </div>
           {isStreaming ? (
-            <button className="ask-action-button ask-action-button--secondary" onClick={handleStop} type="button">
-              <Square aria-hidden="true" size={15} strokeWidth={2.2} />
-              <span>{t("ask.stop")}</span>
+            <button className="ask-send-button" onClick={handleStop} type="button" aria-label={t("ask.stop")} title={t("ask.stop")}>
+              <Square aria-hidden="true" size={16} strokeWidth={2.2} />
             </button>
           ) : (
             <button
-              className="ask-action-button"
+              className="ask-send-button"
               disabled={!isReady || isLoadingMessages || !draftQuestion.trim()}
               type="submit"
+              aria-label={t("ask.send")}
+              title={`${t("ask.send")} · Ctrl / ⌘ + Enter`}
             >
-              <Send aria-hidden="true" size={15} strokeWidth={2.2} />
-              <span>{t("ask.send")}</span>
+              <ArrowUp aria-hidden="true" size={19} strokeWidth={2.2} />
             </button>
           )}
         </div>
@@ -1260,42 +1284,15 @@ function QaMessageBubble({
           <div className="ask-sources" aria-label={t("ask.citations")}>
             <div className="ask-sources-heading"><FileText size={14} aria-hidden="true" />{t("ask.sourcesCount", { count: message.citations.length })}</div>
             <div className="ask-citation-list">
-            {(sourcesExpanded ? message.citations : message.citations.slice(0, 3)).map((citation) => {
-              const linkedEvidence = evidence.find((item) => sameQaSource(item, citation));
-              const canOpen = workspace || citation.cloudDocumentId === activeDocumentId;
-              const label = linkedEvidence
-                ? t("ask.citationEvidencePage", {
-                    evidenceId: linkedEvidence.evidenceId,
-                    page: citation.pageStart,
-                  })
-                : t("ask.citationPage", { page: citation.pageStart });
-
-              return (
-                <span key={citation.id}>
-                  <button
-                    className="ask-citation-chip"
-                    disabled={!canOpen}
-                    onClick={() => onCitationClick(message, citation)}
-                    title={citation.quotedText}
-                    type="button"
-                  >
-                    {workspace ? `${citation.documentTitle} · ` : ""}{label}{citation.pageEnd > citation.pageStart ? `–${citation.pageEnd}` : ""}
-                    {citation.sectionPath?.length ? ` · ${citation.sectionPath.join(" / ")}` : ""}
-                  </button>
-                  {citation.sourceKind === "document_text" && citation.pageEnd > citation.pageStart ? (
-                    <select aria-label={t("ask.citationJumpPage")} defaultValue={citation.pageStart} disabled={!canOpen}
-                      onChange={(event) => onCitationClick(message, citation, Number(event.currentTarget.value))}>
-                      {Array.from({ length: citation.pageEnd - citation.pageStart + 1 }, (_, index) => citation.pageStart + index)
-                        .map((page) => <option key={page} value={page}>p.{page}</option>)}
-                    </select>
-                  ) : null}
-                  {citation.sourceKind === "document_text" && citation.sourceLocator.locationPrecision === "page"
-                    ? <small>{t("ask.pageLocationOnly")}</small>
-                    : citation.sourceKind === "document_text" && citation.sourceLocator.locationPrecision === "partial-line"
-                      ? <small>{t("ask.partialLineLocation")}</small> : null}
-                </span>
-              );
-            })}
+              {(sourcesExpanded ? message.citations : message.citations.slice(0, 3)).map((citation) => (
+                <QaCitationSource
+                  key={citation.id}
+                  citation={citation}
+                  evidenceId={evidence.find((item) => sameQaSource(item, citation))?.evidenceId}
+                  canOpen={workspace || citation.cloudDocumentId === activeDocumentId}
+                  onSelect={(pageNumber) => onCitationClick(message, citation, pageNumber)}
+                />
+              ))}
             </div>
             {message.citations.length > 3 ? <button className="ask-sources-toggle" type="button" aria-expanded={sourcesExpanded}
               onClick={() => setSourcesExpanded(value => !value)}>{t(sourcesExpanded ? 'ask.collapseSources' : 'ask.expandSources', { count: message.citations.length - 3 })}</button> : null}
