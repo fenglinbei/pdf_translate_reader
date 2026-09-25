@@ -1,13 +1,12 @@
 # 版本、CI/CD 与 QA 隔离规范
 
-2026-09-25：[版本化文档与直接引用](qa-document-artifacts-plan.md) 已完成 S1–S5 实现与隔离验证，应用 `0.3.0-alpha.5` / QA `0.5.0-alpha.5`，新 runtime 为 `workspace-artifacts-v1`。沿用已验收的紧凑工作区 UI，部署目标仅为 5175 / 8791；5174 / 8789 保留上一版，正式服务不切换。实际发布与人工验收状态见 [测试交付记录](qa-document-artifacts-acceptance.md)。
+2026-09-25：用户确认测试页验收通过并授权正式发布，应用 `0.3.0` / QA `0.5.0` 已上线。标签 `v0.3.0`、`qa-v0.5.0` 固定到 `bac0e78a988fb0d702e10ad399e540e4577f0e9d`；生产使用独立 QA 服务和 `workspace-artifacts-v1`，数据库升级及双域名切换完成。版本、备份和生产自动验收证据见 [上线记录](qa-production-readiness.md)。
 
-2026-09-25：用户总体人工验收通过，开始准备应用 `0.3.0` / QA `0.5.0` 正式制品；列表间距微调已更新测试页。生产仍为原版本，资源、迁移与切换条件见 [上线准备](qa-production-readiness.md)。
+此前 [版本化文档与直接引用](qa-document-artifacts-plan.md) 已完成 S1–S5 实现与隔离验证，测试入口 5175 / 8791，5174 / 8789 保留上一版；阶段证据见 [测试交付记录](qa-document-artifacts-acceptance.md)。
 
-状态：仓库实现；生产切流与部署另行验收。本文是后续开发与发布的约束。
+状态：代码、CI、测试版人工验收及生产部署完成；生产自动验收通过，正式版人工反馈另行记录。GitHub CD 环境与部署密钥尚未接入，本次首发采用授权运维流程。本文是后续开发与发布的约束。
 
-2026-09-24：[P1 已收尾](qa-agent-stage-1-closeout.md)，[P2 已实现并完成本地部署](qa-agent-stage-2-implementation.md)。此前 [会话升级](qa-conversation-upgrade-2026-09-24.md) 已将 QA 版本升为 `0.3.0-alpha.3` 并完成本地部署，支持自动判断普通/文档问题，默认使用 DeepSeek V4.1 Flash。当前 [工作区升级](qa-workspace-agent-plan.md) 为 `0.4.0-alpha.3`，已完成本地隔离部署及工程自动验收，用户人工验收待进行。
-部署顺序为：独立测试库兼容迁移 → 兼容前端 → QA 制品 → 显式开启 `document-tools-v1`；生产继续保持既有发布。
+历史阶段（2026-09-24 至正式发布前）：[P1 已收尾](qa-agent-stage-1-closeout.md)，[P2 已实现并完成本地部署](qa-agent-stage-2-implementation.md)。[会话升级](qa-conversation-upgrade-2026-09-24.md) 的 `0.3.0-alpha.3` 支持自动判断普通/文档问题，默认使用 DeepSeek V4.1 Flash；后续 [工作区升级](qa-workspace-agent-plan.md) 的 `0.4.0-alpha.3` 完成本地隔离部署。这些阶段的部署顺序为独立测试库兼容迁移 → 兼容前端 → QA 制品 → 显式开启对应 runtime，当时生产保持原版本。
 
 工作区升级使用 `workspace-tools-v1`，必须先备份并应用 `20260925_qa_workspace.sql`；详细行为与回退限制见 [工作区问答契约](qa-workspace-agent-plan.md)。
 
@@ -17,8 +16,8 @@
 
 | 对象 | 唯一版本来源 | Git 标签 | 当前开发版本 |
 | --- | --- | --- | --- |
-| 应用（阅读器、翻译、文库） | 根 `package.json`，同步 lockfile | `vX.Y.Z` | `0.3.0`（待生产发布） |
-| QA 服务 | `server/qa/package.json` | `qa-vX.Y.Z[-alpha.N/-beta.N/-rc.N]` | `0.5.0`（待生产发布） |
+| 应用（阅读器、翻译、文库） | 根 `package.json`，同步 lockfile | `vX.Y.Z` | `0.3.0`（已生产发布） |
+| QA 服务 | `server/qa/package.json` | `qa-vX.Y.Z[-alpha.N/-beta.N/-rc.N]` | `0.5.0`（已生产发布） |
 | 检索、提示词、索引协议 | `server/qa/config.mjs` | 随服务发布 | 首次拆分保持原值 |
 
 公共兼容面包含 HTTP 请求、SSE 事件、持久化数据和配置；内部重排不应改变它们。
@@ -88,7 +87,7 @@ Environment 指定 `QA_ENV_FILE=<QA_DEPLOY_ROOT>/qa.env`。
 第一次切流需要单独安排：先验证独立 QA，Nginx 添加更具体的 `/api/qa/` location，指向 QA 端口，关闭 buffering，保留 Authorization 并设置足够流式超时；其余 `/api/` 原样保留。
 主应用设置 `QA_EMBEDDED_ENABLED=false`，停用其 QA 路由和索引恢复，避免两个索引 worker 同时运行。
 该首次配置切换可能涉及主服务重启，必须安排维护窗口；之后日常 QA 发布只动 QA 服务。
-本轮没有执行这次生产切换，也不声称已实现线上进程隔离或零停机。
+2026-09-25 已完成首次切分：新增独立 QA 单元、迁移和路由，主 API 进行一次受控重启；不能将首次发布描述为零停机。原整站脚本已保留，但需适配新 QA 路由后才能再次用于日常整站发布。
 
 ## 回滚与数据边界
 
