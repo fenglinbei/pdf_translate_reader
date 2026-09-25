@@ -67,7 +67,6 @@ import { LibraryWorkspaceContainer } from "../library/LibraryWorkspaceContainer"
 import { metadataIsPending } from "../library/MetadataRecognition";
 import { createPdfFingerprint } from "../pdf/pdfFingerprint";
 import { PdfViewer, type PinLocateRequest } from "../pdf/PdfViewer";
-import { WorkspaceTools } from "./WorkspaceTools";
 import { WorkspaceChat } from "../qa/WorkspaceChat";
 import { PaperQaPanel } from "../qa/PaperQaPanel";
 import { createQaIndexJob, getQaIndexJob, getQaDocumentReadiness, getQaCapabilities, type QaDocumentReadiness } from "../qa/qaClient";
@@ -508,19 +507,21 @@ export function ReaderShell() {
   const navigationCloseRef = useRef<HTMLButtonElement>(null);
   const navigationOpenRef = useRef<HTMLButtonElement>(null);
   const annotationsCloseRef = useRef<HTMLButtonElement>(null);
+  const mobileAnnotationsCloseRef = useRef<HTMLButtonElement>(null);
   const annotationsOpenRef = useRef<HTMLButtonElement>(null);
   const setNavigationOpen = (open: boolean) => {
     setIsLibraryPaneOpen(open);
     requestAnimationFrame(() => (open ? navigationCloseRef : navigationOpenRef).current?.focus());
   };
-  const closeAnnotations = () => {
+  const closeAnnotations = useCallback(() => {
     setIsPinsPaneOpen(false); setMobilePanel(null);
     requestAnimationFrame(() => annotationsOpenRef.current?.focus());
-  };
+  }, []);
   const openAnnotations = () => {
     if (isNarrowViewport) setMobilePanel('pins'); else setIsPinsPaneOpen(true);
-    requestAnimationFrame(() => annotationsCloseRef.current?.focus());
+    requestAnimationFrame(() => (isNarrowViewport ? mobileAnnotationsCloseRef : annotationsCloseRef).current?.focus());
   };
+  // Conversation selection never restores a document: the current article is workspace state.
   const selectWorkspaceSession = useCallback(() => {
     setWorkspaceView(view => view === 'reading' ? 'chat' : view);
     setMobileWorkspaceContent('chat');
@@ -650,7 +651,6 @@ export function ReaderShell() {
     setIsLibraryWorkbenchOpen(false);
     window.requestAnimationFrame(() => {
       if (libraryWorkbenchTriggerRef.current?.getClientRects().length) libraryWorkbenchTriggerRef.current?.focus();
-      else document.querySelector<HTMLButtonElement>('.workspace-tools-trigger')?.focus();
     });
   }, []);
 
@@ -949,7 +949,8 @@ export function ReaderShell() {
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setMobilePanel(null);
+        if (workspaceQa && mobilePanel === 'pins') closeAnnotations();
+        else setMobilePanel(null);
       }
     };
 
@@ -958,7 +959,7 @@ export function ReaderShell() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [mobilePanel]);
+  }, [closeAnnotations, mobilePanel, workspaceQa]);
 
   useEffect(() => {
     if (!isLibraryWorkbenchOpen) {
@@ -2578,9 +2579,9 @@ export function ReaderShell() {
   const workspaceStyle = {
     "--chat-ratio": `${chatRatio}fr`,
     "--document-ratio": `${100 - chatRatio}fr`,
-    "--library-pane-column": isLibraryPaneOpen ? `${libraryPaneWidth}px` : workspaceQa ? '38px' : "0px",
+    "--library-pane-column": isLibraryPaneOpen ? `${libraryPaneWidth}px` : "0px",
     "--library-resizer-column": isLibraryPaneOpen ? "7px" : "0px",
-    "--pins-pane-column": isPinsPaneOpen ? `${pinsPaneWidth}px` : workspaceQa ? '38px' : "0px",
+    "--pins-pane-column": isPinsPaneOpen ? `${pinsPaneWidth}px` : "0px",
     "--pins-resizer-column": isPinsPaneOpen ? "7px" : "0px",
     "--library-pane-width": `${libraryPaneWidth}px`,
     "--pins-pane-width": `${pinsPaneWidth}px`,
@@ -3023,6 +3024,50 @@ export function ReaderShell() {
     );
   };
 
+  const renderServiceStatus = () => (
+    <>
+      {renderCompactMathpixStatus()}
+      <span className={`api-health api-health--${apiStatus}`} title={t("reader.apiStatusTitle", { status: apiStatus })}>
+        {t("reader.api")}
+      </span>
+      <span aria-live="polite" className={`sync-health sync-health--${visibleCloudSyncStatus}`} title={visibleCloudSyncMessage}>
+        {t(CLOUD_SYNC_STATUS_LABEL_KEYS[visibleCloudSyncStatus])}
+      </span>
+    </>
+  );
+  const renderAccountControl = () => (
+    <button className="account-button" title={t("reader.signOut")} type="button"
+      onClick={() => { void auth.signOut().catch(() => setStatusMessage("Could not sign out.")); }}>
+      <span>{auth.user?.email ?? t("common.account")}</span>
+      <LogOut aria-hidden="true" size={15} strokeWidth={2} />
+    </button>
+  );
+  const renderWorkspaceSelection = () => (
+    <label className="settings-field">
+      <span>{t(isNarrowViewport ? 'reader.mobileInteractionMode' : 'reader.selectionMode')}</span>
+      <select value={isNarrowViewport ? mobileInteractionMode : selectionMode}
+        onChange={event => isNarrowViewport ? handleMobileInteractionModeToggle() : handleSelectionModeChange(event.currentTarget.value as SelectionMode)}>
+        {isNarrowViewport ? <>
+          <option value="pan">{t('settings.mobilePan')}</option>
+          <option value="segmented">{t('settings.mobileSegmented')}</option>
+        </> : <>
+          <option value="continuous">{t('settings.selectionContinuous')}</option>
+          <option value="cross">{t('settings.selectionCross')}</option>
+        </>}
+      </select>
+    </label>
+  );
+  // Reopen controls belong to the visible content header, with no empty side rail.
+  const navigationInDocument = workspaceView === 'reading' || (isNarrowViewport && workspaceView === 'split' && mobileWorkspaceContent === 'document');
+  const navigationToggle = workspaceQa && !isLibraryPaneOpen ? (
+    <button className="workspace-pane-toggle" ref={navigationOpenRef} type="button" aria-label={t('ask.navOpen')}
+      title={t('ask.navOpen')} aria-expanded={false} onClick={() => setNavigationOpen(true)}><PanelLeftOpen aria-hidden="true" size={16} /></button>
+  ) : null;
+  const annotationsToggle = workspaceQa && workspaceView !== 'chat' && (isNarrowViewport ? mobilePanel !== 'pins' : !isPinsPaneOpen) ? (
+    <button className="workspace-pane-toggle" ref={annotationsOpenRef} type="button" aria-label={t('reader.openAnnotationsPane')}
+      title={t('reader.openAnnotations')} aria-expanded={false} onClick={openAnnotations}><PanelRightOpen aria-hidden="true" size={16} /></button>
+  ) : null;
+
   return (
     <I18nProvider locale={settings.uiLocale}>
     <div className={`app-shell ${workspaceQa ? "app-shell--workspace" : ""}`}>
@@ -3044,7 +3089,6 @@ export function ReaderShell() {
               setWorkspaceView('chat'); setNavigationTab('sessions'); setMobileWorkspaceContent('chat'); setIsLibraryWorkbenchOpen(false); setMobilePanel(null);
             }} type="button"><Sparkles size={17} aria-hidden="true" /></button> : null}
           {workspaceQa ? <button className="icon-button" aria-label={t('freeTranslation.open')} title={t('freeTranslation.open')} onClick={() => openFreeTranslation()} type="button"><Languages size={17} aria-hidden="true" /></button> : null}
-          <WorkspaceTools enabled={workspaceQa}>
           <button
             aria-label={
               isLibraryWorkbenchOpen
@@ -3086,17 +3130,8 @@ export function ReaderShell() {
               <Languages aria-hidden="true" size={17} strokeWidth={2} />
             </button>
           )}
-          {renderCompactMathpixStatus()}
-          <span className={`api-health api-health--${apiStatus}`} title={t("reader.apiStatusTitle", { status: apiStatus })}>
-            {t("reader.api")}
-          </span>
-          <span
-            aria-live="polite"
-            className={`sync-health sync-health--${visibleCloudSyncStatus}`}
-            title={visibleCloudSyncMessage}
-          >
-            {t(CLOUD_SYNC_STATUS_LABEL_KEYS[visibleCloudSyncStatus])}
-          </span>
+          {!workspaceQa ? <>
+          {renderServiceStatus()}
           <button
             aria-label={t("reader.openSettingsWithStatus", { status: mobileStatusLabel })}
             className="mobile-status-button"
@@ -3114,19 +3149,7 @@ export function ReaderShell() {
               className={`mobile-status-dot mobile-status-dot--sync-${visibleCloudSyncStatus}`}
             />
           </button>
-          <button
-            className="account-button"
-            onClick={() => {
-              void auth.signOut().catch(() => {
-                setStatusMessage("Could not sign out.");
-              });
-            }}
-            title={t("reader.signOut")}
-            type="button"
-          >
-            <span>{auth.user?.email ?? t("common.account")}</span>
-            <LogOut aria-hidden="true" size={15} strokeWidth={2} />
-          </button>
+          {renderAccountControl()}
           <div className="reader-mode-control reader-mode-control--desktop" aria-label={t("reader.selectionMode")} role="group">
             <button
               aria-label={
@@ -3153,13 +3176,16 @@ export function ReaderShell() {
             </button>
           </div>
           {renderMobileModeControls()}
+          </> : null}
           <SettingsButton isOpen={isSettingsOpen} onClick={() => setIsSettingsOpen(true)} />
-          </WorkspaceTools>
         </div>
       </header>
 
       {isSettingsOpen ? (
         <SettingsPanel
+          workspaceStatus={workspaceQa ? <div className="workspace-settings-status">{renderServiceStatus()}</div> : undefined}
+          accountControl={workspaceQa ? renderAccountControl() : undefined}
+          selectionControls={workspaceQa ? renderWorkspaceSelection() : undefined}
           apiStatus={apiStatus}
           currentEntry={currentEntry}
           libraryEntries={libraryEntries}
@@ -3245,13 +3271,13 @@ export function ReaderShell() {
         </div>
         {workspaceQa ? <>
           <section className="workspace-chat-column" aria-label={t('ask.workspaceTitle')}>
-            <WorkspaceChat key={readerSessionUserId} navigation={qaNavigation} visible={workspaceView !== 'reading'} activeDocumentId={currentEntry?.cloudDocumentId}
+            <WorkspaceChat headerLeading={!navigationInDocument ? navigationToggle : undefined} key={readerSessionUserId} navigation={qaNavigation} visible={workspaceView !== 'reading'} activeDocumentId={currentEntry?.cloudDocumentId}
               onSelect={selectWorkspaceSession} onCitationClick={handleLocateQaCitation} onEvidenceClick={handleLocateQaEvidence} />
           </section>
           <div className="workspace-chat-resizer" role="separator" aria-label={t('ask.resizeChat')} aria-orientation="vertical" tabIndex={workspaceView === 'split' ? 0 : -1}
             aria-valuemin={32} aria-valuemax={55} aria-valuenow={Math.round(chatRatio)}
             onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); setChatRatio(value => clamp(value + (event.key === 'ArrowLeft' ? -2 : 2), 32, 55)); } }}
-            onPointerDown={event => { chatResizeRef.current = { x: event.clientX, ratio: chatRatio, width: event.currentTarget.parentElement!.clientWidth - (isLibraryPaneOpen ? libraryPaneWidth : 38) - (isPinsPaneOpen ? pinsPaneWidth : 38) }; event.currentTarget.setPointerCapture(event.pointerId); setIsPaneResizing(true); }}
+            onPointerDown={event => { chatResizeRef.current = { x: event.clientX, ratio: chatRatio, width: event.currentTarget.parentElement!.clientWidth - (isLibraryPaneOpen ? libraryPaneWidth : 0) - (isPinsPaneOpen ? pinsPaneWidth : 0) }; event.currentTarget.setPointerCapture(event.pointerId); setIsPaneResizing(true); }}
             onPointerMove={event => { const start = chatResizeRef.current; if (start) setChatRatio(clamp(start.ratio + (event.clientX - start.x) / start.width * 100, 32, 55)); }}
             onPointerUp={() => { chatResizeRef.current = undefined; setIsPaneResizing(false); }} onPointerCancel={() => { chatResizeRef.current = undefined; setIsPaneResizing(false); }} />
           {workspaceView === 'split' ? <div className="workspace-mobile-content" role="group" aria-label={t('ask.viewSplit')}>
@@ -3260,7 +3286,7 @@ export function ReaderShell() {
           </div> : null}
         </> : null}
         <section
-          className={`document-stage ${currentEntry ? "document-stage--active" : ""}`}
+          className={`document-stage ${currentEntry ? "document-stage--active" : workspaceQa ? "document-stage--empty-workspace" : ""}`}
           aria-label={t("reader.pdfReader")}
         >
           {currentEntry ? (
@@ -3268,6 +3294,8 @@ export function ReaderShell() {
               activeTranslationCardZIndex={activeTranslationCardZIndex}
               activeSelection={sentenceSelection}
               entry={currentEntry}
+              headerLeading={navigationInDocument ? navigationToggle : undefined}
+              headerTrailing={annotationsToggle}
               headerControls={renderDocumentHeaderControls()}
               fitToPane={workspaceQa}
               locateRequest={locateRequest}
@@ -3293,6 +3321,8 @@ export function ReaderShell() {
               settings={settings}
             />
           ) : (
+            <>
+            {workspaceQa ? <header className="workspace-empty-header">{navigationInDocument ? navigationToggle : null}<span>{t('reader.noDocumentOpen')}</span>{annotationsToggle}</header> : null}
             <div className="empty-reader">
               <PdfImportDropzone isImporting={isImporting} onImport={handleImport} />
               {renderStatusMessage()}
@@ -3313,6 +3343,7 @@ export function ReaderShell() {
                 </div>
               ) : null}
             </div>
+            </>
           )}
         </section>
         <div
@@ -3390,24 +3421,22 @@ export function ReaderShell() {
           onOpenDocument={handleOpenHistory}
         />
       ) : null}
-      {!isLibraryWorkbenchOpen && (workspaceQa || !isNarrowViewport) && !isLibraryPaneOpen && (
+      {!isLibraryWorkbenchOpen && !workspaceQa && !isNarrowViewport && !isLibraryPaneOpen && (
         <button
-          aria-label={t(workspaceQa ? 'ask.navOpen' : "reader.openLibraryPane")}
-          ref={navigationOpenRef}
-          className={`pane-reopen-tab pane-reopen-tab--library ${workspaceQa ? 'workspace-pane-toggle' : ''}`}
-          onClick={workspaceQa ? () => setNavigationOpen(true) : handleLibraryPaneToggle}
+          aria-label={t("reader.openLibraryPane")}
+          className="pane-reopen-tab pane-reopen-tab--library"
+          onClick={handleLibraryPaneToggle}
           title={t("reader.openLibrary")}
           type="button"
         >
           <PanelLeftOpen aria-hidden="true" size={16} strokeWidth={2} />
         </button>
       )}
-      {!isLibraryWorkbenchOpen && (workspaceQa ? workspaceView !== 'chat' && !(workspaceView === 'split' && isNarrowViewport && mobileWorkspaceContent === 'chat') && (isNarrowViewport ? mobilePanel !== 'pins' : !isPinsPaneOpen) : !isNarrowViewport && !isPinsPaneOpen) && (
+      {!isLibraryWorkbenchOpen && !workspaceQa && !isNarrowViewport && !isPinsPaneOpen && (
         <button
           aria-label={rightPaneTab === "ask" ? t("reader.openAskPane") : t("reader.openAnnotationsPane")}
-          ref={annotationsOpenRef}
-          className={`pane-reopen-tab pane-reopen-tab--pins ${workspaceQa ? 'workspace-pane-toggle' : ''}`}
-          onClick={workspaceQa ? openAnnotations : rightPaneTab === "ask" ? handleAskPaneToggle : handlePinsPaneToggle}
+          className="pane-reopen-tab pane-reopen-tab--pins"
+          onClick={rightPaneTab === "ask" ? handleAskPaneToggle : handlePinsPaneToggle}
           title={rightPaneTab === "ask" ? t("reader.openAsk") : t("reader.openAnnotations")}
           type="button"
         >
@@ -3422,7 +3451,7 @@ export function ReaderShell() {
       {mobilePanel ? (
         <div
           className="mobile-panel-backdrop"
-          onClick={() => setMobilePanel(null)}
+          onClick={() => workspaceQa && mobilePanel === 'pins' ? closeAnnotations() : setMobilePanel(null)}
           role="presentation"
         >
           <aside
@@ -3464,7 +3493,7 @@ export function ReaderShell() {
                   <button
                     aria-label={t("reader.closeAnnotationsPane")}
                     className={workspaceQa ? 'workspace-pane-toggle' : 'icon-button icon-button--small'}
-                    ref={annotationsCloseRef}
+                    ref={mobileAnnotationsCloseRef}
                     onClick={workspaceQa ? closeAnnotations : () => setMobilePanel(null)}
                     title={t("reader.closeAnnotations")}
                     type="button"

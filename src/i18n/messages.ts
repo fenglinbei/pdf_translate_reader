@@ -2,7 +2,10 @@ import type { UiLocale } from "./uiLocales";
 
 export const MESSAGES = {
   "en-US": {
-    "ask.moreTools": "More tools and status",
+    "settings.selectionContinuous": "Continuous drag",
+    "settings.selectionCross": "Across regions",
+    "settings.mobilePan": "Pan to read",
+    "settings.mobileSegmented": "Select regions",
     "ask.retry": "Retry",
     "ask.draftThreads": "Drafts",
     "ask.navSessions": "Conversations",
@@ -689,7 +692,10 @@ export const MESSAGES = {
     "pdf.addedRegion": "Added region {count}.",
   },
   "zh-CN": {
-    "ask.moreTools": "更多工具与状态",
+    "settings.selectionContinuous": "连续拖拽",
+    "settings.selectionCross": "跨区域选择",
+    "settings.mobilePan": "划动浏览",
+    "settings.mobileSegmented": "分段选区",
     "ask.retry": "重试",
     "ask.draftThreads": "草稿",
     "ask.navSessions": "会话",

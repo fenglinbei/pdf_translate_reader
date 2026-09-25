@@ -24,7 +24,8 @@
 .workspace-chat-session[hidden], .workspace-navigation-body[hidden], .workspace-navigation-documents[hidden] { display: none; }
 .workspace-chat-session .ask-workbench { height: 100%; display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 0; gap: 0; }
 .workspace-chat-session .ask-workbench > * { flex-shrink: 0; }
-.workspace-chat-session .ask-workbench-header { padding: 15px 20px; min-height: 68px; border-bottom: 1px solid #e9ece6; align-items: center; }
+.workspace-chat-session .ask-workbench-header { border-bottom: 1px solid #e9ece6; }
+.workspace-chat-session .ask-workbench-title-block { flex: 1; }
 .workspace-chat-session .ask-workbench-title { font-size: 14px; font-weight: 650; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .workspace-chat-session .ask-workbench-status { margin-top: 3px; font-size: 11px; }
 .workspace-chat-session .ask-message-stream { flex: 1; min-height: 0; max-height: none; overflow: auto; padding: 22px 18px; overscroll-behavior: contain; }
@@ -45,16 +46,12 @@
 .reading-workspace > .translation-pane { grid-column: 7; background: #fcfdfb; }
 .reading-workspace .pane-resizer-toggle { display: none; }
 .reading-workspace .pins-clear-actions > button:first-child { order: 2; }
-.reading-workspace > .translation-pane > .pane-heading-row { min-height: 53px; align-items: center; }
 .reading-workspace--reading { grid-template-columns: var(--library-pane-column) var(--library-resizer-column) 0 0 minmax(0, 1fr) var(--pins-resizer-column) var(--pins-pane-column); }
 .reading-workspace--reading .workspace-chat-column, .reading-workspace--reading .workspace-chat-resizer { display: none; }
 .reading-workspace--chat { grid-template-columns: var(--library-pane-column) var(--library-resizer-column) minmax(0, 1fr) 0 0 0 0; }
 .reading-workspace--chat > .document-stage, .reading-workspace--chat > .pane-resizer--pins, .reading-workspace--chat > .translation-pane, .reading-workspace--chat .workspace-chat-resizer { display: none; }
-.reading-workspace--chat .workspace-chat-session { width: min(100%, 940px); margin: auto; }
-.app-shell--workspace .pane-reopen-tab { position: fixed; top: 65px; width: 28px; height: 32px; border: 0; border-radius: 6px; background: transparent; box-shadow: none; color: var(--text-muted); }
-.app-shell--workspace .pane-reopen-tab:hover { color: var(--workspace-accent); background: var(--workspace-tint); }
-.app-shell--workspace .pane-reopen-tab--library { left: 5px; }
-.app-shell--workspace .pane-reopen-tab--pins { right: 5px; }
+.reading-workspace--chat .ask-message-stream { width: min(100%, 940px); align-self: center; }
+.reading-workspace--chat .ask-composer { width: min(calc(100% - 32px), 908px); align-self: center; }
 .workspace-mobile-content { display: none; }
 .workspace-history { display: flex; flex-direction: column; height: 100%; padding: 12px 10px; gap: 12px; font-size: 12px; }
 .workspace-new-chat { display: flex; gap: 8px; justify-content: center; align-items: center; border: 1px solid #dfe4ef; border-radius: 8px; min-height: 34px; color: #454eab; background: #f3f4ff; cursor: pointer; }
@@ -103,12 +100,12 @@
   .app-shell--workspace .topbar-actions { overflow-x: auto; gap: 4px; }
   .workspace-view-switch button { padding: 5px 7px; gap: 4px; }
   .workspace-view-switch button svg { display: none; }
-  .reading-workspace { display: grid; grid-template-columns: 38px minmax(0, 1fr) 38px; grid-template-rows: minmax(0, 1fr); }
+  .reading-workspace { display: grid; grid-template-columns: 0 minmax(0, 1fr) 0; grid-template-rows: minmax(0, 1fr); }
   .reading-workspace > .library-pane { display: none; }
   .reading-workspace > .workspace-chat-column, .reading-workspace > .document-stage { grid-column: 2; grid-row: 1; }
   .reading-workspace--reading > .workspace-chat-column, .reading-workspace--chat > .document-stage, .reading-workspace--split.reading-workspace--mobile-chat > .document-stage, .reading-workspace--split.reading-workspace--mobile-document > .workspace-chat-column { display: none; }
   .reading-workspace .workspace-chat-resizer { display: none; }
-  .reading-workspace--chat { grid-template-columns: 38px minmax(0, 1fr) 0; }
+  .reading-workspace--chat { grid-template-columns: 0 minmax(0, 1fr) 0; }
   .reading-workspace--split { grid-template-rows: 38px minmax(0, 1fr); }
   .reading-workspace--split > .workspace-chat-column, .reading-workspace--split > .document-stage { grid-row: 2; }
   .reading-workspace--split .workspace-mobile-content { display: flex; grid-row: 1; grid-column: 2; align-items: center; gap: 4px; padding: 4px; }
@@ -117,9 +114,6 @@
   .reading-workspace--nav-open { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
   .reading-workspace--nav-open > .library-pane { display: flex; grid-column: 1; grid-row: 1; visibility: visible; }
   .reading-workspace--nav-open > .workspace-chat-column, .reading-workspace--nav-open > .document-stage, .reading-workspace--nav-open > .workspace-mobile-content { display: none; }
-  .app-shell--workspace .pane-reopen-tab { top: 53px; }
-  .app-shell--workspace:has(.reading-workspace--nav-open) .pane-reopen-tab--pins { display: none; }
-  .workspace-chat-session .ask-workbench-header { padding: 12px; }
   .workspace-chat-session .ask-message-stream { padding: 12px 6px; }
   .workspace-chat-session .ask-message-avatar { display: none; }
   .workspace-chat-session .ask-composer { margin: 0 6px 8px; padding: 8px; }
@@ -140,35 +134,43 @@
 .app-shell--workspace .workspace-pane-toggle svg { width: 16px; height: 16px; stroke-width: 1.8; }
 .app-shell--workspace .workspace-pane-toggle:hover { color: #4656a2; background: #edf0f7; }
 .app-shell--workspace .workspace-pane-toggle:focus-visible { outline: 2px solid #9da9e3; outline-offset: 2px; }
-.reading-workspace .workspace-navigation-heading { height: 54px; min-height: 54px; padding: 12px; }
 .reading-workspace > .translation-pane { padding-top: 0; }
-.reading-workspace > .translation-pane > .pane-heading-row { box-sizing: border-box; height: 54px; min-height: 54px; padding: 12px 0; margin: 0; }
-.app-shell--workspace .pane-reopen-tab.workspace-pane-toggle { top: 68px; }
 .app-shell--workspace .topbar { display: grid; grid-template-columns: minmax(32px, 1fr) auto minmax(100px, 1fr); }
 .app-shell--workspace .topbar-actions { justify-self: end; overflow: visible; }
-.app-shell--workspace .topbar-actions > .icon-button, .app-shell--workspace .workspace-tools-trigger { width: 32px; min-width: 32px; height: 32px; }
-.workspace-tools { position: relative; }
-.workspace-tools-popover { position: absolute; right: 0; top: calc(100% + 10px); width: 280px; max-width: calc(100vw - 24px); padding: 14px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; background: #fffefa; border: 1px solid #e1e5dc; border-radius: 12px; box-shadow: 0 10px 32px #26304420; }
-.workspace-tools-popover[hidden] { display: none; }
-.app-shell--workspace .workspace-tools-popover .icon-button, .app-shell--workspace .workspace-tools-popover .mode-toggle-button { width: 34px; min-width: 34px; height: 34px; }
-.app-shell--workspace .workspace-tools-popover .account-button { width: 100%; max-width: none; justify-content: space-between; }
-.app-shell--workspace .workspace-tools-popover .account-button span { display: block; }
-.app-shell--workspace .workspace-tools-popover .api-health, .app-shell--workspace .workspace-tools-popover .sync-health { display: inline-flex; width: auto; min-width: 44px; height: 30px; padding-inline: 8px; font-size: 11px; }
-.app-shell--workspace .workspace-tools-popover .mathpix-compact-status { width: auto; padding-inline: 8px; font-size: 11px; }
-.app-shell--workspace .workspace-tools-popover .mathpix-compact-status > span:not(.mathpix-compact-progress), .app-shell--workspace .workspace-tools-popover .mathpix-compact-status strong { display: inline; }
 @media (max-width: 920px) {
-  .app-shell--workspace .topbar { gap: 4px; padding-inline: 6px; }
+  .app-shell--workspace .topbar { grid-template-columns: minmax(28px, 1fr) auto auto; gap: 4px; padding-inline: 6px; }
   .app-shell--workspace .topbar-actions { gap: 3px; }
-  .app-shell--workspace .pane-reopen-tab.workspace-pane-toggle { top: 60px; }
   .app-shell--workspace .mobile-panel--pins > .pane-heading-row { height: 54px; min-height: 54px; align-items: center; }
 }
 
 .reading-workspace .workspace-navigation-heading,
-.reading-workspace > .translation-pane > .pane-heading-row {
+.reading-workspace > .translation-pane > .pane-heading-row,
+.reading-workspace .ask-workbench-header,
+.workspace-chat-loading-header,
+.workspace-empty-header,
+.reading-workspace .pdf-viewer-header {
   display: flex; align-items: center; justify-content: space-between;
-  height: 54px; min-height: 54px; padding: 0 12px; border-bottom: 1px solid #e6e9e5;
+  box-sizing: border-box; height: 54px; min-height: 54px; gap: 10px; padding: 0 12px; margin: 0; border-bottom: 1px solid #e6e9e5;
 }
 .reading-workspace > .translation-pane > .pane-heading-row > .pane-heading { padding: 0; }
-.app-shell--workspace { --workspace-topbar-height: 56px; }
-.app-shell--workspace .pane-reopen-tab.workspace-pane-toggle { top: calc(var(--workspace-topbar-height) + 11.5px); }
-@media (max-width: 920px) { .app-shell--workspace { --workspace-topbar-height: 48px; } }
+
+/* Reopen buttons sit in the content headings rather than a full-height rail. */
+.reading-workspace .pdf-viewer-shell { grid-template-columns: minmax(0, 1fr); }
+.reading-workspace .pdf-viewer-heading { flex: 1; }
+.reading-workspace .pdf-viewer-title { max-width: none; }
+.reading-workspace .pdf-viewer-actions { flex: 0 0 auto; overflow: visible; }
+.reading-workspace .pdf-viewer-actions .icon-button { width: 30px; min-width: 30px; height: 30px; }
+.reading-workspace .document-stage--empty-workspace { display: flex; flex-direction: column; align-items: stretch; padding: 0; }
+.workspace-empty-header > span, .workspace-chat-loading-header > span { flex: 1; color: var(--text-muted); font-size: 13px; }
+.document-stage--empty-workspace .empty-reader { margin: 24px auto; padding-inline: 24px; }
+.app-shell--workspace .topbar-actions > .icon-button { width: 32px; min-width: 32px; height: 32px; }
+.workspace-settings-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.app-shell--workspace .workspace-settings-overview .account-button { width: 100%; max-width: none; height: 36px; margin-top: 12px; justify-content: space-between; }
+.app-shell--workspace .workspace-settings-overview .account-button span { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.app-shell--workspace .workspace-settings-status .api-health, .app-shell--workspace .workspace-settings-status .sync-health { display: inline-flex; width: auto; min-width: 44px; height: 30px; padding-inline: 8px; font-size: 11px; }
+.app-shell--workspace .workspace-settings-status .mathpix-compact-status { width: auto; padding-inline: 8px; font-size: 11px; }
+.app-shell--workspace .workspace-settings-status .mathpix-compact-status > span:not(.mathpix-compact-progress), .app-shell--workspace .workspace-settings-status .mathpix-compact-status strong { display: inline; }
+@media (max-width: 920px) {
+  .reading-workspace .pdf-viewer-header { gap: 6px; padding-inline: 8px; }
+  .reading-workspace .pdf-viewer-actions, .reading-workspace .pdf-zoom-toolbar { gap: 3px; }
+}

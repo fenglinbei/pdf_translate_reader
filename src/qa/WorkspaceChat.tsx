@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, LoaderCircle, MessageSquareText, Pencil, Pin, Plus, Search, Trash2, X } from 'lucide-react';
 import { useI18n } from '../i18n/I18nProvider';
@@ -7,8 +7,9 @@ import { PaperQaPanel, type QaSessionState } from './PaperQaPanel';
 import { getQaThreads, updateWorkspaceThread } from './qaClient';
 
 type Session = { key: string; initialThreadId?: string } & QaSessionState;
-export function WorkspaceChat({ navigation, visible, activeDocumentId, onSelect, onCitationClick, onEvidenceClick }: {
+export function WorkspaceChat({ navigation, visible, headerLeading, activeDocumentId, onSelect, onCitationClick, onEvidenceClick }: {
   navigation: HTMLElement | null; visible: boolean; activeDocumentId?: string; onSelect: () => void;
+  headerLeading?: ReactNode;
   onCitationClick: (source: QaCitation, page?: number) => void; onEvidenceClick: (source: QaRetrievedEvidence) => void;
 }) {
   const { t } = useI18n();
@@ -133,8 +134,10 @@ export function WorkspaceChat({ navigation, visible, activeDocumentId, onSelect,
       {deleted ? <div className="workspace-history-undo" role="status">{t('ask.threadDeleted')}<button type="button" disabled={Boolean(busy)} onClick={() => void change(deleted, { deleted: false })}>{t('ask.undoDelete')}</button></div> : null}
       {error ? <div role="alert" className="ask-detail--error">{error}<button type="button" onClick={() => void refresh()}>{t('ask.retry')}</button></div> : null}
     </div>, navigation) : null}
+    {!sessions.length ? <header className="workspace-chat-loading-header">{headerLeading}<span>{t('ask.workspaceTitle')}</span></header> : null}
     {sessions.map(session => <div className="workspace-chat-session" key={session.key} hidden={session.key !== activeKey}>
       <PaperQaPanel workspace managedSession={session} visible={visible && session.key === activeKey} activeDocumentId={activeDocumentId}
+        headerLeading={session.key === activeKey ? headerLeading : undefined}
         sessionTitle={threads.find(thread => thread.id === session.threadId)?.title || session.title || t('ask.newThread')}
         onSessionState={updateState} onHistoryChanged={historyChanged} onNewSession={newSession}
         onCitationClick={onCitationClick} onEvidenceClick={onEvidenceClick} />

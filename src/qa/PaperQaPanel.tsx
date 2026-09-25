@@ -60,6 +60,7 @@ export type QaSessionState = { threadId?: string; streaming: boolean; title?: st
 type PaperQaPanelProps = {
   managedSession?: { key: string; initialThreadId?: string };
   sessionTitle?: string;
+  headerLeading?: ReactNode;
   visible?: boolean;
   onSessionState?: (key: string, state: QaSessionState) => void;
   onHistoryChanged?: () => void;
@@ -99,7 +100,7 @@ const QA_MODELS = getAvailableModelIds("qa");
 const QA_REASONING_EFFORTS: QaReasoningEffort[] = ["auto", "quick", "standard", "deep"];
 
 export function PaperQaPanel({
-  managedSession, sessionTitle, visible = true, onSessionState, onHistoryChanged, onNewSession,
+  managedSession, sessionTitle, headerLeading, visible = true, onSessionState, onHistoryChanged, onNewSession,
   workspace = false,
   activeDocumentId,
   isFullscreen: isFullscreenProp,
@@ -964,6 +965,7 @@ export function PaperQaPanel({
         className={`ask-workbench ${isFullscreen ? "ask-workbench--fullscreen" : ""}`}
       >
       <header className="ask-workbench-header">
+        {headerLeading}
         <div className="ask-workbench-title-block">
           <div className="ask-workbench-title">{sessionTitle || t(workspace ? "ask.workspaceTitle" : nativeRuntime ? 'ask.autoChat' : scope !== 'current' ? 'ask.generalChat' : "ask.chatTitle")}</div>
           <div className="ask-workbench-status">

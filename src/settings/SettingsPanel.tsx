@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Check, Trash2, X } from "lucide-react";
 import { createModelCounts, isAvailableModel, MODEL_IDS } from "../../shared/modelRegistry.mjs";
 import {
@@ -29,6 +29,9 @@ import {
 import type { PaperContextDraft } from "../translation/paperContext";
 
 type SettingsPanelProps = {
+  workspaceStatus?: ReactNode;
+  selectionControls?: ReactNode;
+  accountControl?: ReactNode;
   apiStatus: "checking" | "offline" | "online";
   currentEntry?: PdfLibraryEntry;
   libraryEntries: CloudPdfLibraryEntry[];
@@ -66,6 +69,9 @@ const EMPTY_USAGE_SUMMARY: ApiUsageSummary = {
 };
 
 export function SettingsPanel({
+  workspaceStatus,
+  selectionControls,
+  accountControl,
   apiStatus,
   currentEntry,
   libraryEntries,
@@ -82,6 +88,24 @@ export function SettingsPanel({
   translationProviders,
 }: SettingsPanelProps) {
   const { formatNumber: formatLocalizedNumber, t } = useI18n();
+  const panelRef = useRef<HTMLElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const panel = panelRef.current;
+    panel?.querySelector<HTMLButtonElement>('button')?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeRef.current(); }
+      if (event.key !== 'Tab' || !panel) return;
+      const focusable = [...panel.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]')].filter(element => element.getClientRects().length);
+      const first = focusable[0], last = focusable.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    panel?.addEventListener('keydown', onKeyDown);
+    return () => { panel?.removeEventListener('keydown', onKeyDown); if (previousFocus?.isConnected) previousFocus.focus(); };
+  }, []);
   const [pendingAction, setPendingAction] = useState<PendingAction>();
   const [statusMessage, setStatusMessage] = useState<string>();
   const [usageSummary, setUsageSummary] = useState<ApiUsageSummary>(EMPTY_USAGE_SUMMARY);
@@ -172,7 +196,7 @@ export function SettingsPanel({
       }}
       role="presentation"
     >
-      <aside className="settings-panel" aria-label={t("settings.title")}>
+      <aside ref={panelRef} className="settings-panel" role="dialog" aria-modal="true" aria-label={t("settings.title")}>
         <header className="settings-panel-header">
           <div>
             <div className="settings-panel-title">{t("settings.title")}</div>
@@ -184,6 +208,12 @@ export function SettingsPanel({
         </header>
 
         {statusMessage ? <div className="settings-panel-status">{statusMessage}</div> : null}
+
+        {workspaceStatus || accountControl ? <section className="settings-section workspace-settings-overview" aria-label={t('settings.status')}>
+          <div className="settings-section-heading">{t('settings.status')}</div>
+          {workspaceStatus}
+          {accountControl}
+        </section> : null}
 
         <section className="settings-section" aria-label={t("settings.interfaceLanguage")}>
           <div className="settings-section-heading">{t("settings.interfaceLanguage")}</div>
@@ -298,6 +328,7 @@ export function SettingsPanel({
 
         <section className="settings-section" aria-label={t("settings.selectionSettings")}>
           <div className="settings-section-heading">{t("settings.selection")}</div>
+          {selectionControls}
           <label className="settings-toggle">
             <input
               checked={settings.mathpixAutoStartEnabled}

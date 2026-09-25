@@ -57,6 +57,8 @@ type PdfViewerProps = {
   activeSelection?: SentenceSelection;
   entry: PdfLibraryEntry;
   headerControls?: ReactNode;
+  headerLeading?: ReactNode;
+  headerTrailing?: ReactNode;
   fitToPane?: boolean;
   locateRequest?: PinLocateRequest;
   onActivateTranslationCard: (selection: SentenceSelection) => void;
@@ -193,6 +195,8 @@ export function PdfViewer({
   activeSelection,
   entry,
   headerControls,
+  headerLeading,
+  headerTrailing,
   fitToPane = false,
   locateRequest,
   onActivateTranslationCard,
@@ -1643,6 +1647,7 @@ export function PdfViewer({
   return (
     <div className="pdf-viewer-shell">
       <div className="pdf-viewer-header">
+        {headerLeading}
         <div className="pdf-viewer-heading">
           <div className="pdf-viewer-title">{entry.pdfMetadata?.title || entry.fileName}</div>
           <div className="pdf-viewer-subtitle">
@@ -1674,6 +1679,7 @@ export function PdfViewer({
               <Plus aria-hidden="true" size={16} strokeWidth={2} />
             </button>
           </div>
+          {headerTrailing}
         </div>
       </div>
       {selectionNotice ? <div className="reader-message reader-message--inline">{selectionNotice}</div> : null}
