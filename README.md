@@ -2,6 +2,18 @@
 
 Local-first web PDF reader scaffold for sentence-level translation workflows.
 
+## License / 许可
+
+This project is **source-available for individual, non-commercial use only**.
+Personal learning, experimentation, noncommercial research, and deployments
+accessible only to the individual user are permitted under [LICENSE](LICENSE).
+Commercial use, organizational use, and services offered to other people
+(including free services) require separate written authorization.
+
+本项目仅授权个人非商业自用。权利人保留运营官方收费服务及另行商业
+授权的权利；第三方依赖继续适用各自许可证。本许可不替代官方托管服务
+的服务条款。具体边界见 [许可范围说明](docs/licensing.md)。
+
 ## Project docs
 
 - [Project introduction](docs/project-introduction.md)
