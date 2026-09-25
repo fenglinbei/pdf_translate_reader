@@ -602,6 +602,15 @@ export async function updateQaMessage({
   return rowToQaMessage(data);
 }
 
+export async function commitArtifactAnswer({ citations, messageId, userId, content, retrievalSnapshot, usage }) {
+  const { data, error } = await requireSupabaseServiceClient().rpc('qa_commit_artifact_answer', {
+    p_user_id: userId, p_message_id: messageId, p_content: content, p_snapshot: retrievalSnapshot,
+    p_usage: usage ?? null, p_citations: citations,
+  });
+  if (error) throw toSupabaseServiceError(error, 'qa_answer_commit_failed', '回答未能保存，请重试。');
+  return { message: rowToQaMessage(data.message), citations: data.citations.map(rowToQaCitation) };
+}
+
 export async function insertQaCitations({ citations, messageId, userId }) {
   if (!Array.isArray(citations) || citations.length === 0) {
     return [];
@@ -1140,6 +1149,7 @@ function rowToQaCitation(row) {
   return {
     chunkId: row.chunk_id ?? undefined,
     sourceKind: row.source_kind ?? 'indexed_chunk',
+    evidenceId: row.source_locator?.evidenceId,
     sourceVersion: row.source_version ?? undefined,
     evidenceKey: row.evidence_key ?? undefined,
     sourceRecordId: row.source_record_id ?? undefined,

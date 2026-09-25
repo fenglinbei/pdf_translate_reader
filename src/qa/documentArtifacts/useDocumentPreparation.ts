@@ -1,3 +1,4 @@
+import { clearArtifactLocations } from './locationClient';
 import { useEffect, useState } from 'react';
 import { ensureClientDocumentPrepared } from './preparationApi';
 import { clearPreparedCandidates } from './preparationClient';
@@ -14,6 +15,6 @@ export function useDocumentPreparation({ enabled, userId, documentId, sourceGene
     }).catch(() => { if (!controller.signal.aborted) setState('failed'); });
     return () => controller.abort();
   }, [enabled, userId, documentId, sourceGeneration]);
-  useEffect(() => () => { if (userId) void clearPreparedCandidates(userId).catch(() => {}); }, [userId]);
+  useEffect(() => () => { if (userId) { clearArtifactLocations(userId); void clearPreparedCandidates(userId).catch(() => {}); } }, [userId]);
   return state;
 }

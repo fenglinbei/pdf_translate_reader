@@ -1,3 +1,5 @@
+import { remarkCitations } from './remarkCitations';
+import { prefetchArtifactSources } from './documentArtifacts/locationClient';
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -603,6 +605,7 @@ export function PaperQaPanel({
             }));
           },
           onCitation: (citations) => {
+            prefetchArtifactSources(citations);
             updateAssistantMessage(message.id, (current) => ({
               ...current,
               citations,
@@ -615,7 +618,7 @@ export function PaperQaPanel({
             }));
           },
           onAnswerReset: () => {
-            updateAssistantMessage(message.id, (current) => ({ ...current, content: "" }));
+            updateAssistantMessage(message.id, (current) => ({ ...current, content: "", citations: [], retrievalSnapshot: undefined }));
           },
           onDone: (payload) => {
             if (scopeKeyRef.current !== scopeKey || abortController.signal.aborted) return;
@@ -740,7 +743,7 @@ export function PaperQaPanel({
     citation: QaCitation,
     pageNumber?: number,
   ) => {
-    const linkedEvidence = (message.retrievalSnapshot?.evidence ?? [])
+    const linkedEvidence = messageEvidence(message)
       .find((item) => sameQaSource(item, citation));
     onCitationClick(citation, pageNumber);
     setSelectedEvidenceRef({
@@ -764,7 +767,7 @@ export function PaperQaPanel({
     message: LocalQaMessage,
     evidenceId: string,
   ) => {
-    const evidenceList = message.retrievalSnapshot?.evidence ?? [];
+    const evidenceList = messageEvidence(message);
     const evidence = evidenceList.find((item) => item.evidenceId === evidenceId);
 
     setSelectedEvidenceRef({
@@ -844,6 +847,7 @@ export function PaperQaPanel({
             }));
           },
           onCitation: (citations) => {
+            prefetchArtifactSources(citations);
             updateAssistantMessage(localAssistantMessageId, (message) => ({
               ...message,
               citations,
@@ -856,7 +860,7 @@ export function PaperQaPanel({
             }));
           },
           onAnswerReset: () => {
-            updateAssistantMessage(localAssistantMessageId, (message) => ({ ...message, content: "" }));
+            updateAssistantMessage(localAssistantMessageId, (message) => ({ ...message, content: "", citations: [], retrievalSnapshot: undefined }));
           },
           onDone: (payload) => {
             if (scopeKeyRef.current !== scopeKey || abortController.signal.aborted) return;
@@ -1246,7 +1250,8 @@ function QaMessageBubble({
   const { t } = useI18n();
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
   const isAssistant = message.role === "assistant";
-  const evidence = message.retrievalSnapshot?.evidence ?? [];
+  useEffect(() => { prefetchArtifactSources(message.citations); }, [message.citations]);
+  const evidence = messageEvidence(message);
   const handleCitationToken = isAssistant
     ? (evidenceId: string) => onCitationToken(message, evidenceId)
     : undefined;
@@ -1286,7 +1291,7 @@ function QaMessageBubble({
             <div className="ask-citation-list">
               {(sourcesExpanded ? message.citations : message.citations.slice(0, 3)).map((citation) => (
                 <QaCitationSource
-                  key={citation.id}
+                  key={qaSourceKey(citation) ?? citation.id}
                   citation={citation}
                   evidenceId={evidence.find((item) => sameQaSource(item, citation))?.evidenceId}
                   canOpen={workspace || citation.cloudDocumentId === activeDocumentId}
@@ -1584,7 +1589,7 @@ function EvidenceDrawer({
         <div>
           <div className="ask-evidence-title">
             {evidence.evidenceId}
-            <span>{t("ask.citationPage", { page: evidence.pageStart })}</span>
+            <span>{evidence.pageStart ? t("ask.citationPage", { page: evidence.pageStart }) : t("ask.sourceUnlocated")}</span>
           </div>
           <div className="ask-evidence-subtitle">
             {evidence.sectionPath?.length ? evidence.sectionPath.join(" / ") : evidence.documentTitle}
@@ -1678,7 +1683,7 @@ function findSelectedEvidence(
     return undefined;
   }
 
-  const evidence = (message.retrievalSnapshot?.evidence ?? []).find((item) =>
+  const evidence = messageEvidence(message).find((item) =>
     selectedRef.evidenceId
       ? item.evidenceId === selectedRef.evidenceId
       : Boolean(selectedRef.sourceKey && qaSourceKey(item) === selectedRef.sourceKey)
@@ -1699,117 +1704,28 @@ function renderMessageText(content: string, onCitationToken?: (evidenceId: strin
   return <QaMarkdown content={content} onCitationToken={onCitationToken} />;
 }
 
-const CITATION_TOKEN_PATTERN = /\[C(\d+)\]/g;
-
-function QaMarkdown({
-  content,
-  onCitationToken,
-  citationIds,
-}: {
-  citationIds?: string[];
-  content: string;
-  onCitationToken?: (evidenceId: string) => void;
+function QaMarkdown({ content, onCitationToken, citationIds = [] }: {
+  content: string; onCitationToken?: (evidenceId: string) => void; citationIds?: string[];
 }) {
-  const components = useMemo(
-    () => ({
-      p: ({ children }: { children?: ReactNode }) => (
-        <p>{splitCitationTokens(children, onCitationToken, citationIds)}</p>
-      ),
-      li: ({ children }: { children?: ReactNode }) => (
-        <li>{splitCitationTokens(children, onCitationToken, citationIds)}</li>
-      ),
-      td: ({ children }: { children?: ReactNode }) => (
-        <td>{splitCitationTokens(children, onCitationToken, citationIds)}</td>
-      ),
-      th: ({ children }: { children?: ReactNode }) => (
-        <th>{splitCitationTokens(children, onCitationToken, citationIds)}</th>
-      ),
-      a: ({ href, children }: { href?: string; children?: ReactNode }) => (
-        <a href={href} rel="noreferrer" target="_blank">
-          {children}
-        </a>
-      ),
-    }),
-    [onCitationToken, citationIds],
-  );
-
-  return (
-    <div className="ask-markdown">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex]}
-        components={components as never}
-      >
-        {content}
-      </ReactMarkdown>
-    </div>
-  );
+  const citationContext = useRef({ onCitationToken, citationIds });
+  citationContext.current = { onCitationToken, citationIds };
+  const components = useMemo(() => ({
+    a: ({ href, children }: { href?: string; children?: ReactNode }) => {
+      const { onCitationToken, citationIds } = citationContext.current;
+      const ref = /^#qa-citation-(C[1-9][0-9]*)$/.exec(href ?? '')?.[1];
+      if (ref && citationIds.includes(ref) && onCitationToken) return <button className="ask-citation-inline" type="button" onClick={() => onCitationToken(ref)}>{children}</button>;
+      return <a href={href} rel="noreferrer" target="_blank">{children}</a>;
+    },
+  }), []);
+  return <div className="ask-markdown"><ReactMarkdown
+    remarkPlugins={[remarkGfm, remarkMath, [remarkCitations, { ids: citationIds }]]}
+    rehypePlugins={[rehypeKatex]} components={components as never}>{content}</ReactMarkdown></div>;
 }
 
-function splitCitationTokens(node: ReactNode, onCitationToken?: (evidenceId: string) => void, citationIds?: string[]): ReactNode {
-  if (!onCitationToken || node === null || node === undefined || typeof node === "boolean") {
-    return node;
-  }
-
-  if (Array.isArray(node)) {
-    let touched = false;
-    const next = node.map((child, index) => {
-      const processed = splitCitationTokens(child, onCitationToken, citationIds);
-
-      if (processed !== child) {
-        touched = true;
-      }
-
-      return processed;
-    });
-
-    return touched ? next : node;
-  }
-
-  if (typeof node !== "string") {
-    return node;
-  }
-
-  const segments: ReactNode[] = [];
-  let lastIndex = 0;
-  let matchIndex = 0;
-
-  for (const match of node.matchAll(CITATION_TOKEN_PATTERN)) {
-    const start = match.index ?? 0;
-
-    if (start > lastIndex) {
-      segments.push(node.slice(lastIndex, start));
-    }
-
-    const raw = match[0];
-    const evidenceId = `C${match[1]}`;
-
-    if (citationIds && !citationIds.includes(evidenceId)) {
-      segments.push(raw); matchIndex += 1; lastIndex = start + raw.length; continue;
-    }
-    segments.push(
-      <button
-        className="ask-citation-inline"
-        key={`citation-${matchIndex}-${start}`}
-        onClick={() => onCitationToken(evidenceId)}
-        type="button"
-      >
-        {raw}
-      </button>,
-    );
-    matchIndex += 1;
-    lastIndex = start + raw.length;
-  }
-
-  if (matchIndex === 0) {
-    return node;
-  }
-
-  if (lastIndex < node.length) {
-    segments.push(node.slice(lastIndex));
-  }
-
-  return segments;
+function messageEvidence(message: LocalQaMessage): QaRetrievedEvidence[] {
+  const direct = message.citations.filter(c => c.sourceKind === 'document_artifact' && c.evidenceId)
+    .map(c => ({ ...c, evidenceId: c.evidenceId!, textPreview: c.quotedText }));
+  return direct.length ? direct : message.retrievalSnapshot?.evidence ?? [];
 }
 
 function mergeAgentStep(currentSteps: QaAgentStep[], nextStep: QaAgentStep) {

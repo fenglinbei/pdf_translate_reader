@@ -1,3 +1,5 @@
+import { QaArchivedReader } from '../qa/QaArchivedReader';
+import { locateArtifactSource, loadArtifactPdf } from '../qa/documentArtifacts/locationClient';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import {
@@ -479,6 +481,7 @@ export function ReaderShell() {
   const [libraryEntries, setLibraryEntries] = useState<CloudPdfLibraryEntry[]>([]);
   const [isLibraryLoaded, setIsLibraryLoaded] = useState(false);
   const [currentEntry, setCurrentEntry] = useState<PdfLibraryEntry>();
+  const [archivedQaSource, setArchivedQaSource] = useState<{ entry: PdfLibraryEntry; location?: PinLocateRequest }>();
   const [isImporting, setIsImporting] = useState(false);
   const [isFreeTranslationOpen, setIsFreeTranslationOpen] = useState(false);
   const [freeTranslationSeed, setFreeTranslationSeed] = useState<{ id: number; text: string }>();
@@ -824,6 +827,7 @@ export function ReaderShell() {
       activeFingerprintRef.current = undefined;
       activeHydrationRequestIdRef.current = 0;
       setCurrentEntry(undefined);
+    setArchivedQaSource(undefined);
       setSentenceSelection(undefined);
       replacePinnedTranslationCards([]);
       setPins([]);
@@ -1518,6 +1522,7 @@ export function ReaderShell() {
             activeFingerprintRef.current = entry.fingerprint;
             activeHydrationRequestIdRef.current = activationRequestId;
             setCurrentEntry(entry);
+          setArchivedQaSource(undefined);
           }
 
           try {
@@ -1553,6 +1558,7 @@ export function ReaderShell() {
           activeFingerprintRef.current = entry.fingerprint;
           activeHydrationRequestIdRef.current = activationRequestId;
           setCurrentEntry(entry);
+          setArchivedQaSource(undefined);
           setSentenceSelection(undefined);
           setMobilePanel(null);
           replacePinnedTranslationCards([]);
@@ -1578,6 +1584,7 @@ export function ReaderShell() {
 
   const handleOpenHistory = useCallback(
     async (entry: CloudPdfLibraryEntry) => {
+      setArchivedQaSource(undefined);
       documentActivationRequestIdRef.current += 1;
       const activationRequestId = documentActivationRequestIdRef.current;
       setStatusMessage(undefined);
@@ -2253,6 +2260,7 @@ export function ReaderShell() {
           activeFingerprintRef.current = undefined;
           activeHydrationRequestIdRef.current = 0;
           setCurrentEntry(undefined);
+    setArchivedQaSource(undefined);
           setSentenceSelection(undefined);
           replacePinnedTranslationCards([]);
           setPins([]);
@@ -2362,7 +2370,21 @@ export function ReaderShell() {
     if (!currentEntry?.cloudDocumentId || source.cloudDocumentId !== currentEntry.cloudDocumentId) return;
     const fingerprint = currentEntry.fingerprint;
     const requestId = ++locateRequestIdRef.current;
+    if (!source.pageStart || !source.pageEnd) return;
     const target = Math.max(source.pageStart, Math.min(pageNumber ?? source.pageStart, source.pageEnd));
+    if (source.sourceKind === 'document_artifact') {
+      if (currentEntry.contentSha256?.replace(/^sha256-/, '') !== source.sourceLocator.pdfSha256) return;
+      setStatusMessage(undefined);
+      setLocateRequest({ pageIndex: target - 1, requestId, strictCitationLocation: true, citationPreview: true });
+      try {
+        const resolved = await locateArtifactSource(source);
+        if (requestId !== locateRequestIdRef.current || activeFingerprintRef.current !== fingerprint) return;
+        setLocateRequest({ pageIndex: target - 1, requestId, strictCitationLocation: true,
+          lineRegions: resolved.lineRegions, anchorLineNumber: resolved.sourceSpans.find(span => span.pageNumber === target)?.lineNumber });
+        setMobilePanel(null);
+      } catch (error) { if (requestId === locateRequestIdRef.current) setStatusMessage(error instanceof Error ? error.message : t('ask.readinessFailed')); }
+      return;
+    }
     const native = source.sourceKind === "document_text";
     const anchorLine = native ? source.sourceLocator.sourceSpans.find((span) => span.pageNumber === target)?.lineNumber : undefined;
     const location = {
@@ -2402,13 +2424,40 @@ export function ReaderShell() {
     }
     setLocateRequest(location);
     setMobilePanel(null);
-  }, [currentEntry?.cloudDocumentId, currentEntry?.fingerprint, t]);
+  }, [currentEntry?.cloudDocumentId, currentEntry?.fingerprint, currentEntry?.contentSha256, t]);
 
   const openQaSource = useCallback(async (source: QaCitation | QaRetrievedEvidence, page?: number) => {
     const request = ++qaOpenRequestRef.current;
     setIsLibraryWorkbenchOpen(false);
     if (workspaceQa) { setWorkspaceView('split'); setMobileWorkspaceContent('document'); setIsLibraryPaneOpen(isNarrowViewport ? false : isLibraryPaneOpen); }
     else { setRightPaneTab("ask"); setIsPinsPaneOpen(true); }
+    if (source.sourceKind === 'document_artifact') {
+      const target = page ?? source.sourceLocator.anchor?.pageNumber;
+      if (!target) return;
+      const requestId = ++locateRequestIdRef.current, initialFingerprint = activeFingerprintRef.current;
+      const location = { pageIndex: target - 1, strictCitationLocation: true, requestId };
+      const samePdf = source.cloudDocumentId === currentEntry?.cloudDocumentId
+        && currentEntry.contentSha256?.replace(/^sha256-/, '') === source.sourceLocator.pdfSha256;
+      setStatusMessage(undefined);
+      try {
+        if (samePdf) { setArchivedQaSource(undefined); await locateQaSource(source, page); return; }
+        const document = await getLibraryDocument(source.cloudDocumentId);
+        if (request !== qaOpenRequestRef.current || activeFingerprintRef.current !== initialFingerprint) return;
+        if (document.contentSha256.replace(/^sha256-/, '') === source.sourceLocator.pdfSha256) {
+          if (await handleOpenHistory(document) && request === qaOpenRequestRef.current) setPendingQaLocation({ source, page });
+          return;
+        }
+        const [blob, resolved] = await Promise.all([loadArtifactPdf(source), locateArtifactSource(source)]);
+        if (request !== qaOpenRequestRef.current || activeFingerprintRef.current !== initialFingerprint) return;
+        const now = Date.now();
+        setArchivedQaSource({ entry: { blob, fileName: source.documentTitle, fileSize: blob.size, mimeType: 'application/pdf',
+          fingerprint: `qa-retained-${source.sourceLocator.pdfSha256}`, contentSha256: `sha256-${source.sourceLocator.pdfSha256}`,
+          importedAt: now, lastOpenedAt: now, openCount: 0 },
+          location: { ...location, lineRegions: resolved.lineRegions, anchorLineNumber: resolved.sourceSpans.find(span => span.pageNumber === target)?.lineNumber } });
+        setIsPinsPaneOpen(false); setMobilePanel(null);
+      } catch (error) { if (request === qaOpenRequestRef.current) setStatusMessage(error instanceof Error ? error.message : t('ask.readinessFailed')); }
+      return;
+    }
     if (source.cloudDocumentId === currentEntry?.cloudDocumentId) {
       await locateQaSource(source, page); return;
     }
@@ -2421,7 +2470,7 @@ export function ReaderShell() {
     } catch (error) {
       if (request === qaOpenRequestRef.current) setStatusMessage(error instanceof Error ? error.message : t("ask.readinessFailed"));
     }
-  }, [currentEntry?.cloudDocumentId, workspaceQa, isNarrowViewport, isLibraryPaneOpen, handleOpenHistory, locateQaSource, t]);
+  }, [currentEntry?.cloudDocumentId, currentEntry?.contentSha256, workspaceQa, isNarrowViewport, isLibraryPaneOpen, handleOpenHistory, locateQaSource, t]);
   useEffect(() => {
     if (pendingQaLocation && pendingQaLocation.source.cloudDocumentId === currentEntry?.cloudDocumentId) {
       setPendingQaLocation(undefined);
@@ -3294,7 +3343,7 @@ export function ReaderShell() {
           className={`document-stage ${currentEntry ? "document-stage--active" : workspaceQa ? "document-stage--empty-workspace" : ""}`}
           aria-label={t("reader.pdfReader")}
         >
-          {currentEntry ? (
+          {archivedQaSource ? <QaArchivedReader entry={archivedQaSource.entry} locateRequest={archivedQaSource.location} settings={settings} onClose={() => setArchivedQaSource(undefined)} /> : currentEntry ? (
             <PdfViewer
               activeTranslationCardZIndex={activeTranslationCardZIndex}
               activeSelection={sentenceSelection}

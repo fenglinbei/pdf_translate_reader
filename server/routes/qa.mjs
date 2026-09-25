@@ -58,7 +58,7 @@ export async function handleQaRoute(request, response, url, user) {
     if (await handleArtifactRoute(request, response, url, user)) return;
     if (request.method === 'GET' && url.pathname === '/api/qa/capabilities') {
       const runtime = process.env.QA_AGENT_RUNTIME ?? 'legacy-json-v1';
-      writeJson(response, 200, { runtime, generalChat: ['document-tools-v1', 'workspace-tools-v1'].includes(runtime), workspaceChat: runtime === 'workspace-tools-v1', documentArtifacts: artifactPreparationEnabled(), models: getDocumentToolModels() });
+      writeJson(response, 200, { runtime, generalChat: ['document-tools-v1', 'workspace-tools-v1', 'workspace-artifacts-v1'].includes(runtime), workspaceChat: ['workspace-tools-v1', 'workspace-artifacts-v1'].includes(runtime), documentArtifacts: artifactPreparationEnabled(), models: getDocumentToolModels() });
       return;
     }
     if (request.method === 'GET' && url.pathname === '/api/qa/document-readiness') {
@@ -154,7 +154,7 @@ async function handleQaStream(request, response, user) {
     return;
   }
 
-  if (process.env.QA_AGENT_RUNTIME === 'workspace-tools-v1') {
+  if (['workspace-tools-v1', 'workspace-artifacts-v1'].includes(process.env.QA_AGENT_RUNTIME)) {
     await handleWorkspaceStream(request, response, user, requestBody);
     return;
   }

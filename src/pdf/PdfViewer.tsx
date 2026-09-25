@@ -53,6 +53,7 @@ import { copyTextToClipboard } from "../utils/clipboard";
 import { PageOverlayLayer } from "./pageOverlayLayer";
 
 type PdfViewerProps = {
+  readOnly?: boolean;
   activeTranslationCardZIndex: number;
   activeSelection?: SentenceSelection;
   entry: PdfLibraryEntry;
@@ -191,6 +192,7 @@ const USER_ZOOM_STEP = 0.1;
 const FLOATING_CARD_PAGE_Z_INDEX_OFFSET = 1000;
 
 export function PdfViewer({
+  readOnly = false,
   activeTranslationCardZIndex,
   activeSelection,
   entry,
@@ -1693,9 +1695,9 @@ export function PdfViewer({
         }`}
         onAuxClick={handleAuxClick}
         onPointerCancel={handleTextPointerCancel}
-        onPointerDown={handleTextPointerDown}
-        onPointerMove={handleTextPointerMove}
-        onPointerUp={handleTextPointerUp}
+        onPointerDown={readOnly ? undefined : handleTextPointerDown}
+        onPointerMove={readOnly ? undefined : handleTextPointerMove}
+        onPointerUp={readOnly ? undefined : handleTextPointerUp}
         onScroll={handleScroll}
         onTouchCancel={handleTouchEnd}
         onTouchEnd={handleTouchEnd}

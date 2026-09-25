@@ -28,17 +28,20 @@ export function publicModelMessage(message) {
 }
 export async function runWorkspaceAgent({ adapter, model, question, activeDocumentId, userId, answerLanguage, recentMessages,
   signal, context, onDelta = () => {}, onReset = () => {}, onUsage = () => {}, workspace = createWorkspaceTools({ userId, activeDocumentId, signal }),
-  maxCalls = 12, maxTools = 24 }) {
-  const messages = createWorkspaceMessages({ model, question, activeDocumentId, answerLanguage, recentMessages });
+  maxCalls = 12, maxTools = 24, protocol }) {
+  const messages = (protocol?.messages ?? createWorkspaceMessages)({ model, question, activeDocumentId, answerLanguage, recentMessages });
+  const tools = protocol?.tools ?? WORKSPACE_TOOLS;
+  const reset = () => { protocol?.reset(); onReset(); };
   const seen = new Set();
   let toolCount = 0, errors = 0, citationRepairs = 0;
   for (let turn = 0; turn < maxCalls; turn++) {
     signal?.throwIfAborted();
     await workspace.assertCurrent();
-    assertContextBudget({ model, messages, tools: WORKSPACE_TOOLS });
+    assertContextBudget({ model, messages, tools });
     const trace = { version: 'qa-public-trace-v1', privateContinuation: 'not_stored_not_byte_exact_replay' };
+    const delta = protocol ? protocol.begin(onDelta) : onDelta;
     const completion = await context.modelCall('agent_turn', async () => {
-      const value = await adapter.stream({ messages, tools: WORKSPACE_TOOLS, signal, onDelta,
+      const value = await adapter.stream({ messages, tools, signal, onDelta: delta,
         onUsage: usage => { context.events.modelUsage(usage); onUsage(usage); },
         onRequest: body => { trace.request = { ...body, messages: body.messages.map(publicModelMessage) }; },
       });
@@ -48,20 +51,22 @@ export async function runWorkspaceAgent({ adapter, model, question, activeDocume
     }, trace);
     messages.push(completion.message);
     if (!completion.calls.length) {
-      const answer = completion.message.content;
-      const citations = workspace.citations;
+      let answer = completion.message.content;
+      const citations = workspace.citations ?? [];
       const prepared = { citations, allowedCitationIds: citations.map(c => c.evidenceId), mode: workspace.metrics.returnedChars > 0 ? 'grounded' : 'direct' };
-      const verified = verifyDocumentAnswer(answer, prepared);
+      const checked = protocol?.verify();
+      if (checked) answer = checked.answer;
+      const verified = checked?.verified ?? verifyDocumentAnswer(answer, prepared);
       if (!verified.valid && citationRepairs++ < 1) {
-        onReset();
-        messages.push({ role: 'user', content: `引用检查未通过：${verified.warnings.join(' ')} 请使用 cite_sources 标记实际已读原文并在答案中引用；不要编造编号。` });
+        reset();
+        messages.push({ role: 'user', content: `引用检查未通过：${verified.warnings.join(' ')} ${protocol?.repair ?? '请使用 cite_sources 标记实际已读原文并在答案中引用；不要编造编号。'}` });
         continue;
       }
       requireCondition(verified.valid, 'CITATION_VERIFICATION_FAILED', verified.warnings.join(' '), { retryable: false });
       return { answer, verified, metrics: { ...workspace.metrics, toolCalls: toolCount }, workspace, stopReason: 'natural_answer' };
     }
     // Stream text immediately; once this completion requests tools it becomes progress.
-    onReset();
+    reset();
     if (completion.message.content) {
       context.events.commentaryDelta(completion.message.content);
       await context.events.flushCommentary();

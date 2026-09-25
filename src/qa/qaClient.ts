@@ -29,7 +29,7 @@ export type QaDocumentReadiness = {
   documentId: string;
   state: "readable" | "parsing" | "missing" | "error";
   documentVersion?: string;
-  runtime: "legacy-json-v1" | "document-tools-v1" | "workspace-tools-v1";
+  runtime: "legacy-json-v1" | "document-tools-v1" | "workspace-tools-v1" | "workspace-artifacts-v1";
   models: string[];
 };
 

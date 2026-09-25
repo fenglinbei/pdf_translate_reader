@@ -14,16 +14,17 @@ export function QaCitationSource({ citation, evidenceId, canOpen, onSelect }: {
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  const anchor = citation.sourceKind === 'document_text' ? citation.sourceLocator.anchor.pageNumber : citation.pageStart;
+  const artifact = citation.sourceKind === 'document_artifact';
+  const anchor = citation.sourceKind === 'document_text' ? citation.sourceLocator.anchor.pageNumber : citation.pageStart ?? undefined;
   const [selectedPage, setSelectedPage] = useState(anchor);
   const [position, setPosition] = useState({ top: 0, left: 0, width: 280 });
   const pages = citation.sourceKind === 'document_text'
     ? [...new Set(citation.sourceLocator.sourceSpans.map(span => span.pageNumber))].sort((a, b) => a - b)
-    : [];
-  const availablePages = pages.length ? pages : Array.from({ length: citation.pageEnd - citation.pageStart + 1 }, (_, index) => citation.pageStart + index);
-  const hasPicker = citation.sourceKind === 'document_text' && availablePages.length > 1;
+    : artifact ? citation.sourceLocator.pages : [];
+  const availablePages = pages.length ? pages : citation.pageStart && citation.pageEnd ? Array.from({ length: citation.pageEnd - citation.pageStart + 1 }, (_, index) => citation.pageStart! + index) : [];
+  const hasPicker = availablePages.length > 1;
   const excerpt = citation.quotedText.replace(/\s+/g, ' ').trim();
-  const pageLabel = t('ask.sourcePage', { page: selectedPage });
+  const pageLabel = selectedPage ? t('ask.sourcePage', { page: selectedPage }) : t('ask.sourceUnlocated');
   const sourceLabel = evidenceId || citation.documentTitle;
   const precision = citation.sourceKind !== 'document_text' ? ''
     : citation.sourceLocator.locationPrecision === 'page' ? t('ask.pageLocationOnly')
@@ -62,15 +63,15 @@ export function QaCitationSource({ citation, evidenceId, canOpen, onSelect }: {
   }, [open]);
 
   return <div className="ask-source-row">
-    <button className="ask-source-main" type="button" disabled={!canOpen} onClick={() => onSelect(selectedPage)}
+    <button className="ask-source-main" type="button" disabled={!canOpen || !selectedPage} onClick={() => onSelect(selectedPage)}
       title={`${citation.documentTitle}\n${citation.quotedText}`} aria-label={`${sourceLabel} · ${citation.documentTitle} · ${pageLabel}`}>
       <span className="ask-source-number">{evidenceId ? evidenceId.replace(/^C/, '') : <FileText size={13} aria-hidden="true" />}</span>
       <span className="ask-source-copy">
         <strong>{citation.documentTitle}</strong>
-        <span>{excerpt || t('ask.sourceRange', { start: citation.pageStart, end: citation.pageEnd })}</span>
+        <span>{excerpt || (citation.pageStart && citation.pageEnd ? t('ask.sourceRange', { start: citation.pageStart, end: citation.pageEnd }) : t('ask.sourceUnlocated'))}</span>
       </span>
     </button>
-    <button className="ask-source-page" type="button" ref={trigger} disabled={!canOpen}
+    <button className="ask-source-page" type="button" ref={trigger} disabled={!canOpen || !selectedPage}
       aria-label={hasPicker ? `${t('ask.citationJumpPage')} · ${sourceLabel}` : `${pageLabel} · ${sourceLabel}`}
       aria-expanded={hasPicker ? open : undefined} aria-controls={hasPicker && open ? menuId : undefined}
       aria-haspopup={hasPicker ? 'menu' : undefined}

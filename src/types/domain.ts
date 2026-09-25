@@ -557,18 +557,26 @@ export type QaSourceLocator = {
   selectionOrigin?: "model_quote" | "model_source" | "budget_stop";
 };
 
+export type QaArtifactLocator = {
+  version: "citation-locator-v2"; revision: string; nodeId: string; range: [number, number];
+  pdfSha256: string; manifestSha256: string; manifestPath?: string; pages: number[]; anchor?: { pageNumber: number; lineNumber?: number };
+  kind: string; evidenceId: string; locationPrecision: "pending" | "unavailable";
+};
+
 export type QaSourceIdentity =
   | { sourceKind?: "indexed_chunk"; chunkId: string; evidenceKey?: never; sourceVersion?: never; sourceRecordId?: never; sourceLocator?: never }
-  | { sourceKind: "document_text"; chunkId?: never; evidenceKey: string; sourceVersion: string; sourceRecordId: string; sourceLocator: QaSourceLocator };
+  | { sourceKind: "document_text"; chunkId?: never; evidenceKey: string; sourceVersion: string; sourceRecordId: string; sourceLocator: QaSourceLocator }
+  | { sourceKind: "document_artifact"; chunkId?: never; evidenceKey: string; sourceVersion: string; sourceRecordId: string; sourceLocator: QaArtifactLocator };
 
 export type QaCitation = QaSourceIdentity & {
   id: string;
+  evidenceId?: string;
   messageId: string;
   cloudDocumentId: string;
   pdfFingerprint: string;
   documentTitle: string;
-  pageStart: number;
-  pageEnd: number;
+  pageStart: number | null;
+  pageEnd: number | null;
   sectionPath?: string[];
   quotedText: string;
   lineRegions?: MathpixLineRegionRef[];
@@ -583,8 +591,8 @@ export type QaRetrievedEvidence = QaSourceIdentity & {
   pdfFingerprint: string;
   documentTitle: string;
   mmd?: string;
-  pageStart: number;
-  pageEnd: number;
+  pageStart: number | null;
+  pageEnd: number | null;
   sectionPath?: string[];
   lineRegions?: MathpixLineRegionRef[];
   score?: number;

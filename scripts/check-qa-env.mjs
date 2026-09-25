@@ -29,7 +29,7 @@ try {
   process.exit(2);
 }
 loadDotenv({ path: ENV_FILE, override: true });
-if (!['document-tools-v1', 'workspace-tools-v1'].includes(process.env.QA_AGENT_RUNTIME)) REQUIRED.push('VOYAGE_API_KEY');
+if (!['document-tools-v1', 'workspace-tools-v1', 'workspace-artifacts-v1'].includes(process.env.QA_AGENT_RUNTIME)) REQUIRED.push('VOYAGE_API_KEY');
 
 function roleOf(value) {
   if (!value) return null;

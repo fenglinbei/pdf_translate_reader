@@ -6,6 +6,15 @@ import { createArtifactPartCache } from './partCache.mjs';
 const receipts = new WeakSet();
 export function isArtifactReadReceipt(value) { return receipts.has(value); }
 const immutable = value => { if (value && typeof value === 'object' && !Object.isFrozen(value)) { Object.values(value).forEach(immutable); Object.freeze(value); } return value; };
+export function sliceArtifactReceipt(receipt, start, end) {
+  artifactAssert(receipts.has(receipt) && Number.isSafeInteger(start) && Number.isSafeInteger(end)
+    && start >= receipt.range[0] && end <= receipt.range[1] && end > start,
+  'READ_SCOPE_MISMATCH', 'A citation slice must belong to an actual read receipt.');
+  const from = start - receipt.range[0], until = end - receipt.range[0];
+  artifactAssert(isTextBoundary(receipt.text, from) && isTextBoundary(receipt.text, until), 'INVALID_TEXT_RANGE', 'Cannot split a Unicode character.');
+  const sliced = immutable({ ...receipt, text: receipt.text.slice(from, until), range: [start, end], coverage: 'partial', nextOffset: null });
+  receipts.add(sliced); return sliced;
+}
 
 // Share bytes and immutable content, never access decisions. A single in-flight
 // load is scoped to user + document + revision + part, with a bounded registry.
@@ -55,7 +64,7 @@ export function createArtifactLoader({ loadText, authorize, maxBytes = 32 * 1024
       const result = await cached({ ...base, partId: id }, descriptor.bytes, text => decodeDocumentPart(manifest, id, text));
       signal?.throwIfAborted(); return result;
     }
-    const snapshot = Object.freeze({ ...base, manifest });
+    const snapshot = Object.freeze({ ...base, manifestSha256, manifest });
     async function readOne(nodeId, { start = 0, maxChars = 8000 } = {}) {
         const node = requireNode(nodeId);
         artifactAssert(node.kind !== 'section', 'NAVIGATION_IS_NOT_EVIDENCE', 'Use the outline for headings and read its body nodes.');

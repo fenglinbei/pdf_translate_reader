@@ -11,7 +11,7 @@ if (!["development", "staging", "production"].includes(process.env.QA_ENVIRONMEN
 }
 const port = Number(process.env.QA_PORT ?? 8788);
 const runtime = process.env.QA_AGENT_RUNTIME ?? 'legacy-json-v1';
-if (!['legacy-json-v1', 'document-tools-v1', 'workspace-tools-v1'].includes(runtime)) throw new Error('Invalid QA_AGENT_RUNTIME.');
+if (!['legacy-json-v1', 'document-tools-v1', 'workspace-tools-v1', 'workspace-artifacts-v1'].includes(runtime)) throw new Error('Invalid QA_AGENT_RUNTIME.');
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid QA_PORT.");
 
 const { createQaServer } = await import("./qa/httpServer.mjs");
@@ -19,11 +19,11 @@ const { requireAuthenticatedUser } = await import("./supabase/auth.mjs");
 const { handleQaRoute } = await import("./routes/qa.mjs");
 const { checkQaDocumentSchema } = await import('./qa/documents/schema.mjs');
 await checkQaDocumentSchema();
-if (process.env.QA_DOCUMENT_ARTIFACTS_ENABLED === 'true') {
+if ((process.env.QA_DOCUMENT_ARTIFACTS_ENABLED === 'true' || runtime === 'workspace-artifacts-v1')) {
   const { checkArtifactSchema } = await import('./qa/documentArtifacts/repository.mjs');
   await checkArtifactSchema();
 }
-if (runtime === 'workspace-tools-v1') {
+if (['workspace-tools-v1', 'workspace-artifacts-v1'].includes(runtime)) {
   const { checkWorkspaceSchema } = await import('./qa/workspace/repository.mjs');
   await checkWorkspaceSchema();
 }

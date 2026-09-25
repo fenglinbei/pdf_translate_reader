@@ -1,0 +1,13 @@
+import type { ArtifactSource, DocumentArtifact, DocumentNode, DocumentRegion, NodeMapping, TextRange } from './qaDocumentArtifact.mjs';
+export type ManifestNode = Omit<DocumentNode,'text'> & { textLength: number; title?: string; pageAnchor?: number;
+  pageSlices: Array<{range: TextRange; pageNumber: number}>; readingParts: string[]; locationParts: string[] };
+export type PartDescriptor = { kind: 'reading' | 'location'; coverage: Array<{ nodeId:string; range:TextRange }>; bytes:number; sha256:string };
+export type DocumentManifest = { version:'document-manifest-v1'; revision:string; source:ArtifactSource; pageCount:number; nodes:ManifestNode[]; parts:Record<string,PartDescriptor>; totalBytes:number };
+export type DocumentPart = { version:'document-part-v1'; revision:string; kind:'reading'|'location';
+ entries:Array<{nodeId:string; range:TextRange; text?:string; segments?:NodeMapping['segments']}>; regions?:DocumentRegion[] };
+export const PART_LIMITS: Readonly<{maxManifestBytes:number;maxPartBytes:number;maxTotalBytes:number}>;
+export function jsonByteLength(value:unknown):number;
+export function sealDocumentManifest(value:unknown):Promise<DocumentManifest>;
+export function decodeDocumentPart(manifest:DocumentManifest,id:string,text:string):Promise<DocumentPart>;
+export function getPartCoverage(manifest:DocumentManifest,id:string,nodeId:string):TextRange|undefined;
+export function packDocumentArtifact(candidate:DocumentArtifact):Promise<{manifest:DocumentManifest;manifestText:string;manifestSha256:string;files:Array<{id:string;text:string}>}>;
