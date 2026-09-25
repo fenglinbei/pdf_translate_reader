@@ -1,0 +1,8 @@
+# First cutover only. Render __SOURCE_SHA__ to the reviewed full commit SHA.
+# Install as pdf-translate-reader.service.d/qa-isolation.conf AFTER the app release exists.
+# Keeps the existing EnvironmentFile, PORT and other core-service settings.
+[Service]
+WorkingDirectory=/opt/apps/pdf_translate_reader/releases/__SOURCE_SHA__
+ExecStart=
+ExecStart=/opt/apps/pdf-reader-qa/runtime/bin/node /opt/apps/pdf_translate_reader/releases/__SOURCE_SHA__/server/index.mjs
+Environment=QA_EMBEDDED_ENABLED=false

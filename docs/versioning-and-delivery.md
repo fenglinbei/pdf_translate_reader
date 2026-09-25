@@ -2,6 +2,8 @@
 
 2026-09-25：[版本化文档与直接引用](qa-document-artifacts-plan.md) 已完成 S1–S5 实现与隔离验证，应用 `0.3.0-alpha.5` / QA `0.5.0-alpha.5`，新 runtime 为 `workspace-artifacts-v1`。沿用已验收的紧凑工作区 UI，部署目标仅为 5175 / 8791；5174 / 8789 保留上一版，正式服务不切换。实际发布与人工验收状态见 [测试交付记录](qa-document-artifacts-acceptance.md)。
 
+2026-09-25：用户总体人工验收通过，开始准备应用 `0.3.0` / QA `0.5.0` 正式制品；列表间距微调已更新测试页。生产仍为原版本，资源、迁移与切换条件见 [上线准备](qa-production-readiness.md)。
+
 状态：仓库实现；生产切流与部署另行验收。本文是后续开发与发布的约束。
 
 2026-09-24：[P1 已收尾](qa-agent-stage-1-closeout.md)，[P2 已实现并完成本地部署](qa-agent-stage-2-implementation.md)。此前 [会话升级](qa-conversation-upgrade-2026-09-24.md) 已将 QA 版本升为 `0.3.0-alpha.3` 并完成本地部署，支持自动判断普通/文档问题，默认使用 DeepSeek V4.1 Flash。当前 [工作区升级](qa-workspace-agent-plan.md) 为 `0.4.0-alpha.3`，已完成本地隔离部署及工程自动验收，用户人工验收待进行。
@@ -15,8 +17,8 @@
 
 | 对象 | 唯一版本来源 | Git 标签 | 当前开发版本 |
 | --- | --- | --- | --- |
-| 应用（阅读器、翻译、文库） | 根 `package.json`，同步 lockfile | `vX.Y.Z` | `0.3.0-alpha.5` |
-| QA 服务 | `server/qa/package.json` | `qa-vX.Y.Z[-alpha.N/-beta.N/-rc.N]` | `0.5.0-alpha.5` |
+| 应用（阅读器、翻译、文库） | 根 `package.json`，同步 lockfile | `vX.Y.Z` | `0.3.0`（待生产发布） |
+| QA 服务 | `server/qa/package.json` | `qa-vX.Y.Z[-alpha.N/-beta.N/-rc.N]` | `0.5.0`（待生产发布） |
 | 检索、提示词、索引协议 | `server/qa/config.mjs` | 随服务发布 | 首次拆分保持原值 |
 
 公共兼容面包含 HTTP 请求、SSE 事件、持久化数据和配置；内部重排不应改变它们。

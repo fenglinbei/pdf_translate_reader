@@ -57,16 +57,16 @@
 .workspace-history-search input { width: 100%; min-width: 0; border: 0; outline: none; background: transparent; font: inherit; }
 .workspace-history-search:focus-within { outline: 2px solid #aab2ed; }
 .workspace-history-list { flex: 1; min-height: 0; overflow-y: auto; }
-.workspace-history-list h3 { margin: 9px 6px 4px; font-size: 11px; font-weight: 500; color: var(--text-muted); }
-.workspace-history-row { position: relative; border: 1px solid transparent; border-radius: 8px; margin-bottom: 2px; }
+.workspace-history-list h3 { margin: 12px 8px 6px; font-size: 11px; font-weight: 500; color: var(--text-muted); }
+.workspace-history-row { position: relative; border: 1px solid transparent; border-radius: 8px; margin-bottom: 4px; }
 .workspace-history-row[aria-current=true] { border-color: #d9ddfa; background: #eef0ff; }
 .workspace-history-row:hover { background: #eff2ed; }
-.workspace-history-select { display: flex; gap: 8px; align-items: flex-start; width: 100%; min-height: 42px; padding: 5px 7px; color: var(--text); background: transparent; border: 0; text-align: left; cursor: pointer; }
+.workspace-history-select { display: flex; gap: 8px; align-items: flex-start; width: 100%; min-height: 48px; padding: 7px 9px; color: var(--text); background: transparent; border: 0; text-align: left; cursor: pointer; }
 .workspace-history-select > svg { flex-shrink: 0; margin-top: 2px; color: #6c76a0; }
 .workspace-history-select > span { min-width: 0; }
 .workspace-history-select strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 550; line-height: 16px; }
-.workspace-history-select small { display: block; padding-right: 78px; color: var(--text-muted); font-size: 11px; line-height: 14px; }
-.workspace-thread-actions { position: absolute; right: 4px; bottom: 2px; display: flex; gap: 3px; opacity: 0; }
+.workspace-history-select small { display: block; margin-top: 2px; padding-right: 78px; color: var(--text-muted); font-size: 11px; line-height: 14px; }
+.workspace-thread-actions { position: absolute; right: 6px; bottom: 5px; display: flex; gap: 3px; opacity: 0; }
 .workspace-history-row:is(:hover, :focus-within, [aria-current=true]) .workspace-thread-actions { opacity: 1; }
 .workspace-thread-actions button, .workspace-rename button { display: grid; place-items: center; width: 23px; height: 22px; border: 0; border-radius: 4px; color: #757c8b; background: transparent; cursor: pointer; }
 .workspace-thread-actions button:hover { color: #4855b7; background: #e1e5f2; }

@@ -1,0 +1,32 @@
+[Unit]
+Description=PDF Reader standalone workspace QA
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=pdf-reader-qa
+Group=pdf-reader-qa
+WorkingDirectory=/opt/apps/pdf-reader-qa
+Environment=NODE_ENV=production
+Environment=QA_ENV_FILE=/opt/apps/pdf-reader-qa/qa.env
+ExecStart=/opt/apps/pdf-reader-qa/runtime/bin/node --max-old-space-size=192 /opt/apps/pdf-reader-qa/current/server/qa-service.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+MemoryHigh=384M
+MemoryMax=512M
+MemorySwapMax=0
+CPUWeight=50
+CPUQuota=60%
+TasksMax=128
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
