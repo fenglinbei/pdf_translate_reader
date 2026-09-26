@@ -14,6 +14,7 @@ Local-first web PDF reader scaffold for sentence-level translation workflows.
 - [QA Agent runtime and learning guide](docs/qa-agent-runtime.md)
 - [Workspace Agent, conversation management and Ask AI milestones (proposal)](docs/qa-workspace-agent-upgrade-plan-2026-09-26.md)
 - [Workspace Agent M0 frozen design, mockups and reproducible baselines](docs/qa-workspace-agent-m0-closeout-2026-09-26.md)
+- [Workspace Agent M1 cloud access implementation scope](docs/qa-workspace-agent-m1-implementation-freeze-2026-09-26.md)
 - [Versioning, CI/CD and QA isolation](docs/versioning-and-delivery.md)
 - [Literature library management](docs/library-management-plan.md)
 
