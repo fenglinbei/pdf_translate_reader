@@ -1,6 +1,8 @@
 # 版本、CI/CD 与 QA 隔离规范
 
-2026-09-25：用户确认测试页验收通过并授权正式发布，应用 `0.3.0` / QA `0.5.0` 已上线。标签 `v0.3.0`、`qa-v0.5.0` 固定到 `bac0e78a988fb0d702e10ad399e540e4577f0e9d`；生产使用独立 QA 服务和 `workspace-artifacts-v1`，数据库升级及双域名切换完成。版本、备份和生产自动验收证据见 [上线记录](qa-production-readiness.md)。
+2026-09-26：应用 `0.3.1` / QA `0.5.1` 已上线，标签 `v0.3.1`、`qa-v0.5.1` 固定到 `acee99ea83f131fa40134e0fe02bccddebc7f363`。本次修复工具空查询、有效引用超限导致的整篇重答，以及阅读过程默认展示过多位置；采用增量迁移，只更新前端和独立 QA，主 API 没有重启。备份、CI 和生产自动验收证据见 [修复记录](qa-citation-reliability-2026-09-26.md)。本轮修复的正式页面人工验收等待用户反馈。
+
+2026-09-25 首发：用户确认测试页验收通过并授权正式发布，应用 `0.3.0` / QA `0.5.0` 上线。标签 `v0.3.0`、`qa-v0.5.0` 固定到 `bac0e78a988fb0d702e10ad399e540e4577f0e9d`；独立 QA 服务、`workspace-artifacts-v1`、数据库升级及双域名切换完成。首发版本、备份和生产自动验收证据见 [上线记录](qa-production-readiness.md)。
 
 此前 [版本化文档与直接引用](qa-document-artifacts-plan.md) 已完成 S1–S5 实现与隔离验证，测试入口 5175 / 8791，5174 / 8789 保留上一版；阶段证据见 [测试交付记录](qa-document-artifacts-acceptance.md)。
 
@@ -14,10 +16,10 @@
 
 采用 [SemVer 2.0.0](https://semver.org/)。应用和独立 QA 服务分开发布：
 
-| 对象 | 唯一版本来源 | Git 标签 | 当前开发版本 |
+| 对象 | 唯一版本来源 | Git 标签 | 当前版本 |
 | --- | --- | --- | --- |
-| 应用（阅读器、翻译、文库） | 根 `package.json`，同步 lockfile | `vX.Y.Z` | `0.3.0`（已生产发布） |
-| QA 服务 | `server/qa/package.json` | `qa-vX.Y.Z[-alpha.N/-beta.N/-rc.N]` | `0.5.0`（已生产发布） |
+| 应用（阅读器、翻译、文库） | 根 `package.json`，同步 lockfile | `vX.Y.Z` | `0.3.1`（已生产发布） |
+| QA 服务 | `server/qa/package.json` | `qa-vX.Y.Z[-alpha.N/-beta.N/-rc.N]` | `0.5.1`（已生产发布） |
 | 检索、提示词、索引协议 | `server/qa/config.mjs` | 随服务发布 | 首次拆分保持原值 |
 
 公共兼容面包含 HTTP 请求、SSE 事件、持久化数据和配置；内部重排不应改变它们。
