@@ -53,5 +53,11 @@
     "persistent refresh/cross-device restore",
     "M1-M7 product integration",
     "all source/second-selection Tweak variants"
-  ]
+  ],
+  "productReview": {
+    "date": "2026-09-26",
+    "status": "accepted_for_M0",
+    "userStatement": "可以先用这版，交互暂时没发现什么问题，请继续完成剩余的M0任务",
+    "scope": "Current mockup interaction direction; not M1-M7 production feature acceptance"
+  }
 }

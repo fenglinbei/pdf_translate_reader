@@ -1,8 +1,10 @@
-# 工作区 Agent M0：资源与协议冻结候选
+# 工作区 Agent M0：资源与协议冻结 v1
 
 日期：2026-09-26
 核对基线：`fc091e6`（`output/qa-document-artifacts` 工作树）
-状态：**推荐方案 / Schema 候选，尚未产品确认、尚未接入运行时**。
+状态：**M0 设计契约已冻结；交互于 2026-09-26 获用户确认，尚未接入新功能运行时。**
+
+冻结索引、预算和证据哈希见 [freeze manifest](contracts/qa-workspace-m0.freeze.json)，出口核对见 [M0 收尾](qa-workspace-agent-m0-closeout-2026-09-26.md)。
 
 本文落实[升级计划](qa-workspace-agent-upgrade-plan-2026-09-26.md)的 M0 技术决定，配套[设计 Schema](contracts/qa-workspace-m0.schema.json)。Schema 仅用于设计审查与样本验证，不是当前 API 文档；没有执行迁移、开启功能或修改生产限额。所有下文“应”“返回”“保存”均描述拟实施行为，现状另列。
 
@@ -59,7 +61,7 @@
 
 ## 3. 推荐工具集与受限参数
 
-版本名候选：`qa-workspace-access-v1`。首期全部只读。用户身份、run ID、线程访问权、设备会话、预算来自 harness；模型参数没有 `userId`、SQL、表名、文件路径、bucket、URL、任意字段表达式。
+冻结版本：`qa-workspace-access-v1`。首期全部只读。用户身份、run ID、线程访问权、设备会话、预算来自 harness；模型参数没有 `userId`、SQL、表名、文件路径、bucket、URL、任意字段表达式。
 
 | 名称 | 参数 | 结果重点 |
 | --- | --- | --- |
@@ -117,7 +119,7 @@ Schema 对 resource 分支限定 filter/sort/groupBy；运行时适配器还须�
 }
 ```
 
-卡片只含 `record/resource/title/preview/version/updatedAt/location/availability` 和已授权业务字段。候选 preview 不是已读完整内容；`workspace_read` 后才登记对应实际字段范围。工具错误为 `ok=false,error={code,message,retryable,details}`；候选错误码：`INVALID_ARGUMENTS`、`UNKNOWN_REFERENCE`、`INVALID_CURSOR`、`CURSOR_EXPIRED`、`RESOURCE_UNAVAILABLE`、`CLIENT_OFFLINE`、`OWNERSHIP_UNCLAIMED`、`VERSION_CHANGED`、`BUDGET_EXHAUSTED`。不通过错误泄露其他用户记录是否存在。
+卡片只含 `record/resource/title/preview/version/updatedAt/location/availability` 和已授权业务字段。候选 preview 不是已读完整内容；`workspace_read` 后才登记对应实际字段范围。工具错误为 `ok=false,error={code,message,retryable,details}`；冻结错误码：`INVALID_ARGUMENTS`、`UNKNOWN_REFERENCE`、`INVALID_CURSOR`、`CURSOR_EXPIRED`、`RESOURCE_UNAVAILABLE`、`CLIENT_OFFLINE`、`OWNERSHIP_UNCLAIMED`、`VERSION_CHANGED`、`BUDGET_EXHAUSTED`。不通过错误泄露其他用户记录是否存在。
 
 `coverage.state=complete` 仅针对声明的数据源/过滤范围，不意味着用户所有设备/被裁剪历史都已覆盖。组合统计只有确定逻辑身份才能去重；否则按 location 分开返回，禁止给伪精确联合 total。
 
@@ -127,7 +129,7 @@ Schema 对 resource 分支限定 filter/sort/groupBy；运行时适配器还须�
 - 会话列表 API：不透明签名游标或服务端存储 token，绑定用户、过滤条件、排序、API 版本、过期时间；不能裸露 offset 冒称快照。推荐 keyset `(pinnedBucket,sortValue,id)`；置顶在每个筛选视图内优先。
 - 列表是 `live_keyset`，活动时间变动可能让记录移动；UI 刷新首屏并按 ID 去重。统计是该 SQL 语句的 `asOf`，跨请求统计与列表不保证同一事务快照。
 - 版本化正文保持当前固定产物快照。读记录后发生修改，原读取来源保留旧版本；要回答“最新”必须重读并登记新版本。
-- 候选 TTL：工具游标随运行终止失效；会话游标 30 分钟。此值待分页/负载样本验证。
+- 冻结 TTL：工具游标随运行终止失效；会话游标 30 分钟。keyset 语义已在隔离 SQL 样本验证，真实 API 的签名、过期与变动分页在 M1/M2 验收。
 
 ## 4. 来源与输入附件
 
@@ -136,15 +138,15 @@ Schema 对 resource 分支限定 filter/sort/groupBy；运行时适配器还须�
 | sourceKind / 本轮引用 | 证明什么 | 不能证明什么 |
 | --- | --- | --- |
 | `document_artifact` / 原有 `R`、展示 `C` | 服务端授权的指定版本、实际读取范围与原文映射 | 语义论断必然成立、逐字高亮一定可用 |
-| `workspace_record` / 候选 `W1` | 指定业务记录、版本、读取字段/范围 | 笔记/译文/历史模型回答等同论文事实 |
-| `query_snapshot` / 候选 `Q1` | 执行时间、查询口径、数据源、精确或不完整计数 | 缺失设备、裁剪历史、未知费用也被覆盖 |
-| `user_selection` / 候选 `U1` | 用户主动提交的不可变选文与几何/提取信息 | 客户端提供的正文已经服务器核验 |
+| `workspace_record` / `W1` | 指定业务记录、版本、读取字段/范围 | 笔记/译文/历史模型回答等同论文事实 |
+| `query_snapshot` / `Q1` | 执行时间、查询口径、数据源、精确或不完整计数 | 缺失设备、裁剪历史、未知费用也被覆盖 |
+| `user_selection` / `U1` | 用户主动提交的不可变选文与几何/提取信息 | 客户端提供的正文已经服务器核验 |
 
 来源内部共同字段：`sourceId/sourceKind/sourceVersion/authority/resourceIdentity/readScope/contentHash/capturedAt/availability/locator`；`userId/runId` 由服务器登记，模型不能填写。authority 仅服务端赋值：`server_verified_document/account_record/client_owned_record/user_supplied`。已读记录的 `readScope` 指明 fields 和 range；查询来源保存规范化过滤器与覆盖；客户端来源保存设备会话和回传摘要，不保存凭据。
 
-新类型建议落到 `user_qa_sources`，`user_qa_message_sources` 记录答案/输入与来源关系；原 `user_qa_citations` 和老答案保持兼容读取。以上只是表名候选，不执行 migration。最终输出显示自然的“笔记 / 历史对话 / 统计口径 / 用户选文”来源卡；不要把所有内容渲染成 PDF 引用。
+新类型计划落到 `user_qa_sources`，`user_qa_message_sources` 记录答案/输入与来源关系；原 `user_qa_citations` 和老答案保持兼容读取。以上为冻结的目标表名，不执行 migration；M1 实现时仍需完整 SQL/RLS/升级兼容审查。最终输出显示自然的“笔记 / 历史对话 / 统计口径 / 用户选文”来源卡；不要把所有内容渲染成 PDF 引用。
 
-附带 Schema 的 `sourceRecord` 是新统一来源投影候选，不替换现有 document_artifact 的完整定位 Schema；真实产物仍由既有 `citation-locator-v2` 校验与保存。不同 run 的 W/Q/U/R/C 不能复用。重新回答重验权限，依据保存的资源身份与版本重新登记；文档删除/撤权后显示来源不可访问，不能暗中回绑新版或同名文件。
+附带 Schema 的 `sourceRecord` 是冻结的新统一来源投影，不替换现有 document_artifact 的完整定位 Schema；真实产物仍由既有 `citation-locator-v2` 校验与保存。不同 run 的 W/Q/U/R/C 不能复用。重新回答重验权限，依据保存的资源身份与版本重新登记；文档删除/撤权后显示来源不可访问，不能暗中回绑新版或同名文件。
 
 ### 4.2 选文附件 `qa-input-attachments-v1`
 
@@ -212,53 +214,45 @@ Schema 对 resource 分支限定 filter/sort/groupBy；运行时适配器还须�
 
 离线/关闭标签页返回明确 unavailable，云端任务可继续。持久恢复在 M6 扩展，M4 不承诺关闭浏览器后继续读取本机资料。客户端不能回传任意 URL/路径让服务器读取，也不能通过声明扩大文件范围。
 
-## 8. 限额候选与必须补测项
+## 8. 冻结限额与量化回归口径
 
-现有值是代码观测，候选值是设计起点。**未测之前，不把候选称作已冻结性能指标。** 字符量统一按 UTF-16 code units 与现有 JS 实现对齐，UI 可显示字符近似；UTF-8 字节和模型 token 另外计量，不能互相等同。
+以下冻结为 M1–M6 的初始实现边界，只有标为已有的值当前生效；它们不是最优容量结论或生产 SLA。当前运行路径、隔离数据库及标题辅助已分别测定，见 [运行基线](qa-workspace-agent-m0-runtime-2026-09-26.md)、[数据库基线](qa-workspace-agent-m0-database-2026-09-26.md)、[标题基线](qa-workspace-agent-m0-titles-2026-09-26.md)。字符量统一按 UTF-16 code units 与现有 JS 实现对齐；UTF-8 字节和模型 token 另外计量。
 
-| 项目 | 已有值/证据 | 推荐候选 |
+| 项目 | 已有值/证据 | 冻结值与实施边界 |
 | --- | --- | --- |
 | 主循环 | maxCalls=12 / maxTools=24 / 单批最多 4；`server/qa/workspace/runtime.mjs` | 保持总预算，新工具共用，不每类另开 24 次 |
 | 产物阅读 | 单次 14,000；单 run 96,000 字符；最多 8 文档 | 96,000 扩为所有读入工具资料共享上限，原产物上限不增加 |
-| 产物扫描 | 单次 128,000；单 run 1,000,000 字符；`documentArtifacts/tools.mjs` | 本地/云新适配器各报扫描量，run 总字符扫描仍 1,000,000，最多 2,000 条轻量记录；超限 coverage partial |
+| 产物扫描 | 单次 128,000；单 run 1,000,000 字符；`documentArtifacts/tools.mjs` | 本地/云新适配器各报扫描量，run 总字符扫描仍 1,000,000，最多 2,000 条应用层轻量记录；超限 coverage partial。数据库受限精确 COUNT 不因匹配数超过 2,000 而截断 |
 | 卡片分页 | 发现 10，会话 30 | workspace_query 默认 10 最大 30；preview 300 字符；会话 30，查询 limit+1 得真实 hasMore |
 | 读取/来源 | 现有原文最多 2,048 句柄；`publishedReferences.mjs` | 新增非原文来源最多 64/run；仍计共享总字符预算；最终展示遵循现有引用预算并单列不同种类 |
 | 问题/附件 | 旧请求问题 slice(0,2000)、body 64 KiB；`server/routes/qa.mjs` | v2 问题上限 2,000，附件最多 4、选文每件 4,000、总 12,000、独立上下文总 4,000；v2 body 最大 128 KiB；任一超限明确拒绝，不静默截断 |
 | 草稿 | QA 无持久上限 | 每用户 50 草稿、合计 5 MiB；达到上限提示管理，不自动删未发送内容；附件遵循发送上限 |
-| 标题辅助 | 尚未实现 | 每用户并发 1，进程并发 1、低优先级；输入最多 1,200 tokens、输出最多 64、超时 15 秒、最多 1 次明确可重试失败重试；完成状态未知不盲目重付费 |
+| 标题辅助 | 尚未实现 | 每用户最多 1 个待处理、进程活动 1 / 待处理 16，前台有空余才启动；问题/回答/附件名投影 360/480/2×96 UTF-8 bytes，输入保守预留最多 2,048（字节数+256，不是精确 token）；输出 64 tokens、15 秒、0 自动重试；语言/格式/终态不符保留临时标题，usage 未知不记零费用 |
 | 客户端工具 | 尚未实现 | 每 run 在途 1，15 秒超时；单结果 128 KiB；任务可取消；单批扫描按预算让出主线程 |
 | 查询缓存 | 新通用缓存尚未实现 | 进程总 16 MiB、单用户 2 MiB、TTL 60 秒；键含用户/资源版本/查询/位置，不缓存无主数据；硬淘汰不删除业务数据 |
 
-这些候选需要在原 2 CPU / 2 GB 目标约束下验证：查询/统计 SQL 计划，中文/英文/跨语言召回，正文/附件 token 开销，10 用户并发提交的有限排队与取消，内存峰值，标题与主任务争用，索引失效/修改后的覆盖。现有生产运行/排队配置本轮未读取，不填猜测数值。
+当前运行基线已在真实 2 CPU / 2 GiB cgroup 下以合成模型和存储完成 1,230 次计时请求；数据库另用 PGlite 测 SQL/计划，标题完成 16 次真实短请求。新缓存 2/16 MiB 是容量上限及序列化核算，不是命中/淘汰实测；新附件/客户端通道与标题调度须在所属里程碑实现后验收，不能用旧路径测量冒充通过。
+
+同 fixture/Node/硬限额，三进程 p95 中位数超过 `基线 × 1.5 + 5ms`、RSS 中位数超过 `基线 × 1.25 + 32MiB` 时必须调查；漏许可、越权、取消后提交、热读后端加载非零直接失败。数据库计时只作 PGlite 比较基线，真实 Supabase 的角色/RLS/网络和索引计划须在 M1 测试环境另验。未读取生产环境覆盖配置，2/8/120秒是代码默认与本次测量配置。
 
 ## 9. 冻结条件与 M1/M2 开工清单
 
 - 资源矩阵逐项有操作/归属/覆盖；云端与本地现状不再混称“已接通”。
 - 操作 Schema 可编译，合法样本通过；身份/SQL/未知字段/错资源过滤器/混合 cursor 参数等反例被拒绝。
-- 来源、附件、revision、标题 CAS、草稿冲突规则以本文为同一套候选；UI 文案/视觉稿与之相符。
-- 产品确认推荐交互；固定评测集与当前基线可重跑。延迟、成本、并发等尚未测项目保留 pending，不通过文档日期冒充测量。
+- 来源、附件、revision、标题 CAS、草稿冲突规则以本文为冻结 v1；UI 文案/视觉稿与之相符。
+- 产品已确认当前交互；固定评测样本与当前基线可重跑。测量结果、有限失败样本和未接入新能力的验收边界分别保存；38 个未来案例继续 not_executed。
 - 冻结后先实现 M1 服务端读适配器/来源保存，与 M2 会话/草稿并行；不把 M4 客户端协议当作 M1 已交付内容。
 
 ### 本轮设计验证结果
 
 设计 Schema 使用仓库现有 Ajv 以 `strict: true, allErrors: true` 成功编译；合成样本 **20 个合法通过、25 个非法被拒绝**。覆盖五个工具、草稿、PDF.js 精确选文、MathPix 行近似、viewport 坐标、记录/查询/用户选文来源，以及列表/读取/计数/概览/错误结果。反例包含身份或 SQL 注入字段、资源过滤器不匹配、混合游标、伪造 verified、空/纯空白文字、空段列表、错误几何字段、负宽度、缺 capture scale、错误页码类型、来源权限类型混用和错误续页形状。
 
-这些只证明设计的结构校验。JSON Schema 的 `maxLength` 按 Unicode code point 计数；候选预算按 UTF-16 计，实施时必须另用一致的长度函数校验。单件选文预算按各段 `max(rawText?.length ?? 0, normalizedText.length)` 求和，跨附件再求和；contextSegments 单独求和。附件总字符/字节、哈希真实性、坐标是否位于页面、资源句柄类型匹配、本地/云端归属和标题事务 CAS 仍需运行时/数据库验证，不能由这 45 个样本宣称通过。
+这些只证明设计的结构校验。JSON Schema 的 `maxLength` 按 Unicode code point 计数；冻结预算按 UTF-16 计，实施时必须另用一致的长度函数校验。单件选文预算按各段 `max(rawText?.length ?? 0, normalizedText.length)` 求和，跨附件再求和；contextSegments 单独求和。附件总字符/字节、哈希真实性、坐标是否位于页面、资源句柄类型匹配、本地/云端归属和标题事务 CAS 仍需运行时/数据库验证，不能由这 45 个样本宣称通过。
 
 复核命令（仓库根目录）：
 
-```sh
-node --input-type=module - <<'JS'
-import fs from 'node:fs';
-import Ajv from 'ajv';
-const schema = JSON.parse(fs.readFileSync('docs/contracts/qa-workspace-m0.schema.json', 'utf8'));
-const samples = JSON.parse(fs.readFileSync('docs/contracts/qa-workspace-m0.examples.json', 'utf8'));
-const validate = new Ajv({ strict: true, allErrors: true }).compile(schema);
-for (const kind of ['valid', 'invalid']) {
-  for (const [index, sample] of samples[kind].entries()) {
-    if (validate(sample) !== (kind === 'valid')) throw new Error(`${kind}[${index}]: ${JSON.stringify(validate.errors)}`);
-  }
-}
-console.log(`${samples.valid.length} valid, ${samples.invalid.length} invalid: PASS`);
-JS
+```bash
+npm run check:qa-m0
 ```
+
+检查器严格编译 Schema、核对 20 个合法 / 25 个非法样本与固定数据 oracle，并输出未来案例执行数为 0。改变已冻结字段、预算或样本预期应更新版本和决策记录，不静默覆盖历史测量。

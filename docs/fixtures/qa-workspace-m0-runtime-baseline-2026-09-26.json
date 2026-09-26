@@ -1,0 +1,6366 @@
+{
+  "schemaVersion": "qa-m0-runtime-baseline-aggregate-v1",
+  "sourceSha": "7113e0ad32488cff5a8259e63dee22865b85bfd9",
+  "sourceShaMeaning": "unchanged business runtime parent baseline; new benchmark script is identified separately by scriptSha256",
+  "measuredAt": [
+    "2026-09-26T07:17:07.545Z",
+    "2026-09-26T07:17:09.454Z",
+    "2026-09-26T07:17:11.348Z"
+  ],
+  "scriptSha256": "385330f3efda13484677806959af628935daa4d2e25c7ac0a5930da3e7e80bd9",
+  "environment": {
+    "node": "v24.19.0",
+    "platform": "linux",
+    "arch": "x64",
+    "limits": {
+      "cgroupPath": "/",
+      "cpuMax": "200000 100000",
+      "memoryMax": "2147483648",
+      "memorySwapMax": "0",
+      "cpusetEffective": "0-23",
+      "hardTwoCpuTwoGiB": true
+    },
+    "network": "no external network; service fetch forbidden; isolated native fetch allowed only to benchmark-owned 127.0.0.1 ephemeral HTTP server; container --network none",
+    "model": "deterministic native tool-call/stream adapter; no artificial sleep and no provider call",
+    "database": "synthetic in-memory persistence callbacks, not PostgreSQL or Supabase",
+    "transport": "harness scenarios use in-memory response; http_loopback scenarios use actual HTTP/SSE over loopback; no product auth/browser/proxy/TLS"
+  },
+  "path": [
+    "handleWorkspaceStream",
+    "createDocumentRunContext",
+    "runWorkspaceAgent",
+    "createArtifactProtocol",
+    "createArtifactWorkspace",
+    "createArtifactLoader",
+    "createSseWriter"
+  ],
+  "fixture": {
+    "paragraphs": 90,
+    "sourceUtf8Bytes": 25882,
+    "manifestUtf8Bytes": 33258,
+    "artifactPartCount": 4,
+    "artifactTotalUtf8Bytes": 111546,
+    "revision": "b7c6eec33a5236ab1d76d08c2fa2e5fe857f50160d0f18b7ae34c57590efcc44",
+    "preparedBeforeTiming": true
+  },
+  "measurement": {
+    "clock": "performance.now monotonic",
+    "firstDelta": "harness: first nonempty answer delta written by actual SSE writer, including admission waiting; http_loopback: client receives first nonempty answer delta",
+    "total": "harness: submission to completed stream persistence/error cleanup; http_loopback: fetch start through done and body EOF, with server timings separately recorded",
+    "percentiles": "nearest-rank, warmups excluded where stated",
+    "sourceCache": "actual loader hits/misses and estimated resident bytes; actual backing-store UTF-8 loads; not network/disk throughput",
+    "rss": "sampled RSS per SSE write plus 1ms sampler; process maxRSS and cgroup peak include preparation and all scenarios in this single process",
+    "syntheticTokenUsage": "adapter supplies fixed illustrative tokens only to exercise usage persistence; never billable/token-cost measurements"
+  },
+  "freshProcesses": 3,
+  "measuredRequests": 1230,
+  "comparisonAnchors": [
+    {
+      "name": "ordinary",
+      "sampleCountsPerRun": [
+        30,
+        30,
+        30
+      ],
+      "medianFirstDeltaP50Ms": 0.162,
+      "medianFirstDeltaP95Ms": 0.271,
+      "medianTotalP50Ms": 0.419,
+      "medianTotalP95Ms": 0.621,
+      "medianQueueWaitP95Ms": 0,
+      "terminalStatusesPerRun": [
+        {
+          "success": 30
+        },
+        {
+          "success": 30
+        },
+        {
+          "success": 30
+        }
+      ],
+      "note": "Median of three independent run percentiles; not a pooled percentile."
+    },
+    {
+      "name": "document_read_cold",
+      "sampleCountsPerRun": [
+        30,
+        30,
+        30
+      ],
+      "medianFirstDeltaP50Ms": 3.58,
+      "medianFirstDeltaP95Ms": 6.261,
+      "medianTotalP50Ms": 3.979,
+      "medianTotalP95Ms": 6.882,
+      "medianQueueWaitP95Ms": 0,
+      "terminalStatusesPerRun": [
+        {
+          "success": 30
+        },
+        {
+          "success": 30
+        },
+        {
+          "success": 30
+        }
+      ],
+      "note": "Median of three independent run percentiles; not a pooled percentile."
+    },
+    {
+      "name": "document_read_warm",
+      "sampleCountsPerRun": [
+        30,
+        30,
+        30
+      ],
+      "medianFirstDeltaP50Ms": 1.401,
+      "medianFirstDeltaP95Ms": 3.373,
+      "medianTotalP50Ms": 1.754,
+      "medianTotalP95Ms": 4.373,
+      "medianQueueWaitP95Ms": 0,
+      "terminalStatusesPerRun": [
+        {
+          "success": 30
+        },
+        {
+          "success": 30
+        },
+        {
+          "success": 30
+        }
+      ],
+      "note": "Median of three independent run percentiles; not a pooled percentile."
+    },
+    {
+      "name": "document_search_miss_cold",
+      "sampleCountsPerRun": [
+        30,
+        30,
+        30
+      ],
+      "medianFirstDeltaP50Ms": 3.006,
+      "medianFirstDeltaP95Ms": 5.303,
+      "medianTotalP50Ms": 3.312,
+      "medianTotalP95Ms": 5.633,
+      "medianQueueWaitP95Ms": 0,
+      "terminalStatusesPerRun": [
+        {
+          "success": 30
+        },
+        {
+          "success": 30
+        },
+        {
+          "success": 30
+        }
+      ],
+      "note": "Median of three independent run percentiles; not a pooled percentile."
+    },
+    {
+      "name": "active_cancel",
+      "sampleCountsPerRun": [
+        30,
+        30,
+        30
+      ],
+      "medianFirstDeltaP50Ms": 0.153,
+      "medianFirstDeltaP95Ms": 0.189,
+      "medianTotalP50Ms": 0.252,
+      "medianTotalP95Ms": 0.302,
+      "medianQueueWaitP95Ms": 0,
+      "terminalStatusesPerRun": [
+        {
+          "aborted": 30
+        },
+        {
+          "aborted": 30
+        },
+        {
+          "aborted": 30
+        }
+      ],
+      "note": "Median of three independent run percentiles; not a pooled percentile."
+    },
+    {
+      "name": "ten_users_document_read",
+      "sampleCountsPerRun": [
+        100,
+        100,
+        100
+      ],
+      "medianFirstDeltaP50Ms": 19.696,
+      "medianFirstDeltaP95Ms": 37.317,
+      "medianTotalP50Ms": 21.472,
+      "medianTotalP95Ms": 38.827,
+      "medianQueueWaitP95Ms": 31.513,
+      "terminalStatusesPerRun": [
+        {
+          "success": 100
+        },
+        {
+          "success": 100
+        },
+        {
+          "success": 100
+        }
+      ],
+      "note": "Median of three independent run percentiles; not a pooled percentile."
+    },
+    {
+      "name": "ten_users_one_queued_cancel",
+      "sampleCountsPerRun": [
+        100,
+        100,
+        100
+      ],
+      "medianFirstDeltaP50Ms": 16.995,
+      "medianFirstDeltaP95Ms": 32.573,
+      "medianTotalP50Ms": 19.584,
+      "medianTotalP95Ms": 33.432,
+      "medianQueueWaitP95Ms": 29.113,
+      "terminalStatusesPerRun": [
+        {
+          "success": 90,
+          "queued_cancelled": 10
+        },
+        {
+          "success": 90,
+          "queued_cancelled": 10
+        },
+        {
+          "success": 90,
+          "queued_cancelled": 10
+        }
+      ],
+      "note": "Latency anchors use only the nine successful requests per batch; queued-cancel timing remains in run summaries."
+    },
+    {
+      "name": "http_loopback_ordinary",
+      "sampleCountsPerRun": [
+        30,
+        30,
+        30
+      ],
+      "medianFirstDeltaP50Ms": 1.72,
+      "medianFirstDeltaP95Ms": 2.146,
+      "medianTotalP50Ms": 2.412,
+      "medianTotalP95Ms": 2.978,
+      "medianQueueWaitP95Ms": 0,
+      "terminalStatusesPerRun": [
+        {
+          "success": 30
+        },
+        {
+          "success": 30
+        },
+        {
+          "success": 30
+        }
+      ],
+      "note": "Median of three independent run percentiles; not a pooled percentile."
+    },
+    {
+      "name": "http_loopback_document_read",
+      "sampleCountsPerRun": [
+        30,
+        30,
+        30
+      ],
+      "medianFirstDeltaP50Ms": 4.761,
+      "medianFirstDeltaP95Ms": 7.388,
+      "medianTotalP50Ms": 5.699,
+      "medianTotalP95Ms": 8.411,
+      "medianQueueWaitP95Ms": 0,
+      "terminalStatusesPerRun": [
+        {
+          "success": 30
+        },
+        {
+          "success": 30
+        },
+        {
+          "success": 30
+        }
+      ],
+      "note": "Median of three independent run percentiles; not a pooled percentile."
+    }
+  ],
+  "resources": {
+    "processMaxRssKiBPerRun": [
+      177108,
+      175824,
+      175404
+    ],
+    "medianProcessMaxRssKiB": 175824,
+    "cgroupMemoryPeakBytesPerRun": [
+      134414336,
+      131325952,
+      131092480
+    ]
+  },
+  "hardAssertions": {
+    "allSatisfied": true,
+    "runtime": "workspace-artifacts-v1",
+    "ordinaryModelCalls": 1,
+    "ordinaryToolCalls": 0,
+    "documentModelCalls": 2,
+    "documentToolCalls": 1,
+    "activeMaximum": 2,
+    "queueMaximum": 8,
+    "activeCancelCommits": 0,
+    "queuedCancelModelCalls": 0,
+    "allLeasesReleased": true
+  },
+  "frozenComparisonPolicy": {
+    "applicability": "same source fixture version, Node version, hard limits and synthetic adapter; compare median p95 from three fresh process runs; not production/provider SLA",
+    "timingRegression": {
+      "factor": 1.5,
+      "additiveNoiseFloorMs": 5,
+      "formula": "candidate median p95 > baseline median p95 * 1.5 + 5ms requires investigation; also inspect p50 and raw sample counts"
+    },
+    "rssRegression": {
+      "factor": 1.25,
+      "additiveNoiseFloorBytes": 33554432,
+      "formula": "candidate processMaxRSS > baseline processMaxRSS * 1.25 + 32MiB requires investigation"
+    },
+    "exactSemanticBudgets": {
+      "ordinaryModelCalls": 1,
+      "ordinaryToolCalls": 0,
+      "documentReadModelCalls": 2,
+      "documentReadToolCalls": 1,
+      "activeMaximum": 2,
+      "queuedMaximum": 8,
+      "activeCancelCommits": 0,
+      "queuedCancelModelCalls": 0,
+      "leakedLeases": 0
+    },
+    "cacheAndScanRegression": "same fixture: cold backing-store bytes and scanChars must not increase; warm read must retain zero backing-store bytes; any increase needs explicit scope review"
+  },
+  "initialRuntimeBudgets": {
+    "status": "freeze current implemented budgets; no runtime/config change",
+    "modelCallsPerRun": 12,
+    "toolsPerRun": 24,
+    "activeRuns": 2,
+    "queuedRuns": 8,
+    "queueWaitMs": 120000,
+    "streamDeadlineMs": 300000,
+    "artifactLoaderCacheBytes": 33554432,
+    "artifactLoaderCacheEntries": 256,
+    "artifactLoaderPending": 32,
+    "returnedCharsPerReadCall": 14000,
+    "returnedCharsPerRun": 96000,
+    "searchScanCharsPerCall": 128000,
+    "searchScanCharsPerRun": 1000000,
+    "documentsPerRun": 8,
+    "newResourceOrAuxiliaryBudget": "not measured by this benchmark; define separately before enabling",
+    "observedMaxReturnedChars": 9006,
+    "observedMaxScanChars": 25594
+  },
+  "runs": [
+    {
+      "index": 1,
+      "measuredAt": "2026-09-26T07:17:07.545Z",
+      "rawResultSha256": "bef5d586084078dec0f93e41c3cba1f92bfab92e7943b76074611749c7100a6a",
+      "resources": {
+        "sampledPeakRssBytes": 180178944,
+        "processMaxRssKiB": 177108,
+        "cgroupMemoryPeakBytes": 134414336,
+        "cgroupMemoryEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+        "cpuStat": "usage_usec 2209384\nuser_usec 1970882\nsystem_usec 238501\ncore_sched.force_idle_usec 0\nnr_periods 17\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+      },
+      "scenarios": [
+        {
+          "name": "ordinary",
+          "sampleCount": 30,
+          "terminalStatuses": {
+            "success": 30
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 0.141,
+              "p50": 0.162,
+              "p95": 0.271,
+              "max": 0.334
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 0.378,
+              "p50": 0.419,
+              "p95": 0.621,
+              "max": 0.686
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 0.141,
+              "p50": 0.162,
+              "p95": 0.271,
+              "max": 0.334
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 0.378,
+              "p50": 0.419,
+              "p95": 0.621,
+              "max": 0.686
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "toolCalls": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "returnedChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "scanChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheHits": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheMisses": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "dbReadCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 30,
+              "min": 7,
+              "p50": 7,
+              "p95": 7,
+              "max": 7
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 30,
+              "min": 2925,
+              "p50": 2933,
+              "p95": 2933,
+              "max": 2933
+            },
+            "responseBytes": {
+              "count": 30,
+              "min": 2456,
+              "p50": 2465,
+              "p95": 2465,
+              "max": 2465
+            }
+          },
+          "sampledPeakRssBytes": 93855744,
+          "warmupRequestsExcluded": 5,
+          "cacheMode": "new loader per request"
+        },
+        {
+          "name": "document_read_cold",
+          "sampleCount": 30,
+          "terminalStatuses": {
+            "success": 30
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 3.072,
+              "p50": 3.58,
+              "p95": 6.261,
+              "max": 6.632
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 3.489,
+              "p50": 3.979,
+              "p95": 6.882,
+              "max": 7.256
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 3.072,
+              "p50": 3.58,
+              "p95": 6.261,
+              "max": 6.632
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 3.489,
+              "p50": 3.979,
+              "p95": 6.882,
+              "max": 7.256
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "toolCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "returnedChars": {
+              "count": 30,
+              "min": 9006,
+              "p50": 9006,
+              "p95": 9006,
+              "max": 9006
+            },
+            "scanChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 30,
+              "min": 55355,
+              "p50": 55355,
+              "p95": 55355,
+              "max": 55355
+            },
+            "cacheHits": {
+              "count": 30,
+              "min": 31,
+              "p50": 31,
+              "p95": 31,
+              "max": 31
+            },
+            "cacheMisses": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 30,
+              "min": 221420,
+              "p50": 221420,
+              "p95": 221420,
+              "max": 221420
+            },
+            "dbReadCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 30,
+              "min": 11,
+              "p50": 11,
+              "p95": 11,
+              "max": 11
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 30,
+              "min": 23384,
+              "p50": 23384,
+              "p95": 23384,
+              "max": 23384
+            },
+            "responseBytes": {
+              "count": 30,
+              "min": 11264,
+              "p50": 11264,
+              "p95": 11264,
+              "max": 11264
+            }
+          },
+          "sampledPeakRssBytes": 116240384,
+          "warmupRequestsExcluded": 5,
+          "cacheMode": "new loader per request"
+        },
+        {
+          "name": "document_read_warm",
+          "sampleCount": 30,
+          "terminalStatuses": {
+            "success": 30
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 1.348,
+              "p50": 1.401,
+              "p95": 3.299,
+              "max": 3.376
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 1.704,
+              "p50": 1.759,
+              "p95": 4.303,
+              "max": 4.304
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 1.348,
+              "p50": 1.401,
+              "p95": 3.299,
+              "max": 3.376
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 1.704,
+              "p50": 1.759,
+              "p95": 4.303,
+              "max": 4.304
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "toolCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "returnedChars": {
+              "count": 30,
+              "min": 9006,
+              "p50": 9006,
+              "p95": 9006,
+              "max": 9006
+            },
+            "scanChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheHits": {
+              "count": 30,
+              "min": 33,
+              "p50": 33,
+              "p95": 33,
+              "max": 33
+            },
+            "cacheMisses": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 30,
+              "min": 221420,
+              "p50": 221420,
+              "p95": 221420,
+              "max": 221420
+            },
+            "dbReadCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 30,
+              "min": 11,
+              "p50": 11,
+              "p95": 11,
+              "max": 11
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 30,
+              "min": 23384,
+              "p50": 23384,
+              "p95": 23402,
+              "max": 23402
+            },
+            "responseBytes": {
+              "count": 30,
+              "min": 11264,
+              "p50": 11264,
+              "p95": 11297,
+              "max": 11297
+            }
+          },
+          "sampledPeakRssBytes": 121155584,
+          "warmupRequestsExcluded": 5,
+          "cacheMode": "same-owner loader retained across warmup and measured requests"
+        },
+        {
+          "name": "document_search_miss_cold",
+          "sampleCount": 30,
+          "terminalStatuses": {
+            "success": 30
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 2.811,
+              "p50": 2.96,
+              "p95": 5.159,
+              "max": 6.036
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 3.114,
+              "p50": 3.276,
+              "p95": 5.467,
+              "max": 6.432
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 2.811,
+              "p50": 2.96,
+              "p95": 5.159,
+              "max": 6.036
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 3.114,
+              "p50": 3.276,
+              "p95": 5.467,
+              "max": 6.432
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "toolCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "returnedChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "scanChars": {
+              "count": 30,
+              "min": 25594,
+              "p50": 25594,
+              "p95": 25594,
+              "max": 25594
+            },
+            "artifactLoadCalls": {
+              "count": 30,
+              "min": 3,
+              "p50": 3,
+              "p95": 3,
+              "max": 3
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 30,
+              "min": 64969,
+              "p50": 64969,
+              "p95": 64969,
+              "max": 64969
+            },
+            "cacheHits": {
+              "count": 30,
+              "min": 88,
+              "p50": 88,
+              "p95": 88,
+              "max": 88
+            },
+            "cacheMisses": {
+              "count": 30,
+              "min": 3,
+              "p50": 3,
+              "p95": 3,
+              "max": 3
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 30,
+              "min": 259876,
+              "p50": 259876,
+              "p95": 259876,
+              "max": 259876
+            },
+            "dbReadCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 30,
+              "min": 11,
+              "p50": 11,
+              "p95": 11,
+              "max": 11
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 30,
+              "min": 5323,
+              "p50": 5323,
+              "p95": 5323,
+              "max": 5323
+            },
+            "responseBytes": {
+              "count": 30,
+              "min": 5877,
+              "p50": 5877,
+              "p95": 5877,
+              "max": 5877
+            }
+          },
+          "sampledPeakRssBytes": 140214272,
+          "warmupRequestsExcluded": 5,
+          "cacheMode": "new loader per request"
+        },
+        {
+          "name": "active_cancel",
+          "sampleCount": 30,
+          "terminalStatuses": {
+            "aborted": 30
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "totalMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "queueWaitMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 0.152,
+              "p50": 0.156,
+              "p95": 0.189,
+              "max": 0.205
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 0.242,
+              "p50": 0.252,
+              "p95": 0.307,
+              "max": 0.323
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 30,
+              "min": 0.088,
+              "p50": 0.092,
+              "p95": 0.121,
+              "max": 0.124
+            },
+            "modelCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "toolCalls": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "returnedChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "scanChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheHits": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheMisses": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "dbReadCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 30,
+              "min": 7,
+              "p50": 7,
+              "p95": 7,
+              "max": 7
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 30,
+              "min": 2306,
+              "p50": 2306,
+              "p95": 2306,
+              "max": 2306
+            },
+            "responseBytes": {
+              "count": 30,
+              "min": 326,
+              "p50": 326,
+              "p95": 326,
+              "max": 326
+            }
+          },
+          "sampledPeakRssBytes": 142573568,
+          "warmupRequestsExcluded": 5,
+          "cacheMode": "new loader per request"
+        },
+        {
+          "name": "ten_users_document_read",
+          "sampleCount": 100,
+          "terminalStatuses": {
+            "success": 100
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 100,
+              "min": 4.612,
+              "p50": 19.696,
+              "p95": 37.672,
+              "max": 42.942
+            },
+            "totalMs": {
+              "count": 100,
+              "min": 6.261,
+              "p50": 21.472,
+              "p95": 38.724,
+              "max": 43.7
+            },
+            "queueWaitMs": {
+              "count": 100,
+              "min": 0.046,
+              "p50": 14.06,
+              "p95": 31.446,
+              "max": 36.94
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 100,
+              "min": 4.612,
+              "p50": 19.696,
+              "p95": 37.672,
+              "max": 42.942
+            },
+            "totalMs": {
+              "count": 100,
+              "min": 6.261,
+              "p50": 21.472,
+              "p95": 38.724,
+              "max": 43.7
+            },
+            "queueWaitMs": {
+              "count": 100,
+              "min": 0.046,
+              "p50": 14.06,
+              "p95": 31.446,
+              "max": 36.94
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 100,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "toolCalls": {
+              "count": 100,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "returnedChars": {
+              "count": 100,
+              "min": 9006,
+              "p50": 9006,
+              "p95": 9006,
+              "max": 9006
+            },
+            "scanChars": {
+              "count": 100,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 100,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 100,
+              "min": 55355,
+              "p50": 55355,
+              "p95": 55355,
+              "max": 55355
+            },
+            "cacheHits": {
+              "count": 100,
+              "min": 31,
+              "p50": 31,
+              "p95": 31,
+              "max": 31
+            },
+            "cacheMisses": {
+              "count": 100,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 100,
+              "min": 221420,
+              "p50": 221420,
+              "p95": 221420,
+              "max": 221420
+            },
+            "dbReadCalls": {
+              "count": 100,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 100,
+              "min": 11,
+              "p50": 11,
+              "p95": 11,
+              "max": 11
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 100,
+              "min": 23347,
+              "p50": 23347,
+              "p95": 23349,
+              "max": 23349
+            },
+            "responseBytes": {
+              "count": 100,
+              "min": 11252,
+              "p50": 11252,
+              "p95": 11254,
+              "max": 11254
+            }
+          },
+          "sampledPeakRssBytes": 160657408,
+          "batches": [
+            {
+              "batch": 0,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 1,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 2,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 3,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 4,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 5,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 6,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 7,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 8,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 9,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            }
+          ],
+          "warmupRequestsExcluded": 0
+        },
+        {
+          "name": "ten_users_one_queued_cancel",
+          "sampleCount": 100,
+          "terminalStatuses": {
+            "success": 90,
+            "queued_cancelled": 10
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 90,
+              "min": 4.593,
+              "p50": 16.995,
+              "p95": 32.606,
+              "max": 35.914
+            },
+            "totalMs": {
+              "count": 90,
+              "min": 6.187,
+              "p50": 19.978,
+              "p95": 33.432,
+              "max": 36.277
+            },
+            "queueWaitMs": {
+              "count": 90,
+              "min": 0.084,
+              "p50": 12.929,
+              "p95": 29.113,
+              "max": 32.619
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 90,
+              "min": 4.593,
+              "p50": 16.995,
+              "p95": 32.606,
+              "max": 35.914
+            },
+            "totalMs": {
+              "count": 100,
+              "min": 0.106,
+              "p50": 19.239,
+              "p95": 32.991,
+              "max": 36.277
+            },
+            "queueWaitMs": {
+              "count": 90,
+              "min": 0.084,
+              "p50": 12.929,
+              "p95": 29.113,
+              "max": 32.619
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 100,
+              "min": 0,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "toolCalls": {
+              "count": 100,
+              "min": 0,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "returnedChars": {
+              "count": 90,
+              "min": 9006,
+              "p50": 9006,
+              "p95": 9006,
+              "max": 9006
+            },
+            "scanChars": {
+              "count": 90,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 90,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 90,
+              "min": 55355,
+              "p50": 55355,
+              "p95": 55355,
+              "max": 55355
+            },
+            "cacheHits": {
+              "count": 90,
+              "min": 31,
+              "p50": 31,
+              "p95": 31,
+              "max": 31
+            },
+            "cacheMisses": {
+              "count": 90,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 90,
+              "min": 221420,
+              "p50": 221420,
+              "p95": 221420,
+              "max": 221420
+            },
+            "dbReadCalls": {
+              "count": 90,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 90,
+              "min": 11,
+              "p50": 11,
+              "p95": 11,
+              "max": 11
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 90,
+              "min": 23347,
+              "p50": 23347,
+              "p95": 23349,
+              "max": 23349
+            },
+            "responseBytes": {
+              "count": 90,
+              "min": 11252,
+              "p50": 11252,
+              "p95": 11254,
+              "max": 11254
+            }
+          },
+          "sampledPeakRssBytes": 156463104,
+          "batches": [
+            {
+              "batch": 0,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 1,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 2,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 3,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 4,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 5,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 6,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 7,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 8,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 9,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            }
+          ],
+          "warmupRequestsExcluded": 0
+        },
+        {
+          "name": "http_loopback_ordinary",
+          "sampleCount": 30,
+          "terminalStatuses": {
+            "success": 30
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 0.638,
+              "p50": 1.736,
+              "p95": 2.146,
+              "max": 2.173
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 1.422,
+              "p50": 2.452,
+              "p95": 3.181,
+              "max": 3.318
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 0.638,
+              "p50": 1.736,
+              "p95": 2.146,
+              "max": 2.173
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 1.422,
+              "p50": 2.452,
+              "p95": 3.181,
+              "max": 3.318
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "toolCalls": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "returnedChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "scanChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheHits": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheMisses": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "dbReadCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 30,
+              "min": 7,
+              "p50": 7,
+              "p95": 7,
+              "max": 7
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 30,
+              "min": 2941,
+              "p50": 2941,
+              "p95": 2941,
+              "max": 2941
+            },
+            "responseBytes": {
+              "count": 30,
+              "min": 2474,
+              "p50": 2474,
+              "p95": 2474,
+              "max": 2474
+            }
+          },
+          "sampledPeakRssBytes": 179785728,
+          "warmupRequestsExcluded": 5,
+          "transport": "actual HTTP loopback server, native fetch and SSE frame decoding; fresh loader per request",
+          "serverLatencyMs": {
+            "firstDelta": {
+              "count": 30,
+              "min": 0.205,
+              "p50": 0.221,
+              "p95": 0.317,
+              "max": 0.335
+            },
+            "total": {
+              "count": 30,
+              "min": 0.893,
+              "p50": 0.981,
+              "p95": 1.425,
+              "max": 1.531
+            }
+          },
+          "clientDoneMs": {
+            "count": 30,
+            "min": 1.4,
+            "p50": 2.431,
+            "p95": 3.142,
+            "max": 3.286
+          }
+        },
+        {
+          "name": "http_loopback_document_read",
+          "sampleCount": 30,
+          "terminalStatuses": {
+            "success": 30
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 3.619,
+              "p50": 4.787,
+              "p95": 7.388,
+              "max": 8.832
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 4.52,
+              "p50": 5.706,
+              "p95": 8.411,
+              "max": 9.769
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 3.619,
+              "p50": 4.787,
+              "p95": 7.388,
+              "max": 8.832
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 4.52,
+              "p50": 5.706,
+              "p95": 8.411,
+              "max": 9.769
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "toolCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "returnedChars": {
+              "count": 30,
+              "min": 9006,
+              "p50": 9006,
+              "p95": 9006,
+              "max": 9006
+            },
+            "scanChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 30,
+              "min": 55355,
+              "p50": 55355,
+              "p95": 55355,
+              "max": 55355
+            },
+            "cacheHits": {
+              "count": 30,
+              "min": 31,
+              "p50": 31,
+              "p95": 31,
+              "max": 31
+            },
+            "cacheMisses": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 30,
+              "min": 221420,
+              "p50": 221420,
+              "p95": 221420,
+              "max": 221420
+            },
+            "dbReadCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 30,
+              "min": 11,
+              "p50": 11,
+              "p95": 11,
+              "max": 11
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 30,
+              "min": 23402,
+              "p50": 23402,
+              "p95": 23402,
+              "max": 23402
+            },
+            "responseBytes": {
+              "count": 30,
+              "min": 11297,
+              "p50": 11297,
+              "p95": 11297,
+              "max": 11297
+            }
+          },
+          "sampledPeakRssBytes": 170065920,
+          "warmupRequestsExcluded": 5,
+          "transport": "actual HTTP loopback server, native fetch and SSE frame decoding; fresh loader per request",
+          "serverLatencyMs": {
+            "firstDelta": {
+              "count": 30,
+              "min": 3.3,
+              "p50": 3.376,
+              "p95": 5.37,
+              "max": 7.369
+            },
+            "total": {
+              "count": 30,
+              "min": 4.07,
+              "p50": 4.194,
+              "p95": 6.884,
+              "max": 8.269
+            }
+          },
+          "clientDoneMs": {
+            "count": 30,
+            "min": 4.484,
+            "p50": 5.685,
+            "p95": 8.388,
+            "max": 9.745
+          }
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "measuredAt": "2026-09-26T07:17:09.454Z",
+      "rawResultSha256": "ff897296908067a357afce6ed0775a380ae61a696e291d9275b5383d2cbfe256",
+      "resources": {
+        "sampledPeakRssBytes": 179060736,
+        "processMaxRssKiB": 175824,
+        "cgroupMemoryPeakBytes": 131325952,
+        "cgroupMemoryEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+        "cpuStat": "usage_usec 2197877\nuser_usec 1950540\nsystem_usec 247336\ncore_sched.force_idle_usec 0\nnr_periods 17\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+      },
+      "scenarios": [
+        {
+          "name": "ordinary",
+          "sampleCount": 30,
+          "terminalStatuses": {
+            "success": 30
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 0.142,
+              "p50": 0.166,
+              "p95": 0.304,
+              "max": 0.341
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 0.378,
+              "p50": 0.423,
+              "p95": 0.652,
+              "max": 0.7
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 0.142,
+              "p50": 0.166,
+              "p95": 0.304,
+              "max": 0.341
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 0.378,
+              "p50": 0.423,
+              "p95": 0.652,
+              "max": 0.7
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "toolCalls": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "returnedChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "scanChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheHits": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheMisses": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "dbReadCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 30,
+              "min": 7,
+              "p50": 7,
+              "p95": 7,
+              "max": 7
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 30,
+              "min": 2925,
+              "p50": 2933,
+              "p95": 2933,
+              "max": 2933
+            },
+            "responseBytes": {
+              "count": 30,
+              "min": 2456,
+              "p50": 2465,
+              "p95": 2465,
+              "max": 2465
+            }
+          },
+          "sampledPeakRssBytes": 94232576,
+          "warmupRequestsExcluded": 5,
+          "cacheMode": "new loader per request"
+        },
+        {
+          "name": "document_read_cold",
+          "sampleCount": 30,
+          "terminalStatuses": {
+            "success": 30
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 3.137,
+              "p50": 3.415,
+              "p95": 6.52,
+              "max": 6.71
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 3.525,
+              "p50": 3.835,
+              "p95": 6.936,
+              "max": 7.268
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 3.137,
+              "p50": 3.415,
+              "p95": 6.52,
+              "max": 6.71
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 3.525,
+              "p50": 3.835,
+              "p95": 6.936,
+              "max": 7.268
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "toolCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "returnedChars": {
+              "count": 30,
+              "min": 9006,
+              "p50": 9006,
+              "p95": 9006,
+              "max": 9006
+            },
+            "scanChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 30,
+              "min": 55355,
+              "p50": 55355,
+              "p95": 55355,
+              "max": 55355
+            },
+            "cacheHits": {
+              "count": 30,
+              "min": 31,
+              "p50": 31,
+              "p95": 31,
+              "max": 31
+            },
+            "cacheMisses": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 30,
+              "min": 221420,
+              "p50": 221420,
+              "p95": 221420,
+              "max": 221420
+            },
+            "dbReadCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 30,
+              "min": 11,
+              "p50": 11,
+              "p95": 11,
+              "max": 11
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 30,
+              "min": 23384,
+              "p50": 23384,
+              "p95": 23384,
+              "max": 23384
+            },
+            "responseBytes": {
+              "count": 30,
+              "min": 11264,
+              "p50": 11264,
+              "p95": 11264,
+              "max": 11264
+            }
+          },
+          "sampledPeakRssBytes": 115548160,
+          "warmupRequestsExcluded": 5,
+          "cacheMode": "new loader per request"
+        },
+        {
+          "name": "document_read_warm",
+          "sampleCount": 30,
+          "terminalStatuses": {
+            "success": 30
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 1.298,
+              "p50": 1.375,
+              "p95": 3.886,
+              "max": 5.468
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 1.655,
+              "p50": 1.727,
+              "p95": 4.413,
+              "max": 7.032
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 1.298,
+              "p50": 1.375,
+              "p95": 3.886,
+              "max": 5.468
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 1.655,
+              "p50": 1.727,
+              "p95": 4.413,
+              "max": 7.032
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "toolCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "returnedChars": {
+              "count": 30,
+              "min": 9006,
+              "p50": 9006,
+              "p95": 9006,
+              "max": 9006
+            },
+            "scanChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheHits": {
+              "count": 30,
+              "min": 33,
+              "p50": 33,
+              "p95": 33,
+              "max": 33
+            },
+            "cacheMisses": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 30,
+              "min": 221420,
+              "p50": 221420,
+              "p95": 221420,
+              "max": 221420
+            },
+            "dbReadCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 30,
+              "min": 11,
+              "p50": 11,
+              "p95": 11,
+              "max": 11
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 30,
+              "min": 23384,
+              "p50": 23384,
+              "p95": 23402,
+              "max": 23402
+            },
+            "responseBytes": {
+              "count": 30,
+              "min": 11264,
+              "p50": 11264,
+              "p95": 11297,
+              "max": 11297
+            }
+          },
+          "sampledPeakRssBytes": 120070144,
+          "warmupRequestsExcluded": 5,
+          "cacheMode": "same-owner loader retained across warmup and measured requests"
+        },
+        {
+          "name": "document_search_miss_cold",
+          "sampleCount": 30,
+          "terminalStatuses": {
+            "success": 30
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 2.838,
+              "p50": 3.589,
+              "p95": 5.693,
+              "max": 6.229
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 3.161,
+              "p50": 3.968,
+              "p95": 6.084,
+              "max": 6.547
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 2.838,
+              "p50": 3.589,
+              "p95": 5.693,
+              "max": 6.229
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 3.161,
+              "p50": 3.968,
+              "p95": 6.084,
+              "max": 6.547
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "toolCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "returnedChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "scanChars": {
+              "count": 30,
+              "min": 25594,
+              "p50": 25594,
+              "p95": 25594,
+              "max": 25594
+            },
+            "artifactLoadCalls": {
+              "count": 30,
+              "min": 3,
+              "p50": 3,
+              "p95": 3,
+              "max": 3
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 30,
+              "min": 64969,
+              "p50": 64969,
+              "p95": 64969,
+              "max": 64969
+            },
+            "cacheHits": {
+              "count": 30,
+              "min": 88,
+              "p50": 88,
+              "p95": 88,
+              "max": 88
+            },
+            "cacheMisses": {
+              "count": 30,
+              "min": 3,
+              "p50": 3,
+              "p95": 3,
+              "max": 3
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 30,
+              "min": 259876,
+              "p50": 259876,
+              "p95": 259876,
+              "max": 259876
+            },
+            "dbReadCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 30,
+              "min": 11,
+              "p50": 11,
+              "p95": 11,
+              "max": 11
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 30,
+              "min": 5323,
+              "p50": 5323,
+              "p95": 5323,
+              "max": 5323
+            },
+            "responseBytes": {
+              "count": 30,
+              "min": 5877,
+              "p50": 5877,
+              "p95": 5877,
+              "max": 5877
+            }
+          },
+          "sampledPeakRssBytes": 147202048,
+          "warmupRequestsExcluded": 5,
+          "cacheMode": "new loader per request"
+        },
+        {
+          "name": "active_cancel",
+          "sampleCount": 30,
+          "terminalStatuses": {
+            "aborted": 30
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "totalMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "queueWaitMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 0.129,
+              "p50": 0.132,
+              "p95": 0.165,
+              "max": 0.171
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 0.208,
+              "p50": 0.217,
+              "p95": 0.264,
+              "max": 0.269
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 30,
+              "min": 0.079,
+              "p50": 0.082,
+              "p95": 0.112,
+              "max": 0.124
+            },
+            "modelCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "toolCalls": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "returnedChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "scanChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheHits": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheMisses": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "dbReadCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 30,
+              "min": 7,
+              "p50": 7,
+              "p95": 7,
+              "max": 7
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 30,
+              "min": 2306,
+              "p50": 2306,
+              "p95": 2306,
+              "max": 2306
+            },
+            "responseBytes": {
+              "count": 30,
+              "min": 326,
+              "p50": 326,
+              "p95": 326,
+              "max": 326
+            }
+          },
+          "sampledPeakRssBytes": 146313216,
+          "warmupRequestsExcluded": 5,
+          "cacheMode": "new loader per request"
+        },
+        {
+          "name": "ten_users_document_read",
+          "sampleCount": 100,
+          "terminalStatuses": {
+            "success": 100
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 100,
+              "min": 4.777,
+              "p50": 19.304,
+              "p95": 37.081,
+              "max": 40.05
+            },
+            "totalMs": {
+              "count": 100,
+              "min": 6.242,
+              "p50": 21.277,
+              "p95": 38.827,
+              "max": 40.785
+            },
+            "queueWaitMs": {
+              "count": 100,
+              "min": 0.048,
+              "p50": 14.172,
+              "p95": 31.513,
+              "max": 33.075
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 100,
+              "min": 4.777,
+              "p50": 19.304,
+              "p95": 37.081,
+              "max": 40.05
+            },
+            "totalMs": {
+              "count": 100,
+              "min": 6.242,
+              "p50": 21.277,
+              "p95": 38.827,
+              "max": 40.785
+            },
+            "queueWaitMs": {
+              "count": 100,
+              "min": 0.048,
+              "p50": 14.172,
+              "p95": 31.513,
+              "max": 33.075
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 100,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "toolCalls": {
+              "count": 100,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "returnedChars": {
+              "count": 100,
+              "min": 9006,
+              "p50": 9006,
+              "p95": 9006,
+              "max": 9006
+            },
+            "scanChars": {
+              "count": 100,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 100,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 100,
+              "min": 55355,
+              "p50": 55355,
+              "p95": 55355,
+              "max": 55355
+            },
+            "cacheHits": {
+              "count": 100,
+              "min": 31,
+              "p50": 31,
+              "p95": 31,
+              "max": 31
+            },
+            "cacheMisses": {
+              "count": 100,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 100,
+              "min": 221420,
+              "p50": 221420,
+              "p95": 221420,
+              "max": 221420
+            },
+            "dbReadCalls": {
+              "count": 100,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 100,
+              "min": 11,
+              "p50": 11,
+              "p95": 11,
+              "max": 11
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 100,
+              "min": 23347,
+              "p50": 23347,
+              "p95": 23349,
+              "max": 23349
+            },
+            "responseBytes": {
+              "count": 100,
+              "min": 11252,
+              "p50": 11252,
+              "p95": 11254,
+              "max": 11254
+            }
+          },
+          "sampledPeakRssBytes": 157249536,
+          "batches": [
+            {
+              "batch": 0,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 1,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 2,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 3,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 4,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 5,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 6,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 7,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 8,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 9,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            }
+          ],
+          "warmupRequestsExcluded": 0
+        },
+        {
+          "name": "ten_users_one_queued_cancel",
+          "sampleCount": 100,
+          "terminalStatuses": {
+            "success": 90,
+            "queued_cancelled": 10
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 90,
+              "min": 4.59,
+              "p50": 17.755,
+              "p95": 32.003,
+              "max": 34.922
+            },
+            "totalMs": {
+              "count": 90,
+              "min": 6.166,
+              "p50": 19.377,
+              "p95": 32.493,
+              "max": 35.29
+            },
+            "queueWaitMs": {
+              "count": 90,
+              "min": 0.09,
+              "p50": 12.8,
+              "p95": 28.767,
+              "max": 31.688
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 90,
+              "min": 4.59,
+              "p50": 17.755,
+              "p95": 32.003,
+              "max": 34.922
+            },
+            "totalMs": {
+              "count": 100,
+              "min": 0.112,
+              "p50": 19.008,
+              "p95": 32.36,
+              "max": 35.29
+            },
+            "queueWaitMs": {
+              "count": 90,
+              "min": 0.09,
+              "p50": 12.8,
+              "p95": 28.767,
+              "max": 31.688
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 100,
+              "min": 0,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "toolCalls": {
+              "count": 100,
+              "min": 0,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "returnedChars": {
+              "count": 90,
+              "min": 9006,
+              "p50": 9006,
+              "p95": 9006,
+              "max": 9006
+            },
+            "scanChars": {
+              "count": 90,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 90,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 90,
+              "min": 55355,
+              "p50": 55355,
+              "p95": 55355,
+              "max": 55355
+            },
+            "cacheHits": {
+              "count": 90,
+              "min": 31,
+              "p50": 31,
+              "p95": 31,
+              "max": 31
+            },
+            "cacheMisses": {
+              "count": 90,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 90,
+              "min": 221420,
+              "p50": 221420,
+              "p95": 221420,
+              "max": 221420
+            },
+            "dbReadCalls": {
+              "count": 90,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 90,
+              "min": 11,
+              "p50": 11,
+              "p95": 11,
+              "max": 11
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 90,
+              "min": 23347,
+              "p50": 23347,
+              "p95": 23349,
+              "max": 23349
+            },
+            "responseBytes": {
+              "count": 90,
+              "min": 11252,
+              "p50": 11252,
+              "p95": 11254,
+              "max": 11254
+            }
+          },
+          "sampledPeakRssBytes": 154288128,
+          "batches": [
+            {
+              "batch": 0,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 1,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 2,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 3,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 4,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 5,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 6,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 7,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 8,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 9,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            }
+          ],
+          "warmupRequestsExcluded": 0
+        },
+        {
+          "name": "http_loopback_ordinary",
+          "sampleCount": 30,
+          "terminalStatuses": {
+            "success": 30
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 0.652,
+              "p50": 1.72,
+              "p95": 2.018,
+              "max": 2.199
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 1.38,
+              "p50": 2.412,
+              "p95": 2.872,
+              "max": 3.088
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 0.652,
+              "p50": 1.72,
+              "p95": 2.018,
+              "max": 2.199
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 1.38,
+              "p50": 2.412,
+              "p95": 2.872,
+              "max": 3.088
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "toolCalls": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "returnedChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "scanChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheHits": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheMisses": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "dbReadCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 30,
+              "min": 7,
+              "p50": 7,
+              "p95": 7,
+              "max": 7
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 30,
+              "min": 2941,
+              "p50": 2941,
+              "p95": 2941,
+              "max": 2941
+            },
+            "responseBytes": {
+              "count": 30,
+              "min": 2474,
+              "p50": 2474,
+              "p95": 2474,
+              "max": 2474
+            }
+          },
+          "sampledPeakRssBytes": 178864128,
+          "warmupRequestsExcluded": 5,
+          "transport": "actual HTTP loopback server, native fetch and SSE frame decoding; fresh loader per request",
+          "serverLatencyMs": {
+            "firstDelta": {
+              "count": 30,
+              "min": 0.206,
+              "p50": 0.214,
+              "p95": 0.254,
+              "max": 0.264
+            },
+            "total": {
+              "count": 30,
+              "min": 0.871,
+              "p50": 0.951,
+              "p95": 1.183,
+              "max": 1.188
+            }
+          },
+          "clientDoneMs": {
+            "count": 30,
+            "min": 1.357,
+            "p50": 2.389,
+            "p95": 2.829,
+            "max": 3.027
+          }
+        },
+        {
+          "name": "http_loopback_document_read",
+          "sampleCount": 30,
+          "terminalStatuses": {
+            "success": 30
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 3.63,
+              "p50": 4.761,
+              "p95": 5.264,
+              "max": 9.578
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 4.558,
+              "p50": 5.699,
+              "p95": 7.723,
+              "max": 10.614
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 3.63,
+              "p50": 4.761,
+              "p95": 5.264,
+              "max": 9.578
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 4.558,
+              "p50": 5.699,
+              "p95": 7.723,
+              "max": 10.614
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "toolCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "returnedChars": {
+              "count": 30,
+              "min": 9006,
+              "p50": 9006,
+              "p95": 9006,
+              "max": 9006
+            },
+            "scanChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 30,
+              "min": 55355,
+              "p50": 55355,
+              "p95": 55355,
+              "max": 55355
+            },
+            "cacheHits": {
+              "count": 30,
+              "min": 31,
+              "p50": 31,
+              "p95": 31,
+              "max": 31
+            },
+            "cacheMisses": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 30,
+              "min": 221420,
+              "p50": 221420,
+              "p95": 221420,
+              "max": 221420
+            },
+            "dbReadCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 30,
+              "min": 11,
+              "p50": 11,
+              "p95": 11,
+              "max": 11
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 30,
+              "min": 23402,
+              "p50": 23402,
+              "p95": 23402,
+              "max": 23402
+            },
+            "responseBytes": {
+              "count": 30,
+              "min": 11297,
+              "p50": 11297,
+              "p95": 11297,
+              "max": 11297
+            }
+          },
+          "sampledPeakRssBytes": 171573248,
+          "warmupRequestsExcluded": 5,
+          "transport": "actual HTTP loopback server, native fetch and SSE frame decoding; fresh loader per request",
+          "serverLatencyMs": {
+            "firstDelta": {
+              "count": 30,
+              "min": 3.239,
+              "p50": 3.342,
+              "p95": 3.777,
+              "max": 6.967
+            },
+            "total": {
+              "count": 30,
+              "min": 4.04,
+              "p50": 4.188,
+              "p95": 6.146,
+              "max": 9.046
+            }
+          },
+          "clientDoneMs": {
+            "count": 30,
+            "min": 4.535,
+            "p50": 5.675,
+            "p95": 7.695,
+            "max": 10.587
+          }
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "measuredAt": "2026-09-26T07:17:11.348Z",
+      "rawResultSha256": "c7daa210891881d8481582fb27c0533beeda6ccf7aece1c94df94dca1b305e6e",
+      "resources": {
+        "sampledPeakRssBytes": 178630656,
+        "processMaxRssKiB": 175404,
+        "cgroupMemoryPeakBytes": 131092480,
+        "cgroupMemoryEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+        "cpuStat": "usage_usec 2193153\nuser_usec 1944045\nsystem_usec 249108\ncore_sched.force_idle_usec 0\nnr_periods 17\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+      },
+      "scenarios": [
+        {
+          "name": "ordinary",
+          "sampleCount": 30,
+          "terminalStatuses": {
+            "success": 30
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 0.14,
+              "p50": 0.162,
+              "p95": 0.269,
+              "max": 0.332
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 0.369,
+              "p50": 0.419,
+              "p95": 0.611,
+              "max": 0.677
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 0.14,
+              "p50": 0.162,
+              "p95": 0.269,
+              "max": 0.332
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 0.369,
+              "p50": 0.419,
+              "p95": 0.611,
+              "max": 0.677
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "toolCalls": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "returnedChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "scanChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheHits": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheMisses": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "dbReadCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 30,
+              "min": 7,
+              "p50": 7,
+              "p95": 7,
+              "max": 7
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 30,
+              "min": 2925,
+              "p50": 2933,
+              "p95": 2933,
+              "max": 2933
+            },
+            "responseBytes": {
+              "count": 30,
+              "min": 2456,
+              "p50": 2465,
+              "p95": 2465,
+              "max": 2465
+            }
+          },
+          "sampledPeakRssBytes": 93687808,
+          "warmupRequestsExcluded": 5,
+          "cacheMode": "new loader per request"
+        },
+        {
+          "name": "document_read_cold",
+          "sampleCount": 30,
+          "terminalStatuses": {
+            "success": 30
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 3.069,
+              "p50": 3.584,
+              "p95": 6.156,
+              "max": 6.611
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 3.455,
+              "p50": 3.983,
+              "p95": 6.793,
+              "max": 7.134
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 3.069,
+              "p50": 3.584,
+              "p95": 6.156,
+              "max": 6.611
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 3.455,
+              "p50": 3.983,
+              "p95": 6.793,
+              "max": 7.134
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "toolCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "returnedChars": {
+              "count": 30,
+              "min": 9006,
+              "p50": 9006,
+              "p95": 9006,
+              "max": 9006
+            },
+            "scanChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 30,
+              "min": 55355,
+              "p50": 55355,
+              "p95": 55355,
+              "max": 55355
+            },
+            "cacheHits": {
+              "count": 30,
+              "min": 31,
+              "p50": 31,
+              "p95": 31,
+              "max": 31
+            },
+            "cacheMisses": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 30,
+              "min": 221420,
+              "p50": 221420,
+              "p95": 221420,
+              "max": 221420
+            },
+            "dbReadCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 30,
+              "min": 11,
+              "p50": 11,
+              "p95": 11,
+              "max": 11
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 30,
+              "min": 23384,
+              "p50": 23384,
+              "p95": 23384,
+              "max": 23384
+            },
+            "responseBytes": {
+              "count": 30,
+              "min": 11264,
+              "p50": 11264,
+              "p95": 11264,
+              "max": 11264
+            }
+          },
+          "sampledPeakRssBytes": 116154368,
+          "warmupRequestsExcluded": 5,
+          "cacheMode": "new loader per request"
+        },
+        {
+          "name": "document_read_warm",
+          "sampleCount": 30,
+          "terminalStatuses": {
+            "success": 30
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 1.368,
+              "p50": 1.405,
+              "p95": 3.373,
+              "max": 3.451
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 1.713,
+              "p50": 1.754,
+              "p95": 4.373,
+              "max": 4.378
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 1.368,
+              "p50": 1.405,
+              "p95": 3.373,
+              "max": 3.451
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 1.713,
+              "p50": 1.754,
+              "p95": 4.373,
+              "max": 4.378
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "toolCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "returnedChars": {
+              "count": 30,
+              "min": 9006,
+              "p50": 9006,
+              "p95": 9006,
+              "max": 9006
+            },
+            "scanChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheHits": {
+              "count": 30,
+              "min": 33,
+              "p50": 33,
+              "p95": 33,
+              "max": 33
+            },
+            "cacheMisses": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 30,
+              "min": 221420,
+              "p50": 221420,
+              "p95": 221420,
+              "max": 221420
+            },
+            "dbReadCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 30,
+              "min": 11,
+              "p50": 11,
+              "p95": 11,
+              "max": 11
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 30,
+              "min": 23384,
+              "p50": 23384,
+              "p95": 23402,
+              "max": 23402
+            },
+            "responseBytes": {
+              "count": 30,
+              "min": 11264,
+              "p50": 11264,
+              "p95": 11297,
+              "max": 11297
+            }
+          },
+          "sampledPeakRssBytes": 121069568,
+          "warmupRequestsExcluded": 5,
+          "cacheMode": "same-owner loader retained across warmup and measured requests"
+        },
+        {
+          "name": "document_search_miss_cold",
+          "sampleCount": 30,
+          "terminalStatuses": {
+            "success": 30
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 2.853,
+              "p50": 3.006,
+              "p95": 5.303,
+              "max": 6.188
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 3.148,
+              "p50": 3.312,
+              "p95": 5.633,
+              "max": 6.572
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 2.853,
+              "p50": 3.006,
+              "p95": 5.303,
+              "max": 6.188
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 3.148,
+              "p50": 3.312,
+              "p95": 5.633,
+              "max": 6.572
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "toolCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "returnedChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "scanChars": {
+              "count": 30,
+              "min": 25594,
+              "p50": 25594,
+              "p95": 25594,
+              "max": 25594
+            },
+            "artifactLoadCalls": {
+              "count": 30,
+              "min": 3,
+              "p50": 3,
+              "p95": 3,
+              "max": 3
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 30,
+              "min": 64969,
+              "p50": 64969,
+              "p95": 64969,
+              "max": 64969
+            },
+            "cacheHits": {
+              "count": 30,
+              "min": 88,
+              "p50": 88,
+              "p95": 88,
+              "max": 88
+            },
+            "cacheMisses": {
+              "count": 30,
+              "min": 3,
+              "p50": 3,
+              "p95": 3,
+              "max": 3
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 30,
+              "min": 259876,
+              "p50": 259876,
+              "p95": 259876,
+              "max": 259876
+            },
+            "dbReadCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 30,
+              "min": 11,
+              "p50": 11,
+              "p95": 11,
+              "max": 11
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 30,
+              "min": 5323,
+              "p50": 5323,
+              "p95": 5323,
+              "max": 5323
+            },
+            "responseBytes": {
+              "count": 30,
+              "min": 5877,
+              "p50": 5877,
+              "p95": 5877,
+              "max": 5877
+            }
+          },
+          "sampledPeakRssBytes": 139272192,
+          "warmupRequestsExcluded": 5,
+          "cacheMode": "new loader per request"
+        },
+        {
+          "name": "active_cancel",
+          "sampleCount": 30,
+          "terminalStatuses": {
+            "aborted": 30
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "totalMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "queueWaitMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 0.15,
+              "p50": 0.153,
+              "p95": 0.193,
+              "max": 0.198
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 0.241,
+              "p50": 0.252,
+              "p95": 0.302,
+              "max": 0.303
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 30,
+              "min": 0.089,
+              "p50": 0.094,
+              "p95": 0.127,
+              "max": 0.131
+            },
+            "modelCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "toolCalls": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "returnedChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "scanChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheHits": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheMisses": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "dbReadCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 30,
+              "min": 7,
+              "p50": 7,
+              "p95": 7,
+              "max": 7
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 30,
+              "min": 2306,
+              "p50": 2306,
+              "p95": 2306,
+              "max": 2306
+            },
+            "responseBytes": {
+              "count": 30,
+              "min": 326,
+              "p50": 326,
+              "p95": 326,
+              "max": 326
+            }
+          },
+          "sampledPeakRssBytes": 141631488,
+          "warmupRequestsExcluded": 5,
+          "cacheMode": "new loader per request"
+        },
+        {
+          "name": "ten_users_document_read",
+          "sampleCount": 100,
+          "terminalStatuses": {
+            "success": 100
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 100,
+              "min": 4.93,
+              "p50": 20.95,
+              "p95": 37.317,
+              "max": 43.557
+            },
+            "totalMs": {
+              "count": 100,
+              "min": 6.376,
+              "p50": 22.137,
+              "p95": 39.337,
+              "max": 44.328
+            },
+            "queueWaitMs": {
+              "count": 100,
+              "min": 0.048,
+              "p50": 14.906,
+              "p95": 32.433,
+              "max": 37.754
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 100,
+              "min": 4.93,
+              "p50": 20.95,
+              "p95": 37.317,
+              "max": 43.557
+            },
+            "totalMs": {
+              "count": 100,
+              "min": 6.376,
+              "p50": 22.137,
+              "p95": 39.337,
+              "max": 44.328
+            },
+            "queueWaitMs": {
+              "count": 100,
+              "min": 0.048,
+              "p50": 14.906,
+              "p95": 32.433,
+              "max": 37.754
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 100,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "toolCalls": {
+              "count": 100,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "returnedChars": {
+              "count": 100,
+              "min": 9006,
+              "p50": 9006,
+              "p95": 9006,
+              "max": 9006
+            },
+            "scanChars": {
+              "count": 100,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 100,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 100,
+              "min": 55355,
+              "p50": 55355,
+              "p95": 55355,
+              "max": 55355
+            },
+            "cacheHits": {
+              "count": 100,
+              "min": 31,
+              "p50": 31,
+              "p95": 31,
+              "max": 31
+            },
+            "cacheMisses": {
+              "count": 100,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 100,
+              "min": 221420,
+              "p50": 221420,
+              "p95": 221420,
+              "max": 221420
+            },
+            "dbReadCalls": {
+              "count": 100,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 100,
+              "min": 11,
+              "p50": 11,
+              "p95": 11,
+              "max": 11
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 100,
+              "min": 23347,
+              "p50": 23347,
+              "p95": 23349,
+              "max": 23349
+            },
+            "responseBytes": {
+              "count": 100,
+              "min": 11252,
+              "p50": 11252,
+              "p95": 11254,
+              "max": 11254
+            }
+          },
+          "sampledPeakRssBytes": 161148928,
+          "batches": [
+            {
+              "batch": 0,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 1,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 2,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 3,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 4,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 5,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 6,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 7,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 8,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 9,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "cancelledUsers": [],
+              "completed": 10,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            }
+          ],
+          "warmupRequestsExcluded": 0
+        },
+        {
+          "name": "ten_users_one_queued_cancel",
+          "sampleCount": 100,
+          "terminalStatuses": {
+            "success": 90,
+            "queued_cancelled": 10
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 90,
+              "min": 4.66,
+              "p50": 16.651,
+              "p95": 32.573,
+              "max": 35.457
+            },
+            "totalMs": {
+              "count": 90,
+              "min": 6.207,
+              "p50": 19.584,
+              "p95": 33.641,
+              "max": 35.819
+            },
+            "queueWaitMs": {
+              "count": 90,
+              "min": 0.087,
+              "p50": 12.887,
+              "p95": 29.233,
+              "max": 32.076
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 90,
+              "min": 4.66,
+              "p50": 16.651,
+              "p95": 32.573,
+              "max": 35.457
+            },
+            "totalMs": {
+              "count": 100,
+              "min": 0.111,
+              "p50": 17.531,
+              "p95": 32.936,
+              "max": 35.819
+            },
+            "queueWaitMs": {
+              "count": 90,
+              "min": 0.087,
+              "p50": 12.887,
+              "p95": 29.233,
+              "max": 32.076
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 100,
+              "min": 0,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "toolCalls": {
+              "count": 100,
+              "min": 0,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "returnedChars": {
+              "count": 90,
+              "min": 9006,
+              "p50": 9006,
+              "p95": 9006,
+              "max": 9006
+            },
+            "scanChars": {
+              "count": 90,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 90,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 90,
+              "min": 55355,
+              "p50": 55355,
+              "p95": 55355,
+              "max": 55355
+            },
+            "cacheHits": {
+              "count": 90,
+              "min": 31,
+              "p50": 31,
+              "p95": 31,
+              "max": 31
+            },
+            "cacheMisses": {
+              "count": 90,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 90,
+              "min": 221420,
+              "p50": 221420,
+              "p95": 221420,
+              "max": 221420
+            },
+            "dbReadCalls": {
+              "count": 90,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 90,
+              "min": 11,
+              "p50": 11,
+              "p95": 11,
+              "max": 11
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 90,
+              "min": 23347,
+              "p50": 23347,
+              "p95": 23349,
+              "max": 23349
+            },
+            "responseBytes": {
+              "count": 90,
+              "min": 11252,
+              "p50": 11252,
+              "p95": 11254,
+              "max": 11254
+            }
+          },
+          "sampledPeakRssBytes": 156413952,
+          "batches": [
+            {
+              "batch": 0,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 1,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 2,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 3,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 4,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 5,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 6,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 7,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 8,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            },
+            {
+              "batch": 9,
+              "activePeak": 2,
+              "queuedPeak": 8,
+              "startedOrder": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "cancelledUsers": [
+                9
+              ],
+              "completed": 9,
+              "final": {
+                "active": 0,
+                "queued": 0,
+                "users": 0,
+                "highWater": 2,
+                "maxActive": 2,
+                "maxQueued": 8
+              }
+            }
+          ],
+          "warmupRequestsExcluded": 0
+        },
+        {
+          "name": "http_loopback_ordinary",
+          "sampleCount": 30,
+          "terminalStatuses": {
+            "success": 30
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 0.918,
+              "p50": 1.702,
+              "p95": 2.22,
+              "max": 2.274
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 1.808,
+              "p50": 2.404,
+              "p95": 2.978,
+              "max": 3.14
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 0.918,
+              "p50": 1.702,
+              "p95": 2.22,
+              "max": 2.274
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 1.808,
+              "p50": 2.404,
+              "p95": 2.978,
+              "max": 3.14
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "toolCalls": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "returnedChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "scanChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheHits": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheMisses": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "dbReadCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 30,
+              "min": 7,
+              "p50": 7,
+              "p95": 7,
+              "max": 7
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 30,
+              "min": 2941,
+              "p50": 2941,
+              "p95": 2941,
+              "max": 2941
+            },
+            "responseBytes": {
+              "count": 30,
+              "min": 2474,
+              "p50": 2474,
+              "p95": 2474,
+              "max": 2474
+            }
+          },
+          "sampledPeakRssBytes": 177647616,
+          "warmupRequestsExcluded": 5,
+          "transport": "actual HTTP loopback server, native fetch and SSE frame decoding; fresh loader per request",
+          "serverLatencyMs": {
+            "firstDelta": {
+              "count": 30,
+              "min": 0.2,
+              "p50": 0.212,
+              "p95": 0.259,
+              "max": 0.265
+            },
+            "total": {
+              "count": 30,
+              "min": 0.847,
+              "p50": 0.943,
+              "p95": 1.235,
+              "max": 1.264
+            }
+          },
+          "clientDoneMs": {
+            "count": 30,
+            "min": 1.761,
+            "p50": 2.382,
+            "p95": 2.955,
+            "max": 3.091
+          }
+        },
+        {
+          "name": "http_loopback_document_read",
+          "sampleCount": 30,
+          "terminalStatuses": {
+            "success": 30
+          },
+          "successfulLatencyMs": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 3.656,
+              "p50": 4.735,
+              "p95": 7.555,
+              "max": 8.886
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 4.532,
+              "p50": 5.627,
+              "p95": 8.466,
+              "max": 9.824
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            }
+          },
+          "metrics": {
+            "firstDeltaMs": {
+              "count": 30,
+              "min": 3.656,
+              "p50": 4.735,
+              "p95": 7.555,
+              "max": 8.886
+            },
+            "totalMs": {
+              "count": 30,
+              "min": 4.532,
+              "p50": 5.627,
+              "p95": 8.466,
+              "max": 9.824
+            },
+            "queueWaitMs": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "cancellationAfterFirstDeltaMs": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p95": null,
+              "max": null
+            },
+            "modelCalls": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "toolCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "returnedChars": {
+              "count": 30,
+              "min": 9006,
+              "p50": 9006,
+              "p95": 9006,
+              "max": 9006
+            },
+            "scanChars": {
+              "count": 30,
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "artifactLoadCalls": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "artifactLoadedUtf8Bytes": {
+              "count": 30,
+              "min": 55355,
+              "p50": 55355,
+              "p95": 55355,
+              "max": 55355
+            },
+            "cacheHits": {
+              "count": 30,
+              "min": 31,
+              "p50": 31,
+              "p95": 31,
+              "max": 31
+            },
+            "cacheMisses": {
+              "count": 30,
+              "min": 2,
+              "p50": 2,
+              "p95": 2,
+              "max": 2
+            },
+            "cacheEstimatedResidentBytes": {
+              "count": 30,
+              "min": 221420,
+              "p50": 221420,
+              "p95": 221420,
+              "max": 221420
+            },
+            "dbReadCalls": {
+              "count": 30,
+              "min": 1,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "dbWriteCalls": {
+              "count": 30,
+              "min": 11,
+              "p50": 11,
+              "p95": 11,
+              "max": 11
+            },
+            "dbWrittenUtf8Bytes": {
+              "count": 30,
+              "min": 23402,
+              "p50": 23402,
+              "p95": 23402,
+              "max": 23402
+            },
+            "responseBytes": {
+              "count": 30,
+              "min": 11297,
+              "p50": 11297,
+              "p95": 11297,
+              "max": 11297
+            }
+          },
+          "sampledPeakRssBytes": 172949504,
+          "warmupRequestsExcluded": 5,
+          "transport": "actual HTTP loopback server, native fetch and SSE frame decoding; fresh loader per request",
+          "serverLatencyMs": {
+            "firstDelta": {
+              "count": 30,
+              "min": 3.281,
+              "p50": 3.342,
+              "p95": 6.111,
+              "max": 7.475
+            },
+            "total": {
+              "count": 30,
+              "min": 4.027,
+              "p50": 4.137,
+              "p95": 6.957,
+              "max": 8.276
+            }
+          },
+          "clientDoneMs": {
+            "count": 30,
+            "min": 4.511,
+            "p50": 5.605,
+            "p95": 8.442,
+            "max": 9.798
+          }
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Harness and isolated loopback transport overhead only. No real model/provider latency or title costs.",
+    "Synthetic persistence does not measure real database query plans or network round trips.",
+    "One 90-paragraph fixture cannot establish worst-case whole-library capacity.",
+    "Cold means fresh application loader cache, not cold OS page cache.",
+    "One process and no proxy/browser; multi-process aggregate admission is outside scope.",
+    "Benchmark never enables new M1 capabilities.",
+    "Committed aggregate retains per-run summaries and input hashes; single-run output from the same script contains individual request samples."
+  ]
+}

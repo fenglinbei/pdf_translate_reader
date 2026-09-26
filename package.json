@@ -26,7 +26,8 @@
     "test:translation": "node --test tests/translation/*.test.mjs",
     "test:models": "node --test tests/models/*.test.mjs",
     "typecheck": "tsc --noEmit",
-    "prepare:qa-production": "node scripts/prepare-qa-production.mjs"
+    "prepare:qa-production": "node scripts/prepare-qa-production.mjs",
+    "check:qa-m0": "node scripts/check-qa-m0.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.49.8",

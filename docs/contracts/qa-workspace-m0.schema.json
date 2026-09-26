@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "urn:pdf-translate-reader:design:qa-workspace-m0:2026-09-26",
-  "title": "M0 candidate contracts; documentation only; not imported by runtime",
-  "$comment": "Candidate limits are unmeasured. Schema validates shape only; authorization, conditional capabilities, cross-field budgets, CAS, and source authority require harness/database checks. No runtime is enabled.",
+  "title": "M0 frozen design contracts v1; not imported by runtime",
+  "$comment": "Frozen design limits, not production SLAs. Shape validation only; authorization, conditional capabilities, UTF-16 cross-field budgets, CAS, and source authority require harness/database checks. No new runtime feature is enabled.",
   "oneOf": [
     {
       "$ref": "#/$defs/toolCall"

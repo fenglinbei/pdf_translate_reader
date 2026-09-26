@@ -1,6 +1,6 @@
 {
   "fixtureVersion": "qa-workspace-m0-cases-v1",
-  "status": "freeze_candidate",
+  "status": "frozen_design_v1",
   "createdAt": "2026-09-26",
   "codeBaseline": "fc091e69c0343f77743c7296f4a441030849606a",
   "syntheticOnly": true,

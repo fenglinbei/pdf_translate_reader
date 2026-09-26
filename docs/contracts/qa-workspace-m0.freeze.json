@@ -1,0 +1,190 @@
+{
+  "freezeVersion": "qa-workspace-m0-freeze-v1",
+  "status": "frozen_design",
+  "date": "2026-09-26",
+  "approval": {
+    "scope": "Current interaction design",
+    "userStatement": "可以先用这版，交互暂时没发现什么问题，请继续完成剩余的M0任务"
+  },
+  "businessRuntimeBaseSha": "7113e0ad32488cff5a8259e63dee22865b85bfd9",
+  "scope": "M0 contracts, fixtures, bounded baselines and validation tooling; M1-M7 runtime features are not enabled or accepted.",
+  "protocols": {
+    "tools": "qa-workspace-access-v1",
+    "inputAttachments": "qa-input-attachments-v1",
+    "draft": "qa-conversation-draft-v1"
+  },
+  "readOnlyTools": [
+    "workspace_overview",
+    "workspace_query",
+    "workspace_read",
+    "workspace_count",
+    "workspace_related"
+  ],
+  "sources": [
+    "document_artifact",
+    "workspace_record",
+    "query_snapshot",
+    "user_selection"
+  ],
+  "budgets": {
+    "units": {
+      "chars": "UTF-16 code units unless explicitly named otherwise",
+      "body": "UTF-8 bytes",
+      "titleInputReservation": "UTF-8 wire bytes + 256; conservative units, not exact tokens"
+    },
+    "existingRuntimeDefaults": {
+      "modelCallsPerRun": 12,
+      "toolsPerRun": 24,
+      "toolBatchMax": 4,
+      "activeRuns": 2,
+      "queuedRuns": 8,
+      "queueWaitMs": 120000,
+      "streamDeadlineMs": 300000,
+      "documentsPerRun": 8,
+      "readReturnedUtf16": 14000,
+      "runReturnedUtf16": 96000,
+      "searchScanUtf16PerCall": 128000,
+      "scanUtf16PerRun": 1000000,
+      "artifactLoaderCacheBytes": 33554432,
+      "artifactLoaderEntries": 256,
+      "artifactLoaderPending": 32
+    },
+    "futureWorkspace": {
+      "queryDefaultItems": 10,
+      "queryMaxItems": 30,
+      "cardPreviewUtf16": 300,
+      "newSourcesPerRun": 64,
+      "scanRecordsPerRun": 2000,
+      "scanRecordsScope": "application fallback scan only; exact SQL COUNT is not truncated to 2000 matches",
+      "cachePerUserBytes": 2097152,
+      "cacheProcessBytes": 16777216,
+      "cacheTtlMs": 60000,
+      "threadPageItems": 30,
+      "threadCursorTtlMs": 1800000
+    },
+    "futureInput": {
+      "questionUtf16": 2000,
+      "attachments": 4,
+      "selectionPerAttachmentUtf16": 4000,
+      "selectionTotalUtf16": 12000,
+      "contextTotalUtf16": 4000,
+      "bodyBytes": 131072,
+      "draftsPerUser": 50,
+      "draftBytesPerUser": 5242880
+    },
+    "futureTitle": {
+      "questionExcerptBytes": 360,
+      "answerExcerptBytes": 480,
+      "attachmentNameBytes": 96,
+      "attachmentNames": 2,
+      "inputReservationMaximum": 2048,
+      "outputTokens": 64,
+      "timeoutMs": 15000,
+      "perUserOutstanding": 1,
+      "processActive": 1,
+      "processQueued": 16,
+      "automaticRetries": 0,
+      "admission": "start only when foreground QA capacity is available",
+      "invalidOutput": "keep temporary title; no repair call",
+      "unknownUsage": "null total, known subtotal separately; no retry on unknown completion"
+    },
+    "futureClientTool": {
+      "inFlightPerRun": 1,
+      "timeoutMs": 15000,
+      "resultBytes": 131072
+    }
+  },
+  "regressionPolicy": {
+    "environment": "same fixture, Node, 2 CPU / 2 GiB cgroup and synthetic adapters; three fresh processes",
+    "latencyMedianP95": "baseline * 1.5 + 5ms requires investigation",
+    "rssMedian": "baseline * 1.25 + 32MiB requires investigation",
+    "semantic": "no leaked leases; ordinary 1 model/0 tools; peak active/queue <= 2/8; queued cancellation 0 model; warm read 0 backing-store bytes",
+    "notProductionSla": true
+  },
+  "knownLimitations": [
+    "Runtime baseline uses a mock model and synthetic persistence; HTTP is isolated loopback without production auth/proxy.",
+    "Database EXPLAIN is from PGlite 0.5.8 PostgreSQL WASM, not production Supabase; no 2 CPU cgroup applied to database probe.",
+    "Title baseline has 14 rules pass and 2 language reviews out of 16; no general title quality acceptance.",
+    "New resource cache, title scheduling, attachment transport, local tools, summaries and recovery await their milestones.",
+    "All 38 future integration cases remain not_executed; fixture consistency is not integration acceptance."
+  ],
+  "artifacts": [
+    {
+      "path": "docs/contracts/qa-workspace-m0.schema.json",
+      "sha256": "664570b1d035c68374a7809d8ba32843e58100232e56cc82199fb2ecdd95f81c"
+    },
+    {
+      "path": "docs/contracts/qa-workspace-m0.examples.json",
+      "sha256": "b30f839e8161be1fcfc3ac4c6c70ea8b468d4793ec5dd2e9d69a54cbda4ae8f1"
+    },
+    {
+      "path": "docs/fixtures/qa-workspace-m0-cases.json",
+      "sha256": "e02c72359f8868e4158faee4629163a1a12ac21d6b04fe8758ec4c7fd6d4f2aa"
+    },
+    {
+      "path": "docs/fixtures/qa-workspace-m0-title-cases.json",
+      "sha256": "d5294c0d5e6b16e13715441666f41da720ab66822c35a9f2c1dfcdaf1f86d175"
+    },
+    {
+      "path": "docs/fixtures/qa-workspace-m0-baseline-results-2026-09-26.json",
+      "sha256": "48dccf37119b6e82bdf5db84696f824b521457ea3fd87e6fe1a185a41320d4d1"
+    },
+    {
+      "path": "docs/fixtures/qa-workspace-m0-runtime-baseline-2026-09-26.json",
+      "sha256": "aa6632d2f53d9a7cbd087bdcb12e74a4d6dc0d0ed8adbe6485dedaab49a8630f"
+    },
+    {
+      "path": "docs/fixtures/qa-workspace-m0-database-baseline-2026-09-26.json",
+      "sha256": "d97ee7a65a16135cf21868a1863281288fb584a8399ad6287317ded330330764"
+    },
+    {
+      "path": "docs/fixtures/qa-workspace-m0-title-baseline-2026-09-26.json",
+      "sha256": "2dcac27036983127609d5b1442d80c90ca8cae7e9bacc5aa22b2d8de84a055d5"
+    },
+    {
+      "path": "docs/fixtures/qa-workspace-m0-visual-review-2026-09-26.json",
+      "sha256": "6a27bf78f3b5c23174e065bfd9704fa48b43b5a695c38da67027660cdbf13eb6"
+    },
+    {
+      "path": "docs/design/qa-m0-desktop.png",
+      "sha256": "2ef1fcda209e49c19697f44ba1ad2befa8de04c3753f548e10b46a63187415da"
+    },
+    {
+      "path": "docs/design/qa-m0-mobile-document.png",
+      "sha256": "bb0727b29602158d09429791d718f28be6bbcc052cd193670ead148b805eafc2"
+    },
+    {
+      "path": "docs/design/qa-m0-mobile-chat.png",
+      "sha256": "f7e83bd1783b4cfc42aba66c08cbca7b5bc5dea5c0c7edc936655d5666d13164"
+    },
+    {
+      "path": "docs/design/qa-m0-mobile-sessions.png",
+      "sha256": "0ec23f1fa9a1775108da1935cc8f586b807cd04b58bff2a3ac639da7461c0db9"
+    },
+    {
+      "path": "scripts/benchmark-qa-m0-runtime.mjs",
+      "sha256": "385330f3efda13484677806959af628935daa4d2e25c7ac0a5930da3e7e80bd9"
+    },
+    {
+      "path": "scripts/benchmark-qa-m0-database.mjs",
+      "sha256": "e823f493f795eb332d5daac5a1c8a8ff17bcd098e223d1ef3d775b9a8cfb5236"
+    },
+    {
+      "path": "scripts/benchmark-qa-m0-titles.mjs",
+      "sha256": "eb867d6d7df49d1959cc40b1811e0297fca0f7abc1c08a2400b4c989340b2247"
+    },
+    {
+      "path": "scripts/check-agent-equivalence.mjs",
+      "sha256": "ee1659ae58bb3f79e3def297b9bab531f453e5b0bd055aac4201500f9babb75f"
+    },
+    {
+      "path": "scripts/lib/qaEquivalence.mjs",
+      "sha256": "1f0f37922251abe5be933fabca197ee8166ccabb2e5cfe6282429d0ce4ff6371"
+    },
+    {
+      "path": "docs/qa-workspace-agent-m0-contracts-2026-09-26.md",
+      "sha256": "a06dc0f4d4f4b620e33eff50b4abc1b3216e470f3a6f5e136cd190999a297317"
+    }
+  ],
+  "changePolicy": "Update the freeze version and decision record for semantic changes; keep historical measurement files. Never rebaseline silently to make a check pass."
+}

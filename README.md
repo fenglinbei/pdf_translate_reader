@@ -13,7 +13,7 @@ Local-first web PDF reader scaffold for sentence-level translation workflows.
 - [QA Agent chapter and source-line citation contract (design only)](docs/qa-agent-citation-contract.md)
 - [QA Agent runtime and learning guide](docs/qa-agent-runtime.md)
 - [Workspace Agent, conversation management and Ask AI milestones (proposal)](docs/qa-workspace-agent-upgrade-plan-2026-09-26.md)
-- [Workspace Agent M0 recommendation, interaction mockups and contract candidate](docs/qa-workspace-agent-m0-recommendation-2026-09-26.md)
+- [Workspace Agent M0 frozen design, mockups and reproducible baselines](docs/qa-workspace-agent-m0-closeout-2026-09-26.md)
 - [Versioning, CI/CD and QA isolation](docs/versioning-and-delivery.md)
 - [Literature library management](docs/library-management-plan.md)
 

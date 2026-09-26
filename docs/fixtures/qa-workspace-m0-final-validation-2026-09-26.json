@@ -1,0 +1,92 @@
+{
+  "recordVersion": "qa-workspace-m0-final-validation-v1",
+  "checkedAt": "2026-09-26T07:29:29.747781+00:00",
+  "businessRuntimeParentSha": "7113e0ad32488cff5a8259e63dee22865b85bfd9",
+  "sourceScope": "Working tree M0 changes, before final commit; design and probe contents are pinned by qa-workspace-m0.freeze.json. No business runtime files changed.",
+  "localCi": {
+    "command": "npm run ci",
+    "exitCode": 0,
+    "releaseCheck": "pass",
+    "tests": 477,
+    "suites": 20,
+    "pass": 477,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0,
+    "testDurationMs": 5630.340587,
+    "typecheck": "pass",
+    "viteBuild": "pass",
+    "buildWarning": "Vite emitted its large-chunk advisory; no frontend runtime was modified.",
+    "logSha256": "f9f250e428c638d52c898c0effbc9c524ff79218ce4a1fd1d1a7acf4e986ec89"
+  },
+  "frozenDesign": {
+    "command": "npm run check:qa-m0",
+    "exitCode": 0,
+    "schemaValid": 20,
+    "schemaInvalid": 25,
+    "futureCases": 38,
+    "futureCasesExecuted": 0,
+    "datasetRows": 112,
+    "fixtureAssertions": 529,
+    "artifactHashes": 19,
+    "budgetMappings": 11
+  },
+  "equivalence": {
+    "baselineSha": "23ddc3b713b20b34edcceacdb0199da280c39ca0",
+    "profile": "qa-0.2.0-answer-outline-v1",
+    "versioned": {
+      "exitCode": 0,
+      "scenarios": 7,
+      "identical": 3,
+      "versionCompatible": 4,
+      "logSha256": "dbdc8c1f0b41ce22836d913ee77211bfa85a0e9495900b340731c637ac5a4b68"
+    },
+    "strict": {
+      "exitCode": 1,
+      "identical": 3,
+      "differing": 4,
+      "historicalFieldAdditions": 21,
+      "expectedHistoricalDifferencesRetained": true,
+      "logSha256": "967afc7eb5171d1abc8089bd7d3a2b7ca9141ea494a9db16a411fe8ef003c6a6"
+    }
+  },
+  "measuredBaselines": {
+    "runtimeRequests": 1230,
+    "runtimeFreshProcesses": 3,
+    "runtimeCpuQuota": 2,
+    "runtimeMemoryLimitBytes": 2147483648,
+    "databaseOracleAssertions": 21,
+    "databaseQueryGroups": 16,
+    "databaseRecallGroups": 4,
+    "titleProviderCalls": 16,
+    "titleRulesPass": 14,
+    "titleRulesReview": 2,
+    "titleQualityAccepted": false
+  },
+  "productStatus": {
+    "M0": "frozen_design_complete",
+    "M1toM7": "planned_not_enabled",
+    "productionMigration": false,
+    "deployment": false,
+    "newFeatureAcceptance": false
+  },
+  "validationToolHashes": [
+    {
+      "path": "scripts/check-qa-m0.mjs",
+      "sha256": "2997d52ff78d7d7b86b625a6e50284a8d26f8436fd54a0408f4686f275b4a2c5"
+    },
+    {
+      "path": "tests/qa/m0Contracts.test.mjs",
+      "sha256": "1c18eb60d56b0079d3bbfcecb5e29ea9f4ab08a732e42abd31e90a7a8c743758"
+    },
+    {
+      "path": "tests/qa/m0TitleProbe.test.mjs",
+      "sha256": "3343035b9901034e2a1c8f2d0dff8f95d634bf2bd0140f99bc3cbf302900480b"
+    },
+    {
+      "path": "tests/qa/qaEquivalence.test.mjs",
+      "sha256": "0fb13a86dce3d46be9bf0fe486d6b9219caf74708f5e02803d5363efd2dd95cd"
+    }
+  ]
+}

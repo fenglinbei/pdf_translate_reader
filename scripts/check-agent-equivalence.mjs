@@ -1,14 +1,17 @@
 #!/usr/bin/env node
-// Guards the "extraction changed no behaviour" claim in docs/qa-agent-runtime.md.
+// Replays the original extraction baseline plus explicitly versioned changes.
 //
 // The QA runtime was extracted from a single-file executor into server/qa/agent/*.
 // Committed tests only assert what the current code does; they cannot detect that a
 // later edit silently changes the public contract. This script reconstructs the
 // pre-extraction tree from git history and replays the same synthetic scenarios
-// through both implementations, comparing every observable artifact.
+// through both implementations, comparing every observable artifact. The default
+// accepts only the documented QA 0.2.0 outline additions. Strict mode retains the
+// historical exact comparison, including intentional later contract changes.
 //
 //   npm run check:agent-equivalence
-//   npm run check:agent-equivalence -- --baseline=23ddc3b
+//   npm run check:agent-equivalence -- --mode=strict
+//   npm run check:agent-equivalence -- --mode=strict --baseline=23ddc3b
 //
 // Requires full git history: the baseline commit must be reachable. Not part of
 // `npm run ci`, because CI checks out with a shallow fetch depth of 1.
@@ -17,41 +20,46 @@ import { mkdtempSync, rmSync, symlinkSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { compareQaEquivalence, QA_EQUIVALENCE_PROFILE, validateQaEquivalenceOptions, validateQaEquivalenceScenarios } from "./lib/qaEquivalence.mjs";
 
-// Default baseline: the commit the refactor was built on. `240a8fe^` is the same
-// commit expressed structurally, so the guard survives a rebase of the branch.
-const DEFAULT_BASELINE = "240a8fe^";
-const artifact = (value) => JSON.stringify(value ?? null);
+// Pin the original commit, not a mutable branch name or today's HEAD.
+const DEFAULT_BASELINE = QA_EQUIVALENCE_PROFILE.baselineSha;
+const artifact = value => JSON.stringify(value);
 
-function parseBaseline(argv) {
-  const flag = argv.find((argument) => argument.startsWith("--baseline="));
-  return flag ? flag.slice("--baseline=".length) : DEFAULT_BASELINE;
-}
-
-function revisionExists(revision) {
-  try {
-    execFileSync("git", ["rev-parse", "--verify", "--quiet", `${revision}^{commit}`], { stdio: "pipe" });
-    return true;
-  } catch {
-    return false;
+function parseOptions(argv) {
+  const options = { baseline: DEFAULT_BASELINE, mode: "versioned" }, seen = new Set();
+  for (const argument of argv) {
+    const match = /^--(baseline|mode)=(.+)$/.exec(argument);
+    if (!match || seen.has(match[1])) throw new Error(`Unsupported or duplicate argument: ${argument}`);
+    seen.add(match[1]); options[match[1]] = match[2];
   }
+  return options;
 }
 
-const baseline = parseBaseline(process.argv.slice(2));
-if (!revisionExists(baseline)) {
-  console.error(
-    `Baseline revision "${baseline}" is not reachable. Fetch full history ` +
-      `(git fetch --unshallow) or pass --baseline=<commit>.`,
-  );
+let baseline, baselineSha, mode;
+try {
+  ({ baseline, mode } = parseOptions(process.argv.slice(2)));
+  baselineSha = execFileSync("git", ["rev-parse", "--verify", "--end-of-options", `${baseline}^{commit}`], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  validateQaEquivalenceOptions({ mode, baselineSha });
+} catch (error) {
+  console.error(`Cannot initialize historical comparison: ${error.message}`);
+  if (error.code === "EPERM" || error.code === "EACCES") console.error("Git subprocess access was denied; rerun with authorized local execution permissions.");
+  else if (error.status) console.error("Verify the revision and full local history (git fetch --unshallow if needed).");
   process.exit(2);
 }
-const baselineSha = execFileSync("git", ["rev-parse", baseline], { encoding: "utf8" }).trim();
 
 const { runScenario, scenarioNames } = await import("../tests/fixtures/qaAgentScenarios.mjs");
+try {
+  validateQaEquivalenceScenarios(scenarioNames);
+} catch (error) {
+  console.error(error.message);
+  process.exit(2);
+}
 const current = await import("../server/qa/agentRunner.mjs");
 
 const workspace = mkdtempSync(join(tmpdir(), "qa-equivalence-"));
 let failures = 0;
+let compatibleScenarios = 0;
 try {
   // Extract the whole baseline tree, not just the runner, so supporting modules
   // (retriever, query planning, config) are compared as they actually shipped.
@@ -63,17 +71,19 @@ try {
 
   const legacyEntry = join(workspace, "server/qa/agentRunner.mjs");
   if (!existsSync(legacyEntry)) {
-    console.error(`Baseline ${baselineSha} has no server/qa/agentRunner.mjs; pick an earlier commit.`);
-    process.exit(2);
+    throw new Error(`Baseline ${baselineSha} has no server/qa/agentRunner.mjs.`);
   }
   const legacy = await import(pathToFileURL(legacyEntry).href);
 
-  console.log(`Baseline ${baselineSha} (${baseline}) vs working tree\n`);
+  console.log(`Baseline ${baselineSha} vs working tree; mode=${mode}`);
+  if (mode === "versioned") console.log(`Compatibility profile: ${QA_EQUIVALENCE_PROFILE.id} (introduced by ${QA_EQUIVALENCE_PROFILE.introducedBy})`);
+  console.log();
   for (const name of scenarioNames) {
     const before = await runScenario(name, legacy);
     const after = await runScenario(name, current);
-    const fields = Object.keys(before).filter((key) => artifact(before[key]) !== artifact(after[key]));
-    if (fields.length === 0) {
+    const comparison = compareQaEquivalence({ scenario: name, before, after, baselineSha, mode });
+    if (comparison.ok) {
+      if (comparison.acceptedAdditions.length) compatibleScenarios += 1;
       const shape = [
         `steps=${before.steps.length}`,
         `toolCalls=${before.toolCalls.length}`,
@@ -83,30 +93,38 @@ try {
         `evidence=${before.result?.evidence?.map(({ evidenceId }) => evidenceId).join(",") || "-"}`,
         `error=${before.error?.name ?? "-"}`,
       ].join(" ");
-      console.log(`  ok   ${name.padEnd(20)} ${shape}`);
+      const label = comparison.acceptedAdditions.length ? `compatible (${comparison.acceptedAdditions.length} exact additions)` : "identical";
+      console.log(`  ok   ${name.padEnd(20)} ${label}; ${shape}`);
       continue;
     }
     failures += 1;
     console.log(`  FAIL ${name}`);
-    for (const field of fields) {
-      console.log(`       ${field} differs:`);
-      console.log(`         baseline: ${artifact(before[field]).slice(0, 400)}`);
-      console.log(`         current : ${artifact(after[field]).slice(0, 400)}`);
+    for (const difference of comparison.differences) {
+      console.log(`       ${difference.path} differs:`);
+      console.log(`         expected: ${difference.expectedPresent ? artifact(difference.expected) : "<absent>"}`);
+      console.log(`         current : ${difference.currentPresent ? artifact(difference.current) : "<absent>"}`);
     }
   }
+} catch (error) {
+  console.error(`Historical comparison could not complete: ${error.message}`);
+  process.exitCode = 2;
 } finally {
   rmSync(workspace, { recursive: true, force: true });
 }
 
+if (process.exitCode === 2) process.exit(2);
+
 if (failures > 0) {
   console.error(
     `\n${failures} of ${scenarioNames.length} scenarios diverged from ${baselineSha}.\n` +
-      `Either the change is an intentional contract change (update the docs, the QA\n` +
-      `version and the baseline), or it is an unintended regression.`,
+      (mode === "strict"
+        ? "Strict mode includes published contract additions; use versioned mode to validate their precise allowed shape.\n"
+        : "Unexpected contract drift. Investigate before proposing a separately reviewed compatibility profile.\n") +
+      "Do not replace the historical baseline with HEAD to make this check pass.",
   );
   process.exit(1);
 }
 console.log(
-  `\nAll ${scenarioNames.length} scenarios identical to ${baselineSha}: results, persisted\n` +
-    `step/tool inputs, event order, controller context and retrieval parameters.`,
+  `\nAll ${scenarioNames.length} scenarios passed: ${scenarioNames.length - compatibleScenarios} identical, ${compatibleScenarios} version-compatible.\n` +
+    "Compared complete results, persisted step/tool inputs, event order, controller context and retrieval parameters.",
 );
