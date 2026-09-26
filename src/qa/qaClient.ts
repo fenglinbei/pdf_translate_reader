@@ -67,6 +67,7 @@ type QaThreadMessagesResponse = {
 export type QaStreamHandlers = {
   onAgentStep?: (step: QaAgentStep) => void;
   onAnswerReset?: () => void;
+  onAnswerUpdate?: (text: string, citations: QaCitation[]) => void;
   onCitation?: (citations: QaCitation[]) => void;
   onDelta: (text: string) => void;
   onDone?: (payload: QaDonePayload) => void;
@@ -249,7 +250,7 @@ export async function streamQaAnswer(
 
   try {
     const response = await fetch(`${apiBaseUrl}/qa/stream`, {
-      body: JSON.stringify(request),
+      body: JSON.stringify({ ...request, supportsAnswerUpdate: Boolean(handlers.onAnswerUpdate) }),
       headers: {
         Accept: "text/event-stream",
         "Content-Type": "application/json",
@@ -356,6 +357,8 @@ async function readQaEventStream(
       handlers.onDelta(payload.text);
     } else if (eventName === "answer_reset") {
       handlers.onAnswerReset?.();
+    } else if (eventName === "answer_update" && typeof payload.text === "string" && Array.isArray(payload.citations)) {
+      handlers.onAnswerUpdate?.(payload.text, payload.citations);
     } else if (eventName === "meta") {
       handlers.onMeta?.(payload);
     } else if (eventName === "agent_step" || eventName === "commentary" || eventName === "tool_start") {

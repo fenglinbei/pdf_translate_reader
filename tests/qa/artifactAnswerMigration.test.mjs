@@ -2,6 +2,7 @@ import {before,after,test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
+import {QA_ANSWER_BUDGET} from '../../shared/qaAnswerBudget.mjs';
 const A='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',B='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',D='dddddddd-dddd-4ddd-8ddd-dddddddddddd',T='11111111-1111-4111-8111-111111111111',M='22222222-2222-4222-8222-222222222222';
 const revision='a'.repeat(64),hash='b'.repeat(64);let db;
 const citation=(n=1,patch={})=>({sourceKind:'document_artifact',sourceVersion:revision,sourceRecordId:revision,evidenceKey:`node:${n}`,cloudDocumentId:D,pdfFingerprint:'f',documentTitle:'Synthetic',pageStart:1,pageEnd:1,quotedText:'Read text.',confidence:'verified',sectionPath:['Results'],sourceLocator:{version:'citation-locator-v2',revision,nodeId:'p1',range:[0,10],manifestSha256:hash,pdfSha256:hash,pages:[1],evidenceId:`C${n}`},...patch});
@@ -18,6 +19,7 @@ before(async()=>{
  await db.exec(`alter table user_qa_citations alter column chunk_id drop not null,add column line_regions jsonb,add column source_kind text,add column source_version text,add column evidence_key text,add column source_record_id text,add column source_locator jsonb;
  insert into user_qa_messages(id,user_id,thread_id,role,status,content)values('${M}','${A}','${T}','assistant','streaming','');`);
  const sql=await readFile(new URL('../../supabase/migrations/20260925_qa_artifact_answers.sql',import.meta.url),'utf8');await db.exec(sql);await db.exec(sql);
+ const upgrade=await readFile(new URL('../../supabase/migrations/20260926_qa_citation_budget.sql',import.meta.url),'utf8');await db.exec(upgrade);await db.exec(upgrade);
 });
 after(async()=>{await db?.close();});
 test('failed source in a multi-citation batch rolls back every citation and message update',async()=>{
@@ -41,4 +43,14 @@ test('unmapped evidence stores null pages and remains a valid source without fab
  await db.query("update user_qa_messages set status='streaming' where id=$1",[M]);await db.exec('delete from user_qa_citations');
  const source=citation();source.pageStart=null;source.pageEnd=null;source.sourceLocator.pages=[];
  const result=await commit([source]);assert.equal(result.citations[0].page_start,null);assert.equal(result.citations[0].page_end,null);
+});
+test('upgraded RPC accepts 35 and the shared citation budget, rejects overflow without partial writes',async()=>{
+ for(const count of [35,QA_ANSWER_BUDGET.maxCitations,QA_ANSWER_BUDGET.maxCitations+1]){
+  await db.query("update user_qa_messages set status='streaming' where id=$1",[M]);await db.exec('delete from user_qa_citations');
+  const sources=Array.from({length:count},(_,i)=>citation(i+1));
+  if(count>QA_ANSWER_BUDGET.maxCitations){
+   await assert.rejects(commit(sources),/invalid_answer_budget/);
+   assert.equal((await db.query('select count(*)::int n from user_qa_citations')).rows[0].n,0);
+  }else assert.equal((await commit(sources)).citations.length,count);
+ }
 });

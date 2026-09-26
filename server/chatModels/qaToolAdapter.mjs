@@ -56,8 +56,8 @@ export function createQaToolAdapter({ model, reasoningEffort = 'standard', fetch
       onUsage?.(usage);
       return normalizeCompletion(payload.choices?.[0]?.message, payload.choices?.[0]?.finish_reason, usage);
     },
-    async stream({ messages, tools, signal, onDelta, onUsage, onRequest }) {
-      const { response } = await request({ messages, tools, signal, stream: true, onRequest, maxTokens: Math.min(16384, definition.context.maxOutputTokens) });
+    async stream({ messages, tools, signal, onDelta, onUsage, onRequest, maxTokens }) {
+      const { response } = await request({ messages, tools, signal, stream: true, onRequest, maxTokens: Math.min(maxTokens ?? 16384, definition.context.maxOutputTokens) });
       return readToolStream(response, { signal, onDelta, onUsage });
     },
   };

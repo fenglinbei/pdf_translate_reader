@@ -10,7 +10,7 @@ const str = (maxLength = 100) => ({ type: 'string', minLength: 1, maxLength });
 const object = properties => ({ type: 'object', properties, additionalProperties: false });
 const page = { type: 'integer', minimum: 1, maximum: 10000 };
 const definitions = [
-  { name: 'discover_documents', description: '按需查找工作区文档。空查询列出最近文档；query 匹配标题、文件名和已有摘要。返回当前打开的文章标记。摘要仅帮助选文档，不能作为已读正文引用。普通交流无需调用。', parameters: object({ query: str(200), archived: { type: 'string', enum: ['all','only','exclude'] }, cursor: str() }) },
+  { name: 'discover_documents', description: '按需查找工作区文档。省略 query 或传空字符串列出最近文档；非空 query 匹配标题、文件名和已有摘要。返回当前打开的文章标记。摘要仅帮助选文档，不能作为已读正文引用。普通交流无需调用。', parameters: object({ query: { type:'string',maxLength:200 }, archived: { type: 'string', enum: ['all','only','exclude'] }, cursor: str() }) },
   { name: 'document_outline', description: '查看文章的章节目录。document 使用发现结果的文档编号，current 表示当前打开的文章。目录用于选择章节，不代表读过正文。续页只传 cursor。', parameters: object({ document: str(), cursor: str() }) },
   { name: 'search_document', description: '在一至四篇文章中按原文词语查找，queries 可提供同义词。返回实际读到的片段及 R 来源编号，可直接引用或用 read_document 补读整段。未命中不证明全文不存在；hasMore 表示还有待查部分，续查只传 cursor。', parameters: object({ documents: { type:'array',minItems:1,maxItems:4,uniqueItems:true,items:str() },queries:{type:'array',minItems:1,maxItems:4,items:str(200)},cursor:str() }) },
   { name: 'read_document', description: '阅读文章正文，可选 section 章节或 pageStart/pageEnd 页范围（最多四页）；只传 document 从开头阅读。只传 source 可补读该 R 来源所在的完整段落/表格；只传 cursor 续读。返回 ref 是可直接用于答案的 [R1] 引用，sentences 中的 [R1.1] 可选择关键句；引用整段用父 ref。不用抄写原文或额外标记引用。hasMore 为 true 时尚未读完。', parameters: object({ document:str(),section:str(),pageStart:page,pageEnd:page,source:{type:'string',pattern:'^R[1-9][0-9]*(\\.[1-9][0-9]*)?$'},cursor:str() }) },

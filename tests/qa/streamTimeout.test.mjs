@@ -68,3 +68,17 @@ test("EOF after partial output is an error, never a successful completion",async
   stream.write('event: delta\ndata: {"text":"partial"}\n\n');
   stream.close();await rejected;
 });
+
+test("citation corrections update text and sources together without reset or duplicate prose",async()=>{
+  globalThis.window=globalThis;const events=[];let requestBody;
+  globalThis.fetch=async(_url,init)=>{
+    requestBody=JSON.parse(init.body);
+    return new Response('event: delta\ndata: {"text":"Fact ."}\n\nevent: answer_update\ndata: {"text":"Fact [C1].","citations":[{"evidenceId":"C1"}]}\n\nevent: done\ndata: {}\n\n');
+  };
+  await client.streamQaAnswer({model:'deepseek-flash',question:'test',activeDocumentId:'doc'}, {
+    onDelta:text=>events.push(['delta',text]),onAnswerReset:()=>events.push(['reset']),
+    onAnswerUpdate:(text,citations)=>events.push(['update',text,citations]),
+  });
+  assert.equal(requestBody.supportsAnswerUpdate,true);
+  assert.deepEqual(events,[['delta','Fact .'],['update','Fact [C1].',[{evidenceId:'C1'}]]]);
+});

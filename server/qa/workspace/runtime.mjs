@@ -27,21 +27,19 @@ export function publicModelMessage(message) {
   return structuredClone(publicMessage);
 }
 export async function runWorkspaceAgent({ adapter, model, question, activeDocumentId, userId, answerLanguage, recentMessages,
-  signal, context, onDelta = () => {}, onReset = () => {}, onUsage = () => {}, workspace = createWorkspaceTools({ userId, activeDocumentId, signal }),
-  maxCalls = 12, maxTools = 24, protocol }) {
+  signal, context, onDelta = () => {}, onReset = () => {}, onAnswerUpdate = () => {}, onUsage = () => {}, workspace = createWorkspaceTools({ userId, activeDocumentId, signal }),
+  maxCalls = 12, maxTools = 24, protocol, allowCitationUpdates = true }) {
   const messages = (protocol?.messages ?? createWorkspaceMessages)({ model, question, activeDocumentId, answerLanguage, recentMessages });
   const tools = protocol?.tools ?? WORKSPACE_TOOLS;
   const reset = () => { protocol?.reset(); onReset(); };
   const seen = new Set();
   let toolCount = 0, errors = 0, citationRepairs = 0;
-  for (let turn = 0; turn < maxCalls; turn++) {
-    signal?.throwIfAborted();
-    await workspace.assertCurrent();
-    assertContextBudget({ model, messages, tools });
+  async function request(requestMessages, requestTools, delta, phase = 'agent_turn') {
+    assertContextBudget({ model, messages: requestMessages, tools: requestTools ?? [] });
     const trace = { version: 'qa-public-trace-v1', privateContinuation: 'not_stored_not_byte_exact_replay' };
-    const delta = protocol ? protocol.begin(onDelta) : onDelta;
-    const completion = await context.modelCall('agent_turn', async () => {
-      const value = await adapter.stream({ messages, tools, signal, onDelta: delta,
+    return context.modelCall(phase, async () => {
+      const value = await adapter.stream({ messages: requestMessages, tools: requestTools, signal, onDelta: delta,
+        maxTokens: phase === 'citation_repair' ? 2048 : undefined,
         onUsage: usage => { context.events.modelUsage(usage); onUsage(usage); },
         onRequest: body => { trace.request = { ...body, messages: body.messages.map(publicModelMessage) }; },
       });
@@ -49,21 +47,34 @@ export async function runWorkspaceAgent({ adapter, model, question, activeDocume
       trace.finishReason = value.finishReason;
       return value;
     }, trace);
+  }
+  for (let turn = 0; turn < maxCalls; turn++) {
+    signal?.throwIfAborted();
+    await workspace.assertCurrent();
+    const delta = protocol ? protocol.begin(onDelta) : onDelta;
+    const completion = await request(messages, tools, delta);
     messages.push(completion.message);
     if (!completion.calls.length) {
       let answer = completion.message.content;
       const citations = workspace.citations ?? [];
       const prepared = { citations, allowedCitationIds: citations.map(c => c.evidenceId), mode: workspace.metrics.returnedChars > 0 ? 'grounded' : 'direct' };
-      const checked = protocol?.verify();
+      let checked = protocol?.verify();
+      if (checked && !checked.verified.valid && protocol.repairAnswer) {
+        const issues = checked.verified.issues;
+        checked = await protocol.repairAnswer({ checked, messages, request, allowed: allowCitationUpdates && turn + 1 < maxCalls });
+        await context.events.step?.('observation', checked.verified.valid ? '引用核验完成。' : '部分引用未能核验。',
+          { phase: 'citation_validation', issues, repaired: checked.verified.valid }, undefined, [], checked.verified.valid ? 'success' : 'error');
+        if (checked.verified.valid) onAnswerUpdate(checked.answer, checked.verified.citations);
+      }
       if (checked) answer = checked.answer;
       const verified = checked?.verified ?? verifyDocumentAnswer(answer, prepared);
-      if (!verified.valid && citationRepairs++ < 1) {
+      if (!verified.valid && !protocol?.repairAnswer && citationRepairs++ < 1) {
         reset();
         messages.push({ role: 'user', content: `引用检查未通过：${verified.warnings.join(' ')} ${protocol?.repair ?? '请使用 cite_sources 标记实际已读原文并在答案中引用；不要编造编号。'}` });
         continue;
       }
-      requireCondition(verified.valid, 'CITATION_VERIFICATION_FAILED', verified.warnings.join(' '), { retryable: false });
-      return { answer, verified, metrics: { ...workspace.metrics, toolCalls: toolCount }, workspace, stopReason: 'natural_answer' };
+      requireCondition(verified.valid, verified.issues?.[0]?.code ?? 'CITATION_VERIFICATION_FAILED', verified.warnings.join(' '), { retryable: false, details: { issues: verified.issues } });
+      return { answer, verified, metrics: { ...workspace.metrics, toolCalls: toolCount, repairedCitations: verified.repaired?.length ?? 0 }, workspace, stopReason: 'natural_answer' };
     }
     // Stream text immediately; once this completion requests tools it becomes progress.
     reset();

@@ -51,8 +51,10 @@ export async function handleWorkspaceStream(request, response, user, body, depen
     const protocol = artifacts ? createArtifactProtocol({ workspace, messageId: assistant.id, onCitations: citations => emit('citation', { citations }) }) : undefined;
     const result = await runWorkspaceAgent({ protocol, adapter, model: body.model, question: userMessage.content, userId: user.id,
       activeDocumentId: body.activeDocumentId, answerLanguage: body.answerLanguage, recentMessages, signal, context, workspace,
+      allowCitationUpdates: body.supportsAnswerUpdate === true,
       onDelta: text => { answer += text; emit('delta', { text }); },
       onReset: () => { answer = ''; emit('answer_reset', {}); },
+      onAnswerUpdate: (text, citations) => { answer = text; emit('answer_update', { text, citations }); },
       onUsage: next => { usage = next; emit('usage', next); } });
     answer = result.answer;
     const verified = result.verified;

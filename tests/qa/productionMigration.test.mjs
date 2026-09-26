@@ -31,7 +31,7 @@ async function baseline() {
 }
 
 test('the complete production bundle upgrades old conversations and retains history in one transaction',async t=>{
-  const db=await baseline();t.after(()=>db.close());const {sql,sources}=await buildQaProductionMigration();assert.equal(sources.length,6);
+  const db=await baseline();t.after(()=>db.close());const {sql,sources}=await buildQaProductionMigration();assert.equal(sources.length,7);
   await db.exec(sql);
   const thread=(await db.query('select * from user_qa_threads')).rows[0];
   assert.equal(thread.scope,'workspace');assert.equal(thread.origin_scope,'current');assert.equal(thread.origin_user_document_id,D);assert.equal(thread.active_user_document_id,null);

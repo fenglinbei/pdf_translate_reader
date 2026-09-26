@@ -11,10 +11,11 @@ export const QA_PRODUCTION_MIGRATIONS = Object.freeze([
   '20260925_qa_workspace_navigation.sql',
   '20260925_qa_document_artifacts.sql',
   '20260925_qa_artifact_answers.sql',
+  '20260926_qa_citation_budget.sql',
 ]);
 
 // Produce a reviewable file; this command never connects to a database or host.
-// The six historical migrations have individual transactions. A first production
+// The source migrations have individual transactions. A first production
 // cutover needs one transaction so an error cannot leave old threads upgraded
 // while the new citation schema is still unavailable.
 export async function buildQaProductionMigration() {
@@ -26,7 +27,7 @@ export async function buildQaProductionMigration() {
   }));
   const sql = `-- First production QA upgrade. Review docs/qa-production-readiness.md first.
 -- Requires a verified production backup and a drained QA maintenance window.
--- Generated from the six migrations already validated in the isolated QA project.
+-- Generated from the migrations validated in the isolated QA project.
 begin;
 set local lock_timeout = '5s';
 set local statement_timeout = '60s';

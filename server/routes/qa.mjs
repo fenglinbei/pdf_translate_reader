@@ -948,6 +948,7 @@ export function normalizeQaStreamRequest(body) {
     regenerateMessageId: normalizeUuidLike(body.regenerateMessageId),
     scope,
     threadId,
+    ...(body.supportsAnswerUpdate === true ? { supportsAnswerUpdate: true } : {}),
   };
 }
 

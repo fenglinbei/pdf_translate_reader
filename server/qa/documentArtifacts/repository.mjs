@@ -1,4 +1,5 @@
 import { setTimeout as delay } from 'node:timers/promises';
+import { QA_ANSWER_BUDGET } from '../../../shared/qaAnswerBudget.mjs';
 import { randomUUID } from 'node:crypto';
 import { ArtifactError, artifactAssert } from '../../../shared/qaDocumentArtifact.mjs';
 import { DOCUMENT_BUILDER_VERSION, DOCUMENT_MAPPING_VERSION, sha256Text } from '../../../shared/qaDocumentBuilder.mjs';
@@ -20,8 +21,11 @@ export async function checkArtifactSchema(client = createArtifactServiceClient()
   const check = await client.from('user_qa_document_artifacts').select('revision,manifest_path,pdf_path').limit(0);
   if (check.error) throw new Error('Apply supabase/migrations/20260925_qa_document_artifacts.sql to the isolated QA database first.');
   if (process.env.QA_AGENT_RUNTIME === 'workspace-artifacts-v1') {
-    const probe = await client.rpc('qa_commit_artifact_answer', { p_user_id: null, p_message_id: null, p_content: '', p_snapshot: {}, p_usage: null, p_citations: [] });
-    if (probe.error?.message !== 'message_not_available') throw new Error('Apply supabase/migrations/20260925_qa_artifact_answers.sql to the isolated QA database first.');
+    // Null identities cannot match a message. Probe the actual RPC capacity
+    // before accepting traffic so a missing budget migration fails at startup.
+    const probe = await client.rpc('qa_commit_artifact_answer', { p_user_id: null, p_message_id: null, p_content: '', p_snapshot: {}, p_usage: null,
+      p_citations: Array.from({ length: QA_ANSWER_BUDGET.maxCitations }, () => ({})) });
+    if (probe.error?.message !== 'message_not_available') throw new Error('Apply QA artifact migrations through 20260926_qa_citation_budget.sql to this database first.');
   }
 }
 export async function requireArtifactDocument({ userId, documentId }, client = createArtifactServiceClient()) {

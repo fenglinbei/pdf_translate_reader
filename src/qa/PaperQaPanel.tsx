@@ -1,4 +1,5 @@
 import { remarkCitations } from './remarkCitations';
+import { AgentActivity } from './AgentActivity';
 import { prefetchArtifactSources } from './documentArtifacts/locationClient';
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
@@ -620,6 +621,10 @@ export function PaperQaPanel({
           onAnswerReset: () => {
             updateAssistantMessage(message.id, (current) => ({ ...current, content: "", citations: [], retrievalSnapshot: undefined }));
           },
+          onAnswerUpdate: (content, citations) => {
+            prefetchArtifactSources(citations);
+            updateAssistantMessage(message.id, (current) => ({ ...current, content, citations }));
+          },
           onDone: (payload) => {
             if (scopeKeyRef.current !== scopeKey || abortController.signal.aborted) return;
             const assistantMessage = payload.assistantMessage;
@@ -861,6 +866,10 @@ export function PaperQaPanel({
           },
           onAnswerReset: () => {
             updateAssistantMessage(localAssistantMessageId, (message) => ({ ...message, content: "", citations: [], retrievalSnapshot: undefined }));
+          },
+          onAnswerUpdate: (content, citations) => {
+            prefetchArtifactSources(citations);
+            updateAssistantMessage(localAssistantMessageId, (message) => ({ ...message, content, citations }));
           },
           onDone: (payload) => {
             if (scopeKeyRef.current !== scopeKey || abortController.signal.aborted) return;
@@ -1444,44 +1453,6 @@ function ReasoningPanel({ text, isStreaming }: { text: string; isStreaming: bool
       ) : null}
     </div>
   );
-}
-
-type ReadingActivity = {
-  version: number; query?: string; resultCount?: number; citationCount?: number; hasMore?: boolean;
-  locations: { documentId?: string; title: string; pageStart?: number; pageEnd?: number; sectionPath?: string[]; current?: boolean }[];
-};
-function AgentActivity({ steps, streaming }: { steps: QaAgentStep[]; streaming: boolean }) {
-  const { t } = useI18n();
-  const [expanded, setExpanded] = useState(streaming);
-  useEffect(() => { if (!streaming) setExpanded(false); }, [streaming]);
-  const visible = [...steps].sort((a, b) => a.stepIndex - b.stepIndex).filter(step => step.kind === 'commentary' || step.kind === 'tool_call');
-  if (!visible.length) return null;
-  const shown = expanded ? visible : visible.slice(-3);
-  return <div className="ask-agent-activity" aria-label={t('ask.activity')}>
-    {shown.map(step => {
-      if (step.kind === 'commentary') return <p className="ask-agent-commentary" key={step.stepIndex}>{step.summary}</p>;
-      const payload = step.payload as { activity?: ReadingActivity } | undefined;
-      const activity = payload?.activity?.version === 1 ? payload.activity : undefined;
-      return <div className={`ask-reading-step ask-agent-tool--${step.status}`} key={step.stepIndex}>
-        <div className="ask-reading-step-label">
-          {step.status === 'running' ? <LoaderCircle className="ask-spin-icon" size={14} aria-hidden="true" />
-            : step.status === 'error' ? <AlertTriangle size={14} aria-hidden="true" /> : <Check size={14} aria-hidden="true" />}
-          <span>{step.summary}</span>
-        </div>
-        {activity?.query ? <div className="ask-reading-query">“{activity.query}”</div> : null}
-        {activity?.resultCount !== undefined ? <small>{t(activity.resultCount ? 'ask.activityDocuments' : 'ask.activityNoMatches', { count: activity.resultCount })}</small> : null}
-        {activity?.locations?.map((location, index) => <div className="ask-reading-location" key={index}>
-          <FileText size={13} aria-hidden="true" /><span><strong>{location.title}</strong>
-            {location.pageStart ? <small>p.{location.pageStart}{location.pageEnd && location.pageEnd !== location.pageStart ? `–${location.pageEnd}` : ''}</small> : null}
-            {location.sectionPath?.length ? <small>{location.sectionPath.join(' / ')}</small> : null}
-            {location.current ? <small>{t('ask.currentDocument')}</small> : null}</span>
-        </div>)}
-        {activity?.hasMore ? <small>{t('ask.activityRemaining')}</small> : null}
-      </div>;
-    })}
-    {visible.length > 3 ? <button className="ask-sources-toggle" type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>
-      {t(expanded ? 'ask.activityLess' : 'ask.activityMore', { count: visible.length })}</button> : null}
-  </div>;
 }
 
 function AgentStepsPanel({ steps }: { steps: QaAgentStep[] }) {

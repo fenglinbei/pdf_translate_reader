@@ -12,7 +12,7 @@ const object = (properties, required = []) => ({ type: 'object', properties, req
 const page = { type: 'integer', minimum: 1, maximum: 10000 };
 const definitions = [
   { name: 'discover_documents', description: '按需查找工作区文档。空查询列出最近打开的文档；query 按标题、文件名、摘要包含的文字筛选。返回已有摘要、可读状态及当前文章标记。当前文章单独返回，可能不匹配查询。摘要和目录不能作为正文引用。普通交流无需调用。',
-    parameters: object({ query: str(200), archived: { type: 'string', enum: ['all', 'only', 'exclude'] }, cursor: str() }) },
+    parameters: object({ query: { type: 'string', maxLength: 200 }, archived: { type: 'string', enum: ['all', 'only', 'exclude'] }, cursor: str() }) },
   { name: 'document_outline', description: '查看所选文章的章节和页范围。document 使用发现结果的文档编号，current 表示提问时打开的文章。续页只需传 cursor。',
     parameters: object({ document: str(), cursor: str() }) },
   { name: 'search_document', description: '在选定的一至四篇文章中按原文词语查找，返回可继续阅读的来源。支持提出同义词；未命中不证明全文不存在。续页只需 cursor。',
