@@ -1,0 +1,57 @@
+{
+  "recordVersion": "qa-workspace-m0-visual-review-v1",
+  "scope": "Synthetic interactive mockup only; no product API, model, database or production acceptance",
+  "sourceSha": "fc091e69c0343f77743c7296f4a441030849606a",
+  "fragmentSha256": "6cc8774a2a0cbfc6834046b8e5457e22bdd36956034f9d66030d056123453a78",
+  "browser": "Local Playwright Chromium",
+  "checks": {
+    "preserveExistingQuestion": "pass",
+    "sameSelectionDeduplication": "pass",
+    "newConversationDraftAndOriginalRetention": "pass",
+    "emptyQuestionSendDisabled": "pass",
+    "sentAttachmentPreserved": "pass",
+    "manualRename": "pass",
+    "archiveAndRestore": "pass",
+    "deleteAndUndo": "pass",
+    "readingNavigationCollapseAndReopen": "pass after prototype fix",
+    "newConversationVisibleFromReading": "pass",
+    "consoleErrors": 0
+  },
+  "layoutChecks": [
+    {
+      "viewportWidth": 1024,
+      "fragmentWidth": 992,
+      "scrollWidth": 992
+    },
+    {
+      "viewportWidth": 920,
+      "fragmentWidth": 888,
+      "scrollWidth": 888
+    },
+    {
+      "viewportWidth": 390,
+      "fragmentWidth": 358,
+      "scrollWidth": 358
+    },
+    {
+      "viewportWidth": 320,
+      "fragmentWidth": 288,
+      "scrollWidth": 288
+    }
+  ],
+  "screenshots": [
+    "docs/design/qa-m0-desktop.png",
+    "docs/design/qa-m0-mobile-document.png",
+    "docs/design/qa-m0-mobile-chat.png",
+    "docs/design/qa-m0-mobile-sessions.png"
+  ],
+  "notVerified": [
+    "actual PDF text selection and coordinate mapping",
+    "real model/title calls",
+    "cross-account or cross-tab isolation",
+    "concurrent persisted draft/title CAS",
+    "persistent refresh/cross-device restore",
+    "M1-M7 product integration",
+    "all source/second-selection Tweak variants"
+  ]
+}

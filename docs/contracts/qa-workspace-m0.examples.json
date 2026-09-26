@@ -1,0 +1,1352 @@
+{
+  "purpose": "Synthetic shape checks only; not integration or authorization tests",
+  "valid": [
+    {
+      "tool": "workspace_overview",
+      "arguments": {}
+    },
+    {
+      "tool": "workspace_query",
+      "arguments": {
+        "resource": "document",
+        "filter": {
+          "archived": "exclude",
+          "tags": {
+            "records": [
+              "O1"
+            ],
+            "mode": "all"
+          }
+        },
+        "limit": 10
+      }
+    },
+    {
+      "tool": "workspace_query",
+      "arguments": {
+        "cursor": "opaque-run-cursor"
+      }
+    },
+    {
+      "tool": "workspace_read",
+      "arguments": {
+        "record": "O2",
+        "part": "message_context",
+        "before": 1,
+        "after": 1
+      }
+    },
+    {
+      "tool": "workspace_count",
+      "arguments": {
+        "resource": "annotation",
+        "filter": {
+          "hasNote": true
+        },
+        "groupBy": "document"
+      }
+    },
+    {
+      "tool": "workspace_related",
+      "arguments": {
+        "record": "O1",
+        "relation": "collection_documents",
+        "limit": 10
+      }
+    },
+    {
+      "tool": "workspace_query",
+      "arguments": {
+        "resource": "free_translation",
+        "location": "current_device",
+        "filter": {
+          "text": {
+            "terms": [
+              "注意力"
+            ],
+            "fields": [
+              "source"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "schemaVersion": "qa-conversation-draft-v1",
+      "userId": "u-test",
+      "draftId": "draft-test",
+      "threadId": null,
+      "revision": 1,
+      "question": "",
+      "inputAttachments": [],
+      "composerState": "editing",
+      "updatedAt": "2026-09-26T00:00:00Z"
+    },
+    {
+      "attachmentId": "attachment-test",
+      "schemaVersion": "qa-input-attachments-v1",
+      "revision": 1,
+      "capturedAt": "2026-09-26T00:00:00Z",
+      "kind": "text_selection",
+      "document": {
+        "displayName": "Synthetic.pdf",
+        "cloudDocumentId": null,
+        "localFileId": "local-test",
+        "contentSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "extraction": {
+        "source": "pdfjs",
+        "precision": "exact_selection",
+        "availability": "available"
+      },
+      "selectionSegments": [
+        {
+          "segmentId": "s1",
+          "order": 0,
+          "pageNumber": 3,
+          "rawText": "A synthetic selected sentence.",
+          "normalizedText": "A synthetic selected sentence.",
+          "coordinateSpace": "pdf_points_top_left",
+          "pageWidth": 595,
+          "pageHeight": 842,
+          "rects": [
+            {
+              "x": 80,
+              "y": 160,
+              "width": 300,
+              "height": 14
+            }
+          ]
+        }
+      ],
+      "contextSegments": [],
+      "snapshotHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "attachmentId": "attachment-test",
+      "schemaVersion": "qa-input-attachments-v1",
+      "revision": 1,
+      "capturedAt": "2026-09-26T00:00:00Z",
+      "kind": "text_selection",
+      "document": {
+        "displayName": "Synthetic.pdf",
+        "cloudDocumentId": null,
+        "localFileId": "local-test",
+        "contentSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "extraction": {
+        "source": "mathpix",
+        "precision": "line_approximate",
+        "availability": "partial"
+      },
+      "selectionSegments": [
+        {
+          "segmentId": "s1",
+          "order": 0,
+          "pageNumber": 3,
+          "rawText": null,
+          "normalizedText": "A synthetic selected sentence.",
+          "coordinateSpace": "pdf_points_top_left",
+          "pageWidth": 595,
+          "pageHeight": 842,
+          "rects": [
+            {
+              "x": 80,
+              "y": 160,
+              "width": 300,
+              "height": 14
+            }
+          ]
+        }
+      ],
+      "contextSegments": [],
+      "snapshotHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "attachmentId": "attachment-test",
+      "schemaVersion": "qa-input-attachments-v1",
+      "revision": 1,
+      "capturedAt": "2026-09-26T00:00:00Z",
+      "kind": "text_selection",
+      "document": {
+        "displayName": "Synthetic.pdf",
+        "cloudDocumentId": null,
+        "localFileId": "local-test",
+        "contentSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "extraction": {
+        "source": "pdfjs",
+        "precision": "exact_selection",
+        "availability": "available"
+      },
+      "selectionSegments": [
+        {
+          "segmentId": "s1",
+          "order": 0,
+          "pageNumber": 3,
+          "rawText": "A synthetic selected sentence.",
+          "normalizedText": "A synthetic selected sentence.",
+          "coordinateSpace": "viewport_pixels",
+          "pageWidth": 595,
+          "pageHeight": 842,
+          "rects": [
+            {
+              "x": 80,
+              "y": 160,
+              "width": 300,
+              "height": 14
+            }
+          ],
+          "captureScale": 1.5,
+          "rotation": 90
+        }
+      ],
+      "contextSegments": [],
+      "snapshotHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "sourceId": "W1",
+      "sourceKind": "workspace_record",
+      "sourceVersion": "revision:1",
+      "authority": "account_record",
+      "resourceIdentity": "annotation-test",
+      "readScope": {
+        "fields": [
+          "note"
+        ],
+        "start": 0,
+        "end": 16
+      },
+      "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "capturedAt": "2026-09-26T00:00:00Z",
+      "availability": "available",
+      "locator": {
+        "kind": "record",
+        "recordId": "annotation-test"
+      }
+    },
+    {
+      "sourceId": "U1",
+      "sourceKind": "user_selection",
+      "sourceVersion": "revision:1",
+      "authority": "user_supplied",
+      "resourceIdentity": "attachment-test",
+      "readScope": {
+        "fields": [
+          "note"
+        ],
+        "start": 0,
+        "end": 16
+      },
+      "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "capturedAt": "2026-09-26T00:00:00Z",
+      "availability": "available",
+      "locator": {
+        "kind": "selection",
+        "attachmentId": "attachment-test"
+      }
+    },
+    {
+      "sourceId": "Q1",
+      "sourceKind": "query_snapshot",
+      "sourceVersion": "revision:1",
+      "authority": "account_record",
+      "resourceIdentity": "query-test",
+      "readScope": {
+        "fields": [
+          "note"
+        ],
+        "start": 0,
+        "end": 16
+      },
+      "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "capturedAt": "2026-09-26T00:00:00Z",
+      "availability": "available",
+      "locator": {
+        "kind": "query"
+      }
+    },
+    {
+      "ok": true,
+      "contractVersion": "qa-workspace-access-v1",
+      "data": {
+        "items": [],
+        "pageCount": 0,
+        "hasMore": false,
+        "nextCursor": null
+      },
+      "scope": {
+        "location": "combined",
+        "resource": "annotation",
+        "asOf": "2026-09-26T00:00:00Z",
+        "consistency": "live_keyset",
+        "filterDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "coverage": {
+        "state": "partial",
+        "included": [
+          "cloud"
+        ],
+        "excluded": [
+          {
+            "location": "current_device",
+            "reason": "client_offline"
+          }
+        ],
+        "historyMayBePruned": false
+      },
+      "usage": {
+        "returnedChars": 0,
+        "scannedRecords": 0,
+        "scannedChars": 0
+      },
+      "truncated": false
+    },
+    {
+      "ok": true,
+      "contractVersion": "qa-workspace-access-v1",
+      "data": {
+        "record": "O1",
+        "source": {
+          "sourceId": "W1",
+          "sourceKind": "workspace_record",
+          "sourceVersion": "revision:1",
+          "authority": "account_record",
+          "resourceIdentity": "annotation-test",
+          "readScope": {
+            "fields": [
+              "note"
+            ],
+            "start": 0,
+            "end": 16
+          },
+          "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "capturedAt": "2026-09-26T00:00:00Z",
+          "availability": "available",
+          "locator": {
+            "kind": "record",
+            "recordId": "annotation-test"
+          }
+        },
+        "content": "Synthetic note.",
+        "hasMore": false,
+        "nextCursor": null
+      },
+      "scope": {
+        "location": "combined",
+        "resource": "annotation",
+        "asOf": "2026-09-26T00:00:00Z",
+        "consistency": "immutable_version",
+        "filterDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "coverage": {
+        "state": "partial",
+        "included": [
+          "cloud"
+        ],
+        "excluded": [
+          {
+            "location": "current_device",
+            "reason": "client_offline"
+          }
+        ],
+        "historyMayBePruned": false
+      },
+      "usage": {
+        "returnedChars": 0,
+        "scannedRecords": 0,
+        "scannedChars": 0
+      },
+      "truncated": false
+    },
+    {
+      "ok": true,
+      "contractVersion": "qa-workspace-access-v1",
+      "data": {
+        "total": 3,
+        "accuracy": "exact",
+        "unit": "distinct_logical_records",
+        "groups": [
+          {
+            "key": "D1",
+            "count": 3
+          }
+        ],
+        "overlappingGroups": false,
+        "querySource": {
+          "sourceId": "Q1",
+          "sourceKind": "query_snapshot",
+          "sourceVersion": "revision:1",
+          "authority": "account_record",
+          "resourceIdentity": "query-test",
+          "readScope": {
+            "fields": [
+              "note"
+            ],
+            "start": 0,
+            "end": 16
+          },
+          "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "capturedAt": "2026-09-26T00:00:00Z",
+          "availability": "available",
+          "locator": {
+            "kind": "query"
+          }
+        }
+      },
+      "scope": {
+        "location": "combined",
+        "resource": "annotation",
+        "asOf": "2026-09-26T00:00:00Z",
+        "consistency": "statement_snapshot",
+        "filterDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "coverage": {
+        "state": "partial",
+        "included": [
+          "cloud"
+        ],
+        "excluded": [
+          {
+            "location": "current_device",
+            "reason": "client_offline"
+          }
+        ],
+        "historyMayBePruned": false
+      },
+      "usage": {
+        "returnedChars": 0,
+        "scannedRecords": 0,
+        "scannedChars": 0
+      },
+      "truncated": false
+    },
+    {
+      "ok": true,
+      "contractVersion": "qa-workspace-access-v1",
+      "data": {
+        "resources": [
+          {
+            "resource": "annotation",
+            "operations": [
+              "discover",
+              "query",
+              "read",
+              "count"
+            ],
+            "available": true,
+            "coverage": {
+              "state": "partial",
+              "included": [
+                "cloud"
+              ],
+              "excluded": [
+                {
+                  "location": "current_device",
+                  "reason": "client_offline"
+                }
+              ],
+              "historyMayBePruned": false
+            }
+          }
+        ]
+      },
+      "scope": {
+        "location": "combined",
+        "resource": "annotation",
+        "asOf": "2026-09-26T00:00:00Z",
+        "consistency": "live_keyset",
+        "filterDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "coverage": {
+        "state": "partial",
+        "included": [
+          "cloud"
+        ],
+        "excluded": [
+          {
+            "location": "current_device",
+            "reason": "client_offline"
+          }
+        ],
+        "historyMayBePruned": false
+      },
+      "usage": {
+        "returnedChars": 0,
+        "scannedRecords": 0,
+        "scannedChars": 0
+      },
+      "truncated": false
+    },
+    {
+      "ok": false,
+      "contractVersion": "qa-workspace-access-v1",
+      "error": {
+        "code": "OWNERSHIP_UNCLAIMED",
+        "message": "本地记录尚未确认归属。",
+        "retryable": false
+      }
+    },
+    {
+      "schemaVersion": "qa-conversation-draft-v1",
+      "userId": "u-test",
+      "draftId": "draft-test",
+      "threadId": null,
+      "revision": 1,
+      "question": "Explain this selection.",
+      "inputAttachments": [
+        {
+          "attachmentId": "attachment-test",
+          "schemaVersion": "qa-input-attachments-v1",
+          "revision": 1,
+          "capturedAt": "2026-09-26T00:00:00Z",
+          "kind": "text_selection",
+          "document": {
+            "displayName": "Synthetic.pdf",
+            "cloudDocumentId": null,
+            "localFileId": "local-test",
+            "contentSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "extraction": {
+            "source": "pdfjs",
+            "precision": "exact_selection",
+            "availability": "available"
+          },
+          "selectionSegments": [
+            {
+              "segmentId": "s1",
+              "order": 0,
+              "pageNumber": 3,
+              "rawText": "A synthetic selected sentence.",
+              "normalizedText": "A synthetic selected sentence.",
+              "coordinateSpace": "pdf_points_top_left",
+              "pageWidth": 595,
+              "pageHeight": 842,
+              "rects": [
+                {
+                  "x": 80,
+                  "y": 160,
+                  "width": 300,
+                  "height": 14
+                }
+              ]
+            }
+          ],
+          "contextSegments": [],
+          "snapshotHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "composerState": "editing",
+      "updatedAt": "2026-09-26T00:00:00Z"
+    }
+  ],
+  "invalid": [
+    {
+      "tool": "workspace_query",
+      "arguments": {
+        "resource": "document",
+        "userId": "other"
+      }
+    },
+    {
+      "tool": "workspace_query",
+      "arguments": {
+        "resource": "document",
+        "filter": {
+          "sql": "select *"
+        }
+      }
+    },
+    {
+      "tool": "workspace_query",
+      "arguments": {
+        "cursor": "cursor",
+        "resource": "document"
+      }
+    },
+    {
+      "tool": "workspace_query",
+      "arguments": {
+        "resource": "message",
+        "filter": {
+          "starred": true
+        }
+      }
+    },
+    {
+      "tool": "workspace_query",
+      "arguments": {
+        "resource": "free_translation",
+        "location": "cloud"
+      }
+    },
+    {
+      "tool": "workspace_count",
+      "arguments": {
+        "resource": "annotation",
+        "groupBy": "unknown"
+      }
+    },
+    {
+      "tool": "workspace_read",
+      "arguments": {
+        "record": "O1",
+        "part": "message_context",
+        "after": 10
+      }
+    },
+    {
+      "tool": "workspace_read",
+      "arguments": {
+        "record": "/etc/passwd",
+        "part": "content"
+      }
+    },
+    {
+      "tool": "workspace_related",
+      "arguments": {
+        "record": "O1",
+        "relation": "inferred_supports"
+      }
+    },
+    {
+      "tool": "workspace_query",
+      "arguments": {
+        "resource": "document",
+        "limit": 1000
+      }
+    },
+    {
+      "attachmentId": "attachment-test",
+      "schemaVersion": "qa-input-attachments-v1",
+      "revision": 1,
+      "capturedAt": "2026-09-26T00:00:00Z",
+      "kind": "text_selection",
+      "document": {
+        "displayName": "Synthetic.pdf",
+        "cloudDocumentId": null,
+        "localFileId": "local-test",
+        "contentSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "extraction": {
+        "source": "pdfjs",
+        "precision": "exact_selection",
+        "availability": "available"
+      },
+      "selectionSegments": [
+        {
+          "segmentId": "s1",
+          "order": 0,
+          "pageNumber": 3,
+          "rawText": "A synthetic selected sentence.",
+          "normalizedText": "A synthetic selected sentence.",
+          "coordinateSpace": "pdf_points_top_left",
+          "pageWidth": 595,
+          "pageHeight": 842,
+          "rects": [
+            {
+              "x": 80,
+              "y": 160,
+              "width": 300,
+              "height": 14
+            }
+          ]
+        }
+      ],
+      "contextSegments": [],
+      "snapshotHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "verified": true
+    },
+    {
+      "attachmentId": "attachment-test",
+      "schemaVersion": "qa-input-attachments-v1",
+      "revision": 1,
+      "capturedAt": "2026-09-26T00:00:00Z",
+      "kind": "text_selection",
+      "document": {
+        "displayName": "Synthetic.pdf",
+        "cloudDocumentId": null,
+        "localFileId": "local-test",
+        "contentSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "extraction": {
+        "source": "pdfjs",
+        "precision": "exact_selection",
+        "availability": "available"
+      },
+      "selectionSegments": [
+        {
+          "segmentId": "s1",
+          "order": 0,
+          "pageNumber": 3,
+          "rawText": "",
+          "normalizedText": " ",
+          "coordinateSpace": "pdf_points_top_left",
+          "pageWidth": 595,
+          "pageHeight": 842,
+          "rects": [
+            {
+              "x": 80,
+              "y": 160,
+              "width": 300,
+              "height": 14
+            }
+          ]
+        }
+      ],
+      "contextSegments": [],
+      "snapshotHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "attachmentId": "attachment-test",
+      "schemaVersion": "qa-input-attachments-v1",
+      "revision": 1,
+      "capturedAt": "2026-09-26T00:00:00Z",
+      "kind": "text_selection",
+      "document": {
+        "displayName": "Synthetic.pdf",
+        "cloudDocumentId": null,
+        "localFileId": "local-test",
+        "contentSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "extraction": {
+        "source": "pdfjs",
+        "precision": "exact_selection",
+        "availability": "available"
+      },
+      "selectionSegments": [],
+      "contextSegments": [],
+      "snapshotHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "attachmentId": "attachment-test",
+      "schemaVersion": "qa-input-attachments-v1",
+      "revision": 1,
+      "capturedAt": "2026-09-26T00:00:00Z",
+      "kind": "text_selection",
+      "document": {
+        "displayName": "Synthetic.pdf",
+        "cloudDocumentId": null,
+        "localFileId": "local-test",
+        "contentSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "extraction": {
+        "source": "pdfjs",
+        "precision": "exact_selection",
+        "availability": "available"
+      },
+      "selectionSegments": [
+        {
+          "segmentId": "s1",
+          "order": 0,
+          "pageNumber": 3,
+          "rawText": "A synthetic selected sentence.",
+          "normalizedText": "A synthetic selected sentence.",
+          "coordinateSpace": "pdf_points_top_left",
+          "pageWidth": 595,
+          "pageHeight": 842,
+          "rects": [
+            {
+              "left": 80,
+              "top": 160,
+              "right": 380,
+              "bottom": 174
+            }
+          ]
+        }
+      ],
+      "contextSegments": [],
+      "snapshotHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "attachmentId": "attachment-test",
+      "schemaVersion": "qa-input-attachments-v1",
+      "revision": 1,
+      "capturedAt": "2026-09-26T00:00:00Z",
+      "kind": "text_selection",
+      "document": {
+        "displayName": "Synthetic.pdf",
+        "cloudDocumentId": null,
+        "localFileId": "local-test",
+        "contentSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "extraction": {
+        "source": "pdfjs",
+        "precision": "exact_selection",
+        "availability": "available"
+      },
+      "selectionSegments": [
+        {
+          "segmentId": "s1",
+          "order": 0,
+          "pageNumber": 3,
+          "rawText": "A synthetic selected sentence.",
+          "normalizedText": "A synthetic selected sentence.",
+          "coordinateSpace": "pdf_points_top_left",
+          "pageWidth": 595,
+          "pageHeight": 842,
+          "rects": [
+            {
+              "x": 80,
+              "y": 160,
+              "width": -1,
+              "height": 14
+            }
+          ]
+        }
+      ],
+      "contextSegments": [],
+      "snapshotHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "attachmentId": "attachment-test",
+      "schemaVersion": "qa-input-attachments-v1",
+      "revision": 1,
+      "capturedAt": "2026-09-26T00:00:00Z",
+      "kind": "text_selection",
+      "document": {
+        "displayName": "Synthetic.pdf",
+        "cloudDocumentId": null,
+        "localFileId": "local-test",
+        "contentSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "extraction": {
+        "source": "pdfjs",
+        "precision": "exact_selection",
+        "availability": "available"
+      },
+      "selectionSegments": [
+        {
+          "segmentId": "s1",
+          "order": 0,
+          "pageNumber": 3,
+          "rawText": "A synthetic selected sentence.",
+          "normalizedText": "A synthetic selected sentence.",
+          "coordinateSpace": "viewport_pixels",
+          "pageWidth": 595,
+          "pageHeight": 842,
+          "rects": [
+            {
+              "x": 80,
+              "y": 160,
+              "width": 300,
+              "height": 14
+            }
+          ]
+        }
+      ],
+      "contextSegments": [],
+      "snapshotHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "attachmentId": "attachment-test",
+      "schemaVersion": "qa-input-attachments-v1",
+      "revision": 1,
+      "capturedAt": "2026-09-26T00:00:00Z",
+      "kind": "text_selection",
+      "document": {
+        "displayName": "Synthetic.pdf",
+        "cloudDocumentId": null,
+        "localFileId": "local-test",
+        "contentSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "extraction": {
+        "source": "pdfjs",
+        "precision": "exact_selection",
+        "availability": "available"
+      },
+      "selectionSegments": [
+        {
+          "segmentId": "s1",
+          "order": 0,
+          "pageNumber": "3",
+          "rawText": "A synthetic selected sentence.",
+          "normalizedText": "A synthetic selected sentence.",
+          "coordinateSpace": "pdf_points_top_left",
+          "pageWidth": 595,
+          "pageHeight": 842,
+          "rects": [
+            {
+              "x": 80,
+              "y": 160,
+              "width": 300,
+              "height": 14
+            }
+          ]
+        }
+      ],
+      "contextSegments": [],
+      "snapshotHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "attachmentId": "attachment-test",
+      "schemaVersion": "qa-input-attachments-v1",
+      "revision": 1,
+      "capturedAt": "2026-09-26T00:00:00Z",
+      "kind": "text_selection",
+      "document": {
+        "displayName": "Synthetic.pdf",
+        "cloudDocumentId": null,
+        "localFileId": "local-test",
+        "contentSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "extraction": {
+        "source": "pdfjs",
+        "precision": "exact_selection",
+        "availability": "available"
+      },
+      "selectionSegments": [
+        {
+          "segmentId": "s1",
+          "order": 0,
+          "pageNumber": 3,
+          "rawText": null,
+          "normalizedText": "A synthetic selected sentence.",
+          "coordinateSpace": "pdf_points_top_left",
+          "pageWidth": 595,
+          "pageHeight": 842,
+          "rects": [
+            {
+              "x": 80,
+              "y": 160,
+              "width": 300,
+              "height": 14
+            }
+          ]
+        }
+      ],
+      "contextSegments": [],
+      "snapshotHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "attachmentId": "attachment-test",
+      "schemaVersion": "qa-input-attachments-v1",
+      "revision": 1,
+      "capturedAt": "2026-09-26T00:00:00Z",
+      "kind": "text_selection",
+      "document": {
+        "displayName": "Synthetic.pdf",
+        "cloudDocumentId": null,
+        "localFileId": "local-test",
+        "contentSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "extraction": {
+        "source": "pdfjs",
+        "precision": "server_verified",
+        "availability": "available"
+      },
+      "selectionSegments": [
+        {
+          "segmentId": "s1",
+          "order": 0,
+          "pageNumber": 3,
+          "rawText": "A synthetic selected sentence.",
+          "normalizedText": "A synthetic selected sentence.",
+          "coordinateSpace": "pdf_points_top_left",
+          "pageWidth": 595,
+          "pageHeight": 842,
+          "rects": [
+            {
+              "x": 80,
+              "y": 160,
+              "width": 300,
+              "height": 14
+            }
+          ]
+        }
+      ],
+      "contextSegments": [],
+      "snapshotHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "sourceId": "U1",
+      "sourceKind": "user_selection",
+      "sourceVersion": "revision:1",
+      "authority": "server_verified_document",
+      "resourceIdentity": "attachment-test",
+      "readScope": {
+        "fields": [
+          "note"
+        ],
+        "start": 0,
+        "end": 16
+      },
+      "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "capturedAt": "2026-09-26T00:00:00Z",
+      "availability": "available",
+      "locator": {
+        "kind": "selection",
+        "attachmentId": "attachment-test"
+      }
+    },
+    {
+      "sourceId": "W1",
+      "sourceKind": "workspace_record",
+      "sourceVersion": "revision:1",
+      "authority": "account_record",
+      "resourceIdentity": "annotation-test",
+      "readScope": {
+        "fields": [
+          "note"
+        ],
+        "start": 0,
+        "end": 16
+      },
+      "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "capturedAt": "2026-09-26T00:00:00Z",
+      "availability": "available",
+      "locator": {
+        "kind": "record",
+        "recordId": "annotation-test"
+      },
+      "sql": "select *"
+    },
+    {
+      "ok": true,
+      "contractVersion": "qa-workspace-access-v1",
+      "data": {
+        "items": [],
+        "pageCount": 0,
+        "hasMore": true,
+        "nextCursor": null
+      },
+      "scope": {
+        "location": "combined",
+        "resource": "annotation",
+        "asOf": "2026-09-26T00:00:00Z",
+        "consistency": "live_keyset",
+        "filterDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "coverage": {
+        "state": "partial",
+        "included": [
+          "cloud"
+        ],
+        "excluded": [
+          {
+            "location": "current_device",
+            "reason": "client_offline"
+          }
+        ],
+        "historyMayBePruned": false
+      },
+      "usage": {
+        "returnedChars": 0,
+        "scannedRecords": 0,
+        "scannedChars": 0
+      },
+      "truncated": false
+    },
+    {
+      "ok": true,
+      "contractVersion": "qa-workspace-access-v1",
+      "data": {
+        "items": [],
+        "pageCount": 0,
+        "hasMore": false,
+        "nextCursor": null
+      },
+      "scope": {
+        "location": "combined",
+        "resource": "annotation",
+        "asOf": "2026-09-26T00:00:00Z",
+        "consistency": "live_keyset",
+        "filterDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "coverage": {
+        "state": "everything",
+        "included": [
+          "cloud"
+        ],
+        "excluded": [
+          {
+            "location": "current_device",
+            "reason": "client_offline"
+          }
+        ],
+        "historyMayBePruned": false
+      },
+      "usage": {
+        "returnedChars": 0,
+        "scannedRecords": 0,
+        "scannedChars": 0
+      },
+      "truncated": false
+    },
+    {
+      "ok": true,
+      "contractVersion": "qa-workspace-access-v1",
+      "data": {
+        "total": "3",
+        "accuracy": "exact",
+        "unit": "distinct_logical_records",
+        "groups": [
+          {
+            "key": "D1",
+            "count": 3
+          }
+        ],
+        "overlappingGroups": false,
+        "querySource": {
+          "sourceId": "Q1",
+          "sourceKind": "query_snapshot",
+          "sourceVersion": "revision:1",
+          "authority": "account_record",
+          "resourceIdentity": "query-test",
+          "readScope": {
+            "fields": [
+              "note"
+            ],
+            "start": 0,
+            "end": 16
+          },
+          "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "capturedAt": "2026-09-26T00:00:00Z",
+          "availability": "available",
+          "locator": {
+            "kind": "query"
+          }
+        }
+      },
+      "scope": {
+        "location": "combined",
+        "resource": "annotation",
+        "asOf": "2026-09-26T00:00:00Z",
+        "consistency": "statement_snapshot",
+        "filterDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "coverage": {
+        "state": "partial",
+        "included": [
+          "cloud"
+        ],
+        "excluded": [
+          {
+            "location": "current_device",
+            "reason": "client_offline"
+          }
+        ],
+        "historyMayBePruned": false
+      },
+      "usage": {
+        "returnedChars": 0,
+        "scannedRecords": 0,
+        "scannedChars": 0
+      },
+      "truncated": false
+    },
+    {
+      "schemaVersion": "qa-conversation-draft-v1",
+      "userId": "u-test",
+      "draftId": "draft-test",
+      "threadId": null,
+      "revision": 1,
+      "question": "Explain this selection.",
+      "inputAttachments": [
+        {
+          "attachmentId": "attachment-test",
+          "schemaVersion": "qa-input-attachments-v1",
+          "revision": 1,
+          "capturedAt": "2026-09-26T00:00:00Z",
+          "kind": "text_selection",
+          "document": {
+            "displayName": "Synthetic.pdf",
+            "cloudDocumentId": null,
+            "localFileId": "local-test",
+            "contentSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "extraction": {
+            "source": "pdfjs",
+            "precision": "exact_selection",
+            "availability": "available"
+          },
+          "selectionSegments": [
+            {
+              "segmentId": "s1",
+              "order": 0,
+              "pageNumber": 3,
+              "rawText": "A synthetic selected sentence.",
+              "normalizedText": "A synthetic selected sentence.",
+              "coordinateSpace": "pdf_points_top_left",
+              "pageWidth": 595,
+              "pageHeight": 842,
+              "rects": [
+                {
+                  "x": 80,
+                  "y": 160,
+                  "width": 300,
+                  "height": 14
+                }
+              ]
+            }
+          ],
+          "contextSegments": [],
+          "snapshotHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "attachmentId": "attachment-test",
+          "schemaVersion": "qa-input-attachments-v1",
+          "revision": 1,
+          "capturedAt": "2026-09-26T00:00:00Z",
+          "kind": "text_selection",
+          "document": {
+            "displayName": "Synthetic.pdf",
+            "cloudDocumentId": null,
+            "localFileId": "local-test",
+            "contentSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "extraction": {
+            "source": "pdfjs",
+            "precision": "exact_selection",
+            "availability": "available"
+          },
+          "selectionSegments": [
+            {
+              "segmentId": "s1",
+              "order": 0,
+              "pageNumber": 3,
+              "rawText": "A synthetic selected sentence.",
+              "normalizedText": "A synthetic selected sentence.",
+              "coordinateSpace": "pdf_points_top_left",
+              "pageWidth": 595,
+              "pageHeight": 842,
+              "rects": [
+                {
+                  "x": 80,
+                  "y": 160,
+                  "width": 300,
+                  "height": 14
+                }
+              ]
+            }
+          ],
+          "contextSegments": [],
+          "snapshotHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "attachmentId": "attachment-test",
+          "schemaVersion": "qa-input-attachments-v1",
+          "revision": 1,
+          "capturedAt": "2026-09-26T00:00:00Z",
+          "kind": "text_selection",
+          "document": {
+            "displayName": "Synthetic.pdf",
+            "cloudDocumentId": null,
+            "localFileId": "local-test",
+            "contentSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "extraction": {
+            "source": "pdfjs",
+            "precision": "exact_selection",
+            "availability": "available"
+          },
+          "selectionSegments": [
+            {
+              "segmentId": "s1",
+              "order": 0,
+              "pageNumber": 3,
+              "rawText": "A synthetic selected sentence.",
+              "normalizedText": "A synthetic selected sentence.",
+              "coordinateSpace": "pdf_points_top_left",
+              "pageWidth": 595,
+              "pageHeight": 842,
+              "rects": [
+                {
+                  "x": 80,
+                  "y": 160,
+                  "width": 300,
+                  "height": 14
+                }
+              ]
+            }
+          ],
+          "contextSegments": [],
+          "snapshotHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "attachmentId": "attachment-test",
+          "schemaVersion": "qa-input-attachments-v1",
+          "revision": 1,
+          "capturedAt": "2026-09-26T00:00:00Z",
+          "kind": "text_selection",
+          "document": {
+            "displayName": "Synthetic.pdf",
+            "cloudDocumentId": null,
+            "localFileId": "local-test",
+            "contentSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "extraction": {
+            "source": "pdfjs",
+            "precision": "exact_selection",
+            "availability": "available"
+          },
+          "selectionSegments": [
+            {
+              "segmentId": "s1",
+              "order": 0,
+              "pageNumber": 3,
+              "rawText": "A synthetic selected sentence.",
+              "normalizedText": "A synthetic selected sentence.",
+              "coordinateSpace": "pdf_points_top_left",
+              "pageWidth": 595,
+              "pageHeight": 842,
+              "rects": [
+                {
+                  "x": 80,
+                  "y": 160,
+                  "width": 300,
+                  "height": 14
+                }
+              ]
+            }
+          ],
+          "contextSegments": [],
+          "snapshotHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "attachmentId": "attachment-test",
+          "schemaVersion": "qa-input-attachments-v1",
+          "revision": 1,
+          "capturedAt": "2026-09-26T00:00:00Z",
+          "kind": "text_selection",
+          "document": {
+            "displayName": "Synthetic.pdf",
+            "cloudDocumentId": null,
+            "localFileId": "local-test",
+            "contentSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "extraction": {
+            "source": "pdfjs",
+            "precision": "exact_selection",
+            "availability": "available"
+          },
+          "selectionSegments": [
+            {
+              "segmentId": "s1",
+              "order": 0,
+              "pageNumber": 3,
+              "rawText": "A synthetic selected sentence.",
+              "normalizedText": "A synthetic selected sentence.",
+              "coordinateSpace": "pdf_points_top_left",
+              "pageWidth": 595,
+              "pageHeight": 842,
+              "rects": [
+                {
+                  "x": 80,
+                  "y": 160,
+                  "width": 300,
+                  "height": 14
+                }
+              ]
+            }
+          ],
+          "contextSegments": [],
+          "snapshotHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "composerState": "editing",
+      "updatedAt": "2026-09-26T00:00:00Z"
+    }
+  ],
+  "limits": "JSON Schema verifies shape and individual code-point lengths only. UTF-16 aggregate budgets, hashes, authorization, range bounds, resource compatibility and CAS require implementation checks. No runtime behavior is proved."
+}

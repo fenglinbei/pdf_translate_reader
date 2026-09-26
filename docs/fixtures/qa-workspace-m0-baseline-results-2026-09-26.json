@@ -1,0 +1,615 @@
+{
+  "recordVersion": "qa-workspace-m0-baseline-v1",
+  "measuredAtUtc": "2026-09-26T06:00:31.104850+00:00",
+  "sourceSha": "fc091e69c0343f77743c7296f4a441030849606a",
+  "environment": {
+    "node": "v24.19.0",
+    "npm": "11.17.0",
+    "platform": "linux",
+    "network": "restricted sandbox",
+    "credentials": "environment cleared except PATH, HOME, LANG for QA tests",
+    "database": "in-memory PGlite only",
+    "model": "mocked only",
+    "testFileConcurrency": 1,
+    "testIsolation": "none within one file; each file runs in a separate process"
+  },
+  "fixture": {
+    "path": "docs/fixtures/qa-workspace-m0-cases.json",
+    "sha256": "57de1b9b8e0a60bbfe9d3624fd827d689b6708c446b4314fa41d89f388c5957a",
+    "caseCount": 38,
+    "casesExecuted": 0,
+    "oracleConsistencyCheck": {
+      "status": "passed",
+      "checks": [
+        "owner-scoped 35 documents with 31 active / 2 archived / 2 deleted",
+        "tag ANY=18 ALL=7",
+        "direct collection=10 descendants deduplicated=15",
+        "31 active user-a threads",
+        "38 cases all not_executed",
+        "source baseline equals fc091e69c0343f77743c7296f4a441030849606a"
+      ]
+    }
+  },
+  "existingQaRegression": {
+    "commandPerFile": "env -i PATH=\"$PATH\" HOME=\"$HOME\" LANG=C.UTF-8 node --test --test-isolation=none --test-reporter=tap \"$qa_test\"",
+    "fileCount": 29,
+    "totals": {
+      "tests": 197,
+      "pass": 197,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "wallSeconds": 18.89,
+    "maximumResidentSetSizeKiB": 1162596,
+    "resourceMetricScope": "GNU time for local serial test-suite process tree, including PGlite; not QA production runtime, a load test, or model latency",
+    "files": [
+      {
+        "file": "tests/qa/agentRunner.test.mjs",
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 96.626807,
+        "tapSha256": "1b5a136711756b5b4c7c2dd025a0c70184dc258481908e4ba2a123f68761d996"
+      },
+      {
+        "file": "tests/qa/agentRuntime.test.mjs",
+        "tests": 9,
+        "pass": 9,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 94.323845,
+        "tapSha256": "b65d5edf563f196992255b22563e130771b65b7be6c0509b08fe69440e7d82dc"
+      },
+      {
+        "file": "tests/qa/artifactAnswerMigration.test.mjs",
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 1904.85131,
+        "tapSha256": "df22ac3daf357fc8ee821435cbd52b99390b02dbfafd6e09081188a0abd2f791"
+      },
+      {
+        "file": "tests/qa/artifactRuntime.test.mjs",
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 210.977655,
+        "tapSha256": "693f9b7e229117d6d84bdaaddb5df8786e2129b7707bdad5cea434f7da556030"
+      },
+      {
+        "file": "tests/qa/artifactStream.test.mjs",
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 180.901868,
+        "tapSha256": "0ff2191a8a03268aa4b154120c5378e89c1cc98a15964e8b6d216da22f8c896a"
+      },
+      {
+        "file": "tests/qa/chunker.test.mjs",
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 19.981304,
+        "tapSha256": "d12a34dc6ffdfb26ac4920cf30fd98d25a6107e902e0ad5b8edcb02f15e2dc31"
+      },
+      {
+        "file": "tests/qa/citationMarkdown.test.mjs",
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 1188.533337,
+        "tapSha256": "2b9a70b4f2a843ba6a5ffa12fc6c6963fff6856b873e2dc5e47ad2a36e230f08"
+      },
+      {
+        "file": "tests/qa/citationReliability.test.mjs",
+        "tests": 7,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 184.528648,
+        "tapSha256": "b1ff993d74a8871fad24e559301b53d83a057820609b34caa18bad9c7365762b"
+      },
+      {
+        "file": "tests/qa/citationVerifier.test.mjs",
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 14.632632,
+        "tapSha256": "622fd1384ff162aa82105d5e12b36b589f6c11bb76b4659a5cd5e6dfa3a45c93"
+      },
+      {
+        "file": "tests/qa/documentArtifactMigration.test.mjs",
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 1874.50839,
+        "tapSha256": "2abffac91afdfdb96b2835be9c184f28c8acb9d47d656a74789f21b67e7a3fdb"
+      },
+      {
+        "file": "tests/qa/documentArtifacts.test.mjs",
+        "tests": 18,
+        "pass": 18,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 42.836585,
+        "tapSha256": "1eb2c132f6cc093364817975dd4e90134ce692a12279d025265eed54df23f2eb"
+      },
+      {
+        "file": "tests/qa/documentBuilder.test.mjs",
+        "tests": 8,
+        "pass": 8,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 55.665327,
+        "tapSha256": "ccaee443f7ba2dd48b7f69342c43e359d8eac6ecc2357e73beab1cf26c872fd8"
+      },
+      {
+        "file": "tests/qa/documentMigration.test.mjs",
+        "tests": 10,
+        "pass": 10,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 1837.387884,
+        "tapSha256": "60ddf531c6dd34c924e2585586c616cb52337d3a14a11de11d60f604f0496e20"
+      },
+      {
+        "file": "tests/qa/documentParts.test.mjs",
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 135.309762,
+        "tapSha256": "c09059457c5f1484f022e4b611ba6f22098ce479473fcb6b8cbe4c38c114d486"
+      },
+      {
+        "file": "tests/qa/documentPreparation.test.mjs",
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 230.958509,
+        "tapSha256": "c989d9d8298c1c57f262b18ecd5b66835435edcd7ef5e08d194e0118e224836b"
+      },
+      {
+        "file": "tests/qa/documentRuntime.test.mjs",
+        "tests": 28,
+        "pass": 28,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 320.2926,
+        "tapSha256": "49e90ae8ac26cf5b6f7959be57c2470e95f970af73f39a6cf72cad5231a4b15b"
+      },
+      {
+        "file": "tests/qa/documentTools.test.mjs",
+        "tests": 21,
+        "pass": 21,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 115.469846,
+        "tapSha256": "7c7c8643a7abfa8d762cfb335427c85056c740f0c3cbe720cdc15bbdbfed33f5"
+      },
+      {
+        "file": "tests/qa/embeddingClient.test.mjs",
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 35.92494,
+        "tapSha256": "ab72956477edf5f29c5668a7f7ad88481171deee98cd881ec479cdf64a86bbe5"
+      },
+      {
+        "file": "tests/qa/fullText.test.mjs",
+        "tests": 13,
+        "pass": 13,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 238.413682,
+        "tapSha256": "5429ac32287a16f270d52d964f6b24a6c0bd6712f86ccd09e14801680920b323"
+      },
+      {
+        "file": "tests/qa/productionMigration.test.mjs",
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 3223.468806,
+        "tapSha256": "ab131c9c8a0197ace7fcc42ee602c66930fe901e147366a4a3f5af8cb8aace83"
+      },
+      {
+        "file": "tests/qa/prompt.test.mjs",
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 17.47163,
+        "tapSha256": "523ad9cf316515c89667a2a748dfa56b398468af9c89dfcdf3352d4dc46ced63"
+      },
+      {
+        "file": "tests/qa/queryRouter.test.mjs",
+        "tests": 5,
+        "pass": 5,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 42.98796,
+        "tapSha256": "c87ed09dca910c170dae90ad10dde2b736cd831709f130964f31fa19fd75c351"
+      },
+      {
+        "file": "tests/qa/reranker.test.mjs",
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 39.190311,
+        "tapSha256": "3ae41fe90780e4ade377319f37bc7e33244a4f5ebe43a5143017101ce2cb7c98"
+      },
+      {
+        "file": "tests/qa/sourceIdentity.test.mjs",
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 194.860274,
+        "tapSha256": "070ea79b4141324364d253ebe9f9394f627e2f87a3e7e442387938c5db18b5f1"
+      },
+      {
+        "file": "tests/qa/streamAdmission.test.mjs",
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 109.006431,
+        "tapSha256": "b27d61788566486fe2ecb18ca569b7921aca82e74a147c4bfd4e74b87590794f"
+      },
+      {
+        "file": "tests/qa/streamTimeout.test.mjs",
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 1126.975055,
+        "tapSha256": "939a4e21d718d9ec208b3992c5eaf982679cfdaa6e5230200165bcfe1f166524"
+      },
+      {
+        "file": "tests/qa/workspaceMigration.test.mjs",
+        "tests": 3,
+        "pass": 3,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 1844.367759,
+        "tapSha256": "e4be4ba1b014e0805d891415667dbe02254ddb6ffe8c20aeba36c523756c7c71"
+      },
+      {
+        "file": "tests/qa/workspaceNavigation.test.mjs",
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 1920.439669,
+        "tapSha256": "9286116ff3411324d05233254835cd42f6580dd137c1e7640106e62fe7bece59"
+      },
+      {
+        "file": "tests/qa/workspaceRuntime.test.mjs",
+        "tests": 7,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "durationMs": 210.458326,
+        "tapSha256": "7e91c7679b30de3c0d1d91075390d67f9e46d1255bb58964b4d0e8db5de964a5"
+      }
+    ]
+  },
+  "syntheticAdmissionAssertions": {
+    "source": "tests/qa/streamAdmission.test.mjs",
+    "users": 10,
+    "maxActive": 2,
+    "maxQueued": 8,
+    "completed": 10,
+    "queueModel": "synthetic 8 ms task; no real model calls",
+    "cancelTimeoutAndDuplicateUserAssertions": "passed"
+  },
+  "legacyTrajectoryComparison": {
+    "originalCommand": "npm run check:agent-equivalence",
+    "originalCommandStatus": "completed_with_existing_differences_after_sandbox_escalation",
+    "workaround": "Shell archive and direct reuse of runScenario first located detailed field differences; subsequently the original standard command reproduced the same 3 matched / 4 differed result.",
+    "scope": "legacy agentRunner extraction guard, not new workspace access or current artifact runtime quality",
+    "matched": 3,
+    "differed": 4,
+    "status": "existing_baseline_differences",
+    "differencesSummary": "Only added stopReason/action payload fields in result agentSteps, persisted steps and emitted events; no fields were removed or otherwise changed in these seven scenarios.",
+    "baseline": "23ddc3b713b20b34edcceacdb0199da280c39ca0",
+    "scenarios": [
+      {
+        "name": "search-open-finish",
+        "passed": false,
+        "differences": [
+          {
+            "path": "/result/agentSteps/7/payload/stopReason",
+            "kind": "added"
+          },
+          {
+            "path": "/result/agentSteps/7/payload/action",
+            "kind": "added"
+          },
+          {
+            "path": "/steps/7/payload/stopReason",
+            "kind": "added"
+          },
+          {
+            "path": "/steps/7/payload/action",
+            "kind": "added"
+          },
+          {
+            "path": "/events/7/payload/step/payload/stopReason",
+            "kind": "added"
+          },
+          {
+            "path": "/events/7/payload/step/payload/action",
+            "kind": "added"
+          }
+        ],
+        "steps": 8,
+        "toolCalls": 2,
+        "controllerTurns": 3,
+        "searches": 1
+      },
+      {
+        "name": "direct-answer",
+        "passed": false,
+        "differences": [
+          {
+            "path": "/result/agentSteps/1/payload/stopReason",
+            "kind": "added"
+          },
+          {
+            "path": "/result/agentSteps/1/payload/action",
+            "kind": "added"
+          },
+          {
+            "path": "/steps/1/payload/stopReason",
+            "kind": "added"
+          },
+          {
+            "path": "/steps/1/payload/action",
+            "kind": "added"
+          },
+          {
+            "path": "/events/1/payload/step/payload/stopReason",
+            "kind": "added"
+          },
+          {
+            "path": "/events/1/payload/step/payload/action",
+            "kind": "added"
+          }
+        ],
+        "steps": 2,
+        "toolCalls": 0,
+        "controllerTurns": 1,
+        "searches": 0
+      },
+      {
+        "name": "carryover",
+        "passed": false,
+        "differences": [
+          {
+            "path": "/result/agentSteps/1/payload/stopReason",
+            "kind": "added"
+          },
+          {
+            "path": "/result/agentSteps/1/payload/action",
+            "kind": "added"
+          },
+          {
+            "path": "/steps/1/payload/stopReason",
+            "kind": "added"
+          },
+          {
+            "path": "/steps/1/payload/action",
+            "kind": "added"
+          },
+          {
+            "path": "/events/1/payload/step/payload/stopReason",
+            "kind": "added"
+          },
+          {
+            "path": "/events/1/payload/step/payload/action",
+            "kind": "added"
+          }
+        ],
+        "steps": 2,
+        "toolCalls": 0,
+        "controllerTurns": 1,
+        "searches": 0
+      },
+      {
+        "name": "budget",
+        "passed": false,
+        "differences": [
+          {
+            "path": "/result/agentSteps/5/payload/stopReason",
+            "kind": "added"
+          },
+          {
+            "path": "/steps/5/payload/stopReason",
+            "kind": "added"
+          },
+          {
+            "path": "/events/5/payload/step/payload/stopReason",
+            "kind": "added"
+          }
+        ],
+        "steps": 6,
+        "toolCalls": 1,
+        "controllerTurns": 2,
+        "searches": 1
+      },
+      {
+        "name": "unknown-action",
+        "passed": true,
+        "differences": [],
+        "steps": 1,
+        "toolCalls": 0,
+        "controllerTurns": 1,
+        "searches": 0
+      },
+      {
+        "name": "search-error",
+        "passed": true,
+        "differences": [],
+        "steps": 3,
+        "toolCalls": 1,
+        "controllerTurns": 1,
+        "searches": 1
+      },
+      {
+        "name": "heuristic-empty",
+        "passed": true,
+        "differences": [],
+        "steps": 8,
+        "toolCalls": 2,
+        "controllerTurns": 0,
+        "searches": 2
+      }
+    ],
+    "initialSandboxCommandStatus": "sandbox_spawnSync_git_EPERM"
+  },
+  "unmeasured": [
+    {
+      "metric": "production_first_token_and_total_latency",
+      "status": "not_measured",
+      "requiredFor": "M0 performance threshold freeze / M7 release"
+    },
+    {
+      "metric": "query_latency_and_real_database_execution_plans",
+      "status": "not_measured",
+      "requiredFor": "M0 aggregate query sample validation / M1 release"
+    },
+    {
+      "metric": "production_qa_rss_and_concurrent_load",
+      "status": "not_measured",
+      "requiredFor": "M0 load budget freeze / M7 release"
+    },
+    {
+      "metric": "title_model_tokens_latency_timeout_and_cost",
+      "status": "not_measured",
+      "requiredFor": "M0 auxiliary budget freeze / M2 release"
+    },
+    {
+      "metric": "summary_model_tokens_latency_timeout_and_cost",
+      "status": "not_measured",
+      "requiredFor": "M5 budget freeze / M7 release"
+    },
+    {
+      "metric": "cache_io_volume_for_new_resources",
+      "status": "not_measured",
+      "requiredFor": "M0 cache and scan budget freeze / M1 M4 release"
+    },
+    {
+      "metric": "chinese_english_cross_language_recall",
+      "status": "not_measured",
+      "requiredFor": "M1 sample quality validation / M7 release"
+    },
+    {
+      "metric": "new_38_case_runner_and_browser_acceptance",
+      "status": "not_measured",
+      "requiredFor": "M1-M7 incremental acceptance"
+    }
+  ],
+  "limitations": [
+    "An initial node --test run reported 29 file-level passes only in this sandbox; it is not counted as 197 internal assertions. The accepted run uses one file per process with --test-isolation=none.",
+    "No paid provider, running API, production DB, migration deployment or service restart was used.",
+    "Passing current regressions does not demonstrate implementation of M1-M7.",
+    "No production performance thresholds were invented from local test duration."
+  ],
+  "standardCommands": {
+    "qa": {
+      "command": "npm run test:qa",
+      "permissionContext": "sandbox escalation for subprocess IPC and test-local ports",
+      "exitCode": 0,
+      "tests": 197,
+      "suites": 8,
+      "pass": 197,
+      "fail": 0,
+      "skipped": 0,
+      "durationMs": 4713.759671,
+      "logSha256": "b36f6cd503035fefe62f9c7452a832b08921442cebfeef2b0d2eac0d077ecebb",
+      "modelAndDatabase": "mocked model and in-memory PGlite"
+    },
+    "equivalence": {
+      "command": "npm run check:agent-equivalence",
+      "permissionContext": "sandbox escalation for spawnSync local git and temp directory",
+      "exitCode": 1,
+      "matched": 3,
+      "differed": 4,
+      "logSha256": "9c5298887638fd17b85fc0b9436f38f032a3756047ea45864f707291f8a3f05a",
+      "status": "existing_baseline_differences"
+    }
+  }
+}
